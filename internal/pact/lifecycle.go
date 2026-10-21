@@ -24,11 +24,21 @@ const (
 type StakeDisposition string
 
 const (
-	StakeDispositionNone    StakeDisposition = "NONE"
-	StakeDispositionHold    StakeDisposition = "HOLD"
-	StakeDispositionRefund  StakeDisposition = "REFUND"
-	StakeDispositionForfeit StakeDisposition = "FORFEIT"
+	StakeDispositionNone              StakeDisposition = "NONE"
+	StakeDispositionHold              StakeDisposition = "HOLD"
+	StakeDispositionRelease           StakeDisposition = "RELEASE"
+	StakeDispositionCommitmentReserve StakeDisposition = "COMMITMENT_RESERVE"
 )
+
+type BreakConsequence string
+
+const (
+	BreakConsequenceCommitmentReserve BreakConsequence = "COMMITMENT_RESERVE"
+)
+
+func (c BreakConsequence) valid() bool {
+	return c == BreakConsequenceCommitmentReserve
+}
 
 type OverrideType string
 
@@ -46,16 +56,18 @@ type ConfirmationFacts struct {
 }
 
 func (f ConfirmationFacts) valid() bool {
-	return f.PartnerCount == 4 && f.DistinctPartnerCount == 4 && !f.OwnerIsPartner
+	return f.PartnerCount >= 1 &&
+		f.DistinctPartnerCount == f.PartnerCount &&
+		!f.OwnerIsPartner
 }
 
-type StakeFunding struct {
+type StakeReservation struct {
 	ID     string
 	Amount Money
 }
 
-func (f StakeFunding) valid() bool {
-	return f.ID != "" && f.Amount.Valid()
+func (r StakeReservation) valid() bool {
+	return r.ID != "" && r.Amount.Valid()
 }
 
 type OverrideDecision struct {

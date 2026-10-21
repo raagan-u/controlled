@@ -17,61 +17,95 @@ func TestNewTerms(t *testing.T) {
 	stake := mustMoney(t, 2_500, "USD")
 
 	tests := []struct {
-		name        string
-		limit       pact.Money
-		stake       pact.Money
-		start       time.Time
-		end         time.Time
-		circle      pact.CircleID
-		destination pact.DestinationID
-		wantErr     error
+		name             string
+		goal             string
+		intent           string
+		limit            pact.Money
+		stake            pact.Money
+		start            time.Time
+		end              time.Time
+		circle           pact.CircleID
+		breakConsequence pact.BreakConsequence
+		wantErr          error
 	}{
 		{
-			name:        "valid",
-			limit:       limit,
-			stake:       stake,
-			start:       start,
-			end:         end,
-			circle:      "circle-1",
-			destination: "fund-1",
+			name:             "valid",
+			goal:             "Keep enough money for rent",
+			intent:           "Reduce discretionary spending until payday",
+			limit:            limit,
+			stake:            stake,
+			start:            start,
+			end:              end,
+			circle:           "circle-1",
+			breakConsequence: pact.BreakConsequenceCommitmentReserve,
 		},
 		{
-			name:        "currency mismatch",
-			limit:       limit,
-			stake:       mustMoney(t, 2_500, "EUR"),
-			start:       start,
-			end:         end,
-			circle:      "circle-1",
-			destination: "fund-1",
-			wantErr:     pact.ErrCurrencyMismatch,
+			name:             "currency mismatch",
+			goal:             "Keep enough money for rent",
+			intent:           "Reduce discretionary spending until payday",
+			limit:            limit,
+			stake:            mustMoney(t, 2_500, "EUR"),
+			start:            start,
+			end:              end,
+			circle:           "circle-1",
+			breakConsequence: pact.BreakConsequenceCommitmentReserve,
+			wantErr:          pact.ErrCurrencyMismatch,
 		},
 		{
-			name:        "invalid period",
-			limit:       limit,
-			stake:       stake,
-			start:       start,
-			end:         start,
-			circle:      "circle-1",
-			destination: "fund-1",
-			wantErr:     pact.ErrInvalidPeriod,
+			name:             "missing goal",
+			intent:           "Reduce discretionary spending until payday",
+			limit:            limit,
+			stake:            stake,
+			start:            start,
+			end:              end,
+			circle:           "circle-1",
+			breakConsequence: pact.BreakConsequenceCommitmentReserve,
+			wantErr:          pact.ErrMissingGoal,
 		},
 		{
-			name:        "missing circle",
-			limit:       limit,
-			stake:       stake,
-			start:       start,
-			end:         end,
-			destination: "fund-1",
-			wantErr:     pact.ErrMissingAccountabilityCircle,
+			name:             "missing intent",
+			goal:             "Keep enough money for rent",
+			limit:            limit,
+			stake:            stake,
+			start:            start,
+			end:              end,
+			circle:           "circle-1",
+			breakConsequence: pact.BreakConsequenceCommitmentReserve,
+			wantErr:          pact.ErrMissingIntent,
 		},
 		{
-			name:    "missing destination",
+			name:             "invalid period",
+			goal:             "Keep enough money for rent",
+			intent:           "Reduce discretionary spending until payday",
+			limit:            limit,
+			stake:            stake,
+			start:            start,
+			end:              start,
+			circle:           "circle-1",
+			breakConsequence: pact.BreakConsequenceCommitmentReserve,
+			wantErr:          pact.ErrInvalidPeriod,
+		},
+		{
+			name:             "missing circle",
+			goal:             "Keep enough money for rent",
+			intent:           "Reduce discretionary spending until payday",
+			limit:            limit,
+			stake:            stake,
+			start:            start,
+			end:              end,
+			breakConsequence: pact.BreakConsequenceCommitmentReserve,
+			wantErr:          pact.ErrMissingAccountabilityCircle,
+		},
+		{
+			name:    "unsupported break consequence",
+			goal:    "Keep enough money for rent",
+			intent:  "Reduce discretionary spending until payday",
 			limit:   limit,
 			stake:   stake,
 			start:   start,
 			end:     end,
 			circle:  "circle-1",
-			wantErr: pact.ErrMissingForfeitureDestination,
+			wantErr: pact.ErrInvalidBreakConsequence,
 		},
 	}
 
@@ -80,12 +114,14 @@ func TestNewTerms(t *testing.T) {
 			t.Parallel()
 
 			terms, err := pact.NewTerms(
+				test.goal,
+				test.intent,
 				test.limit,
 				test.stake,
 				test.start,
 				test.end,
 				test.circle,
-				test.destination,
+				test.breakConsequence,
 			)
 			if !errors.Is(err, test.wantErr) {
 				t.Fatalf("NewTerms() error = %v, want %v", err, test.wantErr)
@@ -97,6 +133,9 @@ func TestNewTerms(t *testing.T) {
 
 			if !terms.StartsAt().Equal(start) || !terms.EndsAt().Equal(end) {
 				t.Fatal("NewTerms() did not preserve the commitment period")
+			}
+			if terms.Goal() != test.goal || terms.Intent() != test.intent {
+				t.Fatal("NewTerms() did not preserve the goal and intent")
 			}
 		})
 	}

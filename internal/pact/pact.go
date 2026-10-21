@@ -10,7 +10,7 @@ type Pact struct {
 	terms              Terms
 	status             Status
 	outcome            Outcome
-	fundingID          string
+	stakeReservationID string
 	emergencyCount     int
 	processedOverrides map[OverrideID]struct{}
 	version            uint64
@@ -82,34 +82,40 @@ func (p *Pact) Confirm(facts ConfirmationFacts, now time.Time) error {
 	return nil
 }
 
-func (p *Pact) RecordStakeFunded(funding StakeFunding, now time.Time) error {
+func (p *Pact) RecordStakeReserved(reservation StakeReservation, now time.Time) error {
 	if err := p.requireTime(now); err != nil {
 		return err
 	}
-	if funding.ID != "" && funding.ID == p.fundingID {
+	if reservation.ID != "" && reservation.ID == p.stakeReservationID {
+		if !reservation.valid() {
+			return ErrInvalidStakeReservation
+		}
+		if !reservation.Amount.Equal(p.terms.Stake()) {
+			return ErrStakeReservationMismatch
+		}
 		return nil
 	}
 	if p.status != StatusAwaitingStake {
 		return ErrInvalidTransition
 	}
-	if !funding.valid() {
-		return ErrInvalidFunding
+	if !reservation.valid() {
+		return ErrInvalidStakeReservation
 	}
-	if !funding.Amount.Equal(p.terms.Stake()) {
-		return ErrFundingMismatch
+	if !reservation.Amount.Equal(p.terms.Stake()) {
+		return ErrStakeReservationMismatch
 	}
 	if !now.Before(p.terms.EndsAt()) {
 		return ErrPeriodEnded
 	}
 
-	p.fundingID = funding.ID
+	p.stakeReservationID = reservation.ID
 	if now.Before(p.terms.StartsAt()) {
 		p.status = StatusScheduled
 	} else {
 		p.status = StatusActive
 	}
 	p.changed()
-	p.record(EventStakeFunded, now, StakeDispositionHold, "")
+	p.record(EventStakeReserved, now, StakeDispositionHold, "")
 	if p.status == StatusActive {
 		p.record(EventPactStarted, now, StakeDispositionHold, "")
 	}
@@ -162,7 +168,7 @@ func (p *Pact) ApplyOverride(decision OverrideDecision, now time.Time) error {
 	case OverrideConsciousBreak:
 		p.status = StatusResolved
 		p.outcome = OutcomeBroken
-		p.record(EventPactBroken, now, StakeDispositionForfeit, decision.ID)
+		p.record(EventPactBroken, now, StakeDispositionCommitmentReserve, decision.ID)
 	}
 
 	return nil
@@ -186,7 +192,7 @@ func (p *Pact) Complete(now time.Time) error {
 		p.outcome = OutcomeKeptWithExceptions
 	}
 	p.changed()
-	p.record(EventPactCompleted, now, StakeDispositionRefund, "")
+	p.record(EventPactCompleted, now, StakeDispositionRelease, "")
 	return nil
 }
 
@@ -199,7 +205,7 @@ func (p *Pact) Cancel(now time.Time) error {
 	switch p.status {
 	case StatusDraft, StatusAwaitingStake:
 	case StatusScheduled:
-		disposition = StakeDispositionRefund
+		disposition = StakeDispositionRelease
 	case StatusActive:
 		return ErrActivePactCannotBeCancelled
 	default:
@@ -218,7 +224,7 @@ func (p *Pact) OwnerID() UserID                 { return p.ownerID }
 func (p *Pact) Terms() Terms                    { return p.terms }
 func (p *Pact) Status() Status                  { return p.status }
 func (p *Pact) Outcome() Outcome                { return p.outcome }
-func (p *Pact) FundingID() string               { return p.fundingID }
+func (p *Pact) StakeReservationID() string      { return p.stakeReservationID }
 func (p *Pact) EmergencyCount() int             { return p.emergencyCount }
 func (p *Pact) Version() uint64                 { return p.version }
 func (p *Pact) Events() []Event                 { return append([]Event(nil), p.events...) }

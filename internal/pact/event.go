@@ -8,7 +8,7 @@ const (
 	EventPactCreated               EventType = "PACT_CREATED"
 	EventDraftUpdated              EventType = "DRAFT_UPDATED"
 	EventPactConfirmed             EventType = "PACT_CONFIRMED"
-	EventStakeFunded               EventType = "STAKE_FUNDED"
+	EventStakeReserved             EventType = "STAKE_RESERVED"
 	EventPactStarted               EventType = "PACT_STARTED"
 	EventEmergencyExceptionApplied EventType = "EMERGENCY_EXCEPTION_APPLIED"
 	EventPactBroken                EventType = "PACT_BROKEN"
