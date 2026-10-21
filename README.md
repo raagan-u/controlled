@@ -1,107 +1,72 @@
 # Pay Pact
 
-**An AI-assisted, PayPal-backed commitment wallet that helps people plan a realistic budget, put money behind the promise, and require trusted human approval before exceeding it.**
+**A PayPal-powered, intent-aware wallet that helps people keep the financial promises they make to themselves.**
 
-Pay Pact is part of the *From My Heart* series and is being developed for the PayPal AI Hackathon.
+Pay Pact is part of the *From My Heart* series and is being built for the PayPal AI Hackathon.
 
-## The problem
+## Why Pay Pact?
 
-People rarely break budgets because they cannot calculate. They break them because a plan made earlier becomes easy to renegotiate in the moment.
+Most budgeting apps explain overspending after the money is gone. Pay Pact intervenes before the debit happens.
 
-Most budgeting products report the failure after the money is gone. Pay Pact creates a meaningful pause before the promise is broken.
+Users can send, receive, and spend normally. When they want more control, they create an account-wide pact with a goal, a spending limit, a duration, and an additional financial stake. While a pact is active, every outgoing transaction is checked against it.
 
-## The product
+## How it works
 
-A user creates a daily or weekly spending plan and backs it with a financial stake. Spending within the plan remains straightforward. When a purchase would exceed the limit, the user cannot silently move the boundary.
+1. Fund the Pay Pact wallet through PayPal.
+2. State a financial goal and create a daily or weekly spending pact.
+3. Back the budget with an additional stake held separately from spendable funds.
+4. Add n ( n>=1) trusted accountability partners.
+5. Spend normally while remaining within every active pact.
+6. If a transaction exceeds a limit, request approval from the next partner in round-robin order.
 
-Pay Pact first helps the user understand the impact and explore ways to preserve the commitment. If an override is still necessary, the request is routed to one of four trusted accountability partners using round-robin assignment.
+A denied request leaves the transaction blocked. An approved emergency allows the expense and preserves the active stake. An approved conscious break allows the expense but moves the stake into the user's **Commitment Reserve**.
 
-- A legitimate emergency can be approved as an exception without being treated as an absolute failure.
-- A conscious break can be approved, but the stake is forfeited to a neutral fund.
-- Pay Pact never treats forfeited stakes as revenue.
+## MVP break consequence
 
-## Vision
+Before activating a pact, the user must explicitly select what happens to the stake after a conscious break. The initial MVP enables one option:
 
-The long-term vision is a commitment-enforced wallet in which users can:
+- **Commitment Reserve:** the stake remains the user's money but becomes unavailable to spend, send, or withdraw. It can be unlocked by successfully completing a recovery pact.
 
-- Plan realistic daily or weekly budgets
-- Pre-commit a spending allowance
-- Back the commitment with a financial stake
-- Spend through a controlled wallet experience
-- Require trusted human approval for early access or an over-limit purchase
-- Distinguish genuine emergencies from conscious breaks
-- Learn from previous commitments without being shamed by them
-- Return successful stakes and route forfeited stakes to a neutral destination
+The onboarding interface will also show options such as a neutral fund, goal vault, and split consequence as disabled **Coming soon** choices. Pay Pact does not receive forfeited or reserved stakes.
 
-AI makes the wallet adaptive and humane. PayPal makes the commitment financially real. Trusted people handle exceptional decisions that software should not judge.
+PYUSD is not part of the initial MVP. We intend to explore PYUSD rewards or other responsible ways for locked stakes to create value instead of remaining idle, but no reward, yield, or investment return is currently promised.
 
-## What we are building for the hackathon
+## AI in Pay Pact
 
-The hackathon project is a functional proof of concept, not a production wallet, escrow service, or prepaid-card product.
+AI understands the intent behind a pact, but it never moves money or replaces human accountability.
 
-It will demonstrate one complete PayPal Sandbox journey:
+- **AI Pact Planner:** analyzes wallet history and the user's goal to suggest a realistic limit, duration, and stake.
+- **AI Accountability Brief:** summarizes the transaction, affected pacts, verified wallet facts, and the user's explanation for the assigned partner.
 
-1. Create a spending pact.
-2. Add four accountability partners.
-3. Fund a stake through PayPal Checkout.
-4. Activate the pact after verified payment confirmation.
-5. Attempt a purchase inside the controlled demo environment.
-6. Stop an over-limit purchase and offer an override request.
-7. Route the request to the next accountability partner.
-8. Approve an emergency exception or a conscious break.
-9. Return the stake after success or route it to a neutral-fund sandbox account after a conscious break.
-10. Display an auditable timeline of every consequential decision and payment event.
+Hard balance and budget rules remain deterministic. Humans approve exceptions.
 
-For the prototype:
+> AI advises. Humans authorize. The policy engine enforces. PayPal moves the money.
 
-- Spending is limited to a controlled PayPal sandbox experience.
-- Only the stake is placed in the sandbox Stake Vault; the weekly allowance is not held by Pay Pact.
-- The neutral fund is represented by a sandbox account.
-- Production custody, charitable-disbursement, and regulatory claims are explicitly out of scope.
+## Hackathon build
 
-## How AI is used
+The MVP demonstrates:
 
-AI is a support layer around a deterministic financial core.
+- A wallet ledger funded through PayPal Sandbox
+- Free sending and receiving when no pact is active
+- Account-wide enforcement of one or more active pacts
+- Stake locking, release, and Commitment Reserve recovery flows
+- n-partner round-robin accountability (n >= 1)
+- Emergency and conscious-break outcomes
+- AI-assisted planning and factual approval briefs
+- An auditable timeline of financial and accountability decisions
 
-It may:
+The prototype is a sandbox proof of concept, not a production bank, custodial wallet, investment product, or rewards service.
 
-- Identify contradictions or missing information in a proposed pact
-- Help a user construct a realistic commitment
-- Explain the impact of an over-limit purchase
-- Retrieve relevant lessons from previous pacts
-- Suggest ways to preserve a commitment before requesting an override
-- Produce a factual, neutral brief for the assigned accountability partner
-- Help the user reflect on patterns after a pact ends
+## Business model
 
-It may not:
+Pay Pact may charge a small, transparent fee when a pact activates. The fee is independent of whether the user succeeds or breaks the pact and remains separate from stakes, Commitment Reserves, provider fees, and any future user rewards.
 
-- Calculate the authoritative balance
-- Change an active pact
-- Decide whether an emergency is legitimate
-- Approve an override
-- Move money independently
+## Technology
 
-The governing principle is:
+- Go modular-monolith backend
+- Web frontend
+- PostgreSQL ledger and audit history
+- PayPal Sandbox payment flows
+- AI with structured, grounded outputs
 
-> AI proposes. Humans authorize. The domain engine validates. PayPal moves the money.
-
-## Architecture direction
-
-The MVP uses:
-
-- A TypeScript web client
-- A Go modular-monolith backend
-- PostgreSQL for transactional state, jobs, and audit history
-- PayPal Sandbox for checkout, capture, refund, webhooks, and forfeiture settlement
-- An AI model with structured outputs, guarded tool calls, and lightweight commitment memory
-
-All meaningful workflows are owned by the backend and can be exercised through API calls. The frontend is a client of those workflows, not their source of truth.
-
-## Project status
-
-Pay Pact is currently in the product and system-design phase.
-
-- [Product specification](./SPEC.md)
-- [Backend specification](./BACKEND_SPEC.md)
-
-Implementation will proceed as a vertical slice using fake external providers first, followed by PayPal Sandbox integration, AI capabilities, and submission hardening.
+See the [product specification](./SPEC.md) and [backend specification](./BACKEND_SPEC.md) for the evolving system design.

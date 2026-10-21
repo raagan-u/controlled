@@ -1,154 +1,198 @@
-# Pay Pact — Minimal Product Specification
+# Pay Pact — MVP Product Specification
+
+Status: Locked foundation for backend implementation
 
 ## Product
 
-Pay Pact is an AI-assisted spending commitment app. A user sets a spending limit, funds a financial stake through PayPal, and selects four accountability partners. Exceeding the limit requires approval from the currently assigned partner.
+Pay Pact is a PayPal-powered wallet that enforces financial commitments before money leaves. A user funds a dedicated Pay Pact balance, states a financial goal and spending intent, chooses a daily or weekly limit, and backs the commitment with an additional stake.
 
-The platform never profits from a forfeited stake.
+Without an active pact, the wallet can send, receive, spend, and withdraw freely. While one or more pacts are active, every outgoing transaction is evaluated against all of them.
+
+The MVP uses an internal wallet ledger backed by PayPal Sandbox. It is a proof of concept, not a production bank or custodial-wallet service.
 
 ## MVP goal
 
-Demonstrate one complete sandbox flow:
+Demonstrate one complete non-AI flow:
 
-1. Create a pact.
-2. Fund its stake through PayPal.
-3. Attempt spending beyond the limit.
-4. Request an override.
-5. Route the request to an accountability partner.
-6. Approve or deny the request.
-7. Preserve or forfeit the stake according to the request type.
+1. Onboard a user and create a Pay Pact wallet.
+2. Fund the wallet through PayPal Sandbox.
+3. Create a goal-based spending pact.
+4. Select Commitment Reserve as the break consequence.
+5. Add at least one accountability partner.
+6. Lock the stake from the wallet's available balance.
+7. Attempt an outgoing transaction that exceeds an active limit.
+8. Route an approval request by round robin.
+9. Approve or deny the transaction.
+10. Preserve the stake after an emergency or move it to Commitment Reserve after a conscious break.
+11. Record an auditable timeline of the entire flow.
+
+## Wallet
+
+Every onboarded user receives one internal Pay Pact wallet with:
+
+- Available balance
+- Pending balance
+- Active stake allocations
+- Commitment Reserve balance
+
+Actual sandbox backing funds sit in a Pay Pact-controlled PayPal account. The internal double-entry ledger records ownership and availability.
+
+Every outgoing path passes through Pay Pact policy:
+
+- Pay Pact-to-Pay Pact sends
+- External sends
+- Merchant payments in the controlled demo
+- Withdrawals
+- Provider and platform fees included in the debit
+
+Incoming money is unrestricted. Money outside Pay Pact is outside its enforcement boundary.
 
 ## Pact
 
 A pact contains:
 
 - Owner
-- Four accountability partners
+- Financial goal
+- Spending intent
 - Spending limit and currency
 - Stake amount
-- Start and end time
-- Forfeiture destination
-- Round-robin partner pointer
-- Status
+- Start and end timestamps
+- Accountability circle
+- Break consequence
+- Status and version
 
-Pact states:
-
-```text
-DRAFT -> AWAITING_STAKE -> ACTIVE
-ACTIVE -> SUCCEEDED
-ACTIVE -> ACTIVE_WITH_EXCEPTION
-ACTIVE -> BREACHED
-```
-
-An active pact's financial terms cannot be edited.
-
-## Override requests
-
-The owner selects one request type:
-
-- `EMERGENCY_EXCEPTION`: approved access preserves the stake.
-- `CONSCIOUS_BREAK`: approved access forfeits the stake.
-
-Request states:
+The only enabled MVP break consequence is:
 
 ```text
-REQUESTED -> ASSIGNED -> APPROVED
-                      -> DENIED
-                      -> AWAITING_USER
-                      -> REASSIGNED
-                      -> EXPIRED
+COMMITMENT_RESERVE
 ```
 
-The assigned partner may respond with:
+Neutral fund, goal vault, and split consequences may appear in the interface as disabled future options.
 
-- Approve
-- Deny
-- Need more information
-
-AI may summarize the request but cannot approve it or classify an emergency as legitimate.
-
-## Partner assignment
-
-Each pact has four partners arranged in a fixed round-robin order.
-
-- One partner is responsible for a request at a time.
-- The owner cannot choose the assigned partner.
-- If the partner does not acknowledge within the configured timeout, the request moves to the next partner.
-- One valid response resolves the request.
-- After each request, the pact advances its round-robin pointer.
-- Responses from expired assignments cannot resolve the request.
-
-Every assignment has a unique ID, sequence number, assignment time, expiry time, and status.
-
-## Responsiveness score
-
-Scores measure availability, not approval behaviour.
-
-For each assignment:
-
-| Acknowledgement time | Points |
-|---|---:|
-| Within 5 minutes | 5 |
-| Within 30 minutes | 4 |
-| Within 2 hours | 3 |
-| Before the deadline | 2 |
-| After the deadline | 1 |
-| No response | 0 |
-
-Display a rolling score from the last ten assignments:
+Pact lifecycle:
 
 ```text
-score = earned points / available points * 100
+DRAFT
+  -> AWAITING_STAKE
+  -> SCHEDULED
+  -> ACTIVE
+  -> RESOLVED
+
+DRAFT | AWAITING_STAKE | SCHEDULED -> CANCELLED
 ```
 
-Store raw notification, acknowledgement, and response timestamps. Derive the score from those events so the formula can change later.
+Resolved outcomes:
 
-## Payments
+- `KEPT`
+- `KEPT_WITH_EXCEPTIONS`
+- `BROKEN`
 
-Use the PayPal sandbox for the prototype.
+Active pact terms are immutable.
 
-- Fund a stake using PayPal Checkout.
-- Confirm payment state using verified webhooks.
-- Return the stake after success.
-- Send the stake to a sandbox neutral-fund account after an approved conscious break.
-- Use idempotency controls so settlement cannot happen twice.
+## Multiple active pacts
 
-Pact state and payment state are stored separately.
+- A user may have more than one active pact.
+- Every outgoing transaction is evaluated against every active pact.
+- The same transaction consumes capacity in every applicable pact.
+- Every active pact must permit the transaction.
+- An approval request references all pacts blocking that transaction.
+- Each affected pact records its own exception or break outcome.
 
-## AI responsibilities
+## Stake Vault and Commitment Reserve
 
-AI may:
+Stake movement is internal ledger movement, not a separate PayPal purchase:
 
-- Convert a conversation into proposed pact terms.
-- Identify missing or contradictory terms.
-- Summarize an override request for a partner.
-- Suggest alternatives before an override.
-- Trigger deterministic application actions through validated tools.
+```text
+Pact activation:   available -> Stake Vault
+Pact success:      Stake Vault -> available
+Emergency:         stake remains in Stake Vault
+Conscious break:   Stake Vault -> Commitment Reserve
+Recovery success:  Commitment Reserve -> available
+```
 
-AI may not:
+The global Stake Vault stores separate allocations by user and pact. Commitment Reserve remains owned by the user but cannot be spent, sent, or withdrawn.
 
-- Approve an override.
-- Decide whether an emergency is legitimate.
-- Change an active pact.
-- Move money without the required application state and human authorization.
+A reserve is unlocked only by successfully completing an eligible recovery pact. Recovery requirements will be finalized before that flow is implemented; they must prevent trivial pacts from immediately unlocking a reserve.
+
+PYUSD and rewards are outside the initial MVP. Future versions may explore responsible ways for locked stakes to create user value, but the MVP promises no yield or return.
+
+## Accountability
+
+A circle contains `n` distinct accepted partners, where `n >= 1`. The owner cannot be a member of their own circle.
+
+- Partners have a fixed order.
+- One partner receives each request at a time.
+- Assignment uses a round-robin pointer.
+- The owner cannot select the reviewer.
+- A timeout may reassign the request to the next partner.
+- Only the active assignment can resolve the request.
+- Responsiveness scoring measures response timing, never approval rate.
+
+## Over-limit requests
+
+An over-limit transaction remains blocked while its request is unresolved.
+
+| Decision | Classification | Transaction | Pact | Stake |
+|---|---|---|---|---|
+| Deny | — | Blocked | Continues | Remains locked |
+| Approve | Emergency | Allowed | Continues with exception | Remains locked |
+| Approve | Conscious break | Allowed | Resolves as broken | Moves to Commitment Reserve |
+| Timeout | — | Blocked or reassigned | Continues | Remains locked |
+
+An approval is scoped to one transaction, amount, and set of blocking pacts. It is not a general increase to the spending limit.
+
+## Transaction policy
+
+- Pending outgoing transactions reserve wallet and pact capacity immediately.
+- Failed, cancelled, or expired transactions release reserved capacity.
+- Confirmed refunds restore capacity to affected pacts.
+- Incoming transfers do not consume pact limits.
+- Incoming funds do not increase a fixed pact limit.
+- An active pact cannot be cancelled directly; exit requires the conscious-break flow.
+
+## AI after the non-AI MVP
+
+The deterministic wallet must work without AI. Later additions are:
+
+- AI Pact Planner grounded in wallet history and the user's goal
+- AI Accountability Brief grounded in verified transaction and pact facts
+
+AI may propose and summarize. It may not authorize a debit, classify an emergency, approve a request, change active terms, post ledger entries, or call PayPal directly.
+
+## Business model
+
+Pay Pact may charge a small fee when a pact activates. The fee must be:
+
+- Disclosed before activation
+- Separate from the stake
+- Independent of success or failure
+- Refunded if activation fails
+- Unrelated to Commitment Reserve balances
 
 ## Core invariants
 
-1. A pact cannot activate before its stake is funded.
-2. An owner cannot approve their own request.
-3. Only the active assignment can resolve a request.
-4. A pact can be settled only once.
-5. Payment retries must be idempotent.
-6. Emergency exceptions are recorded without being treated as absolute failures.
-7. The platform is never the forfeiture recipient.
-8. Every consequential action is recorded in an audit log.
+1. Internal journal transactions must balance.
+2. Available wallet balances cannot become negative.
+3. A pact cannot activate until its stake is reserved from the owner's wallet.
+4. The owner cannot belong to their own accountability circle.
+5. A circle must have at least one distinct accepted partner.
+6. Active pact terms cannot be edited.
+7. Every active pact must permit an outgoing transaction.
+8. Only an active assignment can resolve an approval request.
+9. One approval grants only its referenced transaction and amount.
+10. A pact can resolve only once.
+11. Payment, webhook, ledger, and public command retries must be idempotent.
+12. Emergency exceptions are recorded without being treated as absolute failure.
+13. Pay Pact never receives a broken pact's stake.
+14. Every consequential state change creates an audit event.
 
 ## Out of scope
 
-- Production custody or escrow
-- Real prepaid cards
-- Bank-account aggregation
-- Monitoring purchases outside the demo environment
-- Weighted voting or quorum approval
-- Production charitable disbursements
-- Multiple simultaneous active pacts per user
+- Production custody or money-transmission claims
+- PYUSD, yield, or investment returns
+- Physical or virtual cards
+- Monitoring spending outside Pay Pact
+- Lending or credit
+- Partial Commitment Reserve allocation
+- Production identity verification and compliance
+- AI in the initial deterministic backend milestone
