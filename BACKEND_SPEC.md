@@ -1,98 +1,98 @@
 # Pay Pact Backend Specification
 
-Status: Draft for hackathon MVP  
-Backend language: Go  
-API style: JSON over HTTP  
-Database: PostgreSQL  
-External systems: PayPal Sandbox and an AI model provider
+Status: Foundation aligned for hackathon MVP
 
-## 1. Purpose
+Language: Go
 
-The backend is the authoritative implementation of every Pay Pact workflow. The web application, AI agent, background worker, and integration tests must use the same application services and domain rules.
+Architecture: Modular monolith
 
-The backend owns:
+API: JSON over HTTP
 
-- Pact lifecycle and invariants
-- Spending decisions
-- Accountability-partner assignment and responses
-- Stake payment orchestration
-- Settlement decisions
-- AI tool authorization
-- Timeouts, retries, and scheduled completion
-- Audit history
+Database: PostgreSQL
 
-The frontend must not contain business rules.
+External payment system: PayPal Sandbox
+
+## 1. Responsibility
+
+The backend is authoritative for:
+
+- User and wallet creation
+- Double-entry ledger accounting
+- Wallet funding, transfers, and withdrawals
+- Pact lifecycle and immutable terms
+- Account-wide outgoing transaction policy
+- Stake Vault and Commitment Reserve movement
+- Accountability assignment and decisions
+- PayPal orchestration and webhook processing
+- Timeouts, retries, reconciliation, and scheduled completion
+- Immutable audit history
+
+The frontend contains no balance, authorization, or lifecycle rules.
 
 ## 2. System boundary
 
 ```text
 Web client ─────────────┐
-AI tool calls ──────────┼──> Go API/Application Services
-Background worker ──────┤             │
-Integration tests ──────┘             ├──> PostgreSQL
+Background worker ──────┼──> Go application services
+Integration tests ──────┘             │
+                                      ├──> PostgreSQL
                                       ├──> PayPal Sandbox
-                                      └──> AI Provider
+                                      └──> AI provider later
 ```
 
-PayPal owns payment authorization and money movement. Pay Pact owns the commitment decision that permits a payment operation.
+Actual sandbox funds are held in a Pay Pact-controlled PayPal account. PostgreSQL records the users to whom those funds belong and whether they are available, pending, staked, or reserved.
 
-AI output is untrusted input. AI cannot bypass application validation or call PayPal directly.
+Money outside Pay Pact is outside the enforcement boundary.
 
-## 3. Architecture
-
-Use a modular monolith deployed as one Go service for the MVP.
+## 3. Project structure
 
 ```text
-cmd/api/                    Process entry point
-internal/identity/          Users, sessions, partner access tokens
-internal/pact/              Pact aggregate and lifecycle
-internal/budgeting/         Spending ledger and limit checks
-internal/accountability/    Overrides, assignments, responses, scores
-internal/payments/          Stake and purchase payment orchestration
-internal/ai/                AI prompts, schemas, and tool loop
-internal/jobs/              Outbox, retries, timeouts, scheduled work
-internal/audit/             Immutable product event history
-internal/platform/          Database, HTTP, clock, IDs, configuration
+cmd/api/                    API process
+internal/identity/          Users and demo sessions
+internal/ledger/            Accounts, journals, entries, balances
+internal/wallet/            Funding, sends, receives, withdrawals
+internal/pact/              Terms, lifecycle, outcomes
+internal/policy/            Evaluation of outgoing transactions
+internal/transaction/       Transaction intents and execution state
+internal/accountability/    Circles, assignments, decisions, scores
+internal/stake/             Stake Vault and Commitment Reserve
+internal/payments/          Custody and PayPal orchestration
+internal/jobs/              Outbox, retries, timeouts, schedules
+internal/audit/             Product audit timeline
+internal/ai/                Post-MVP AI orchestration
+internal/platform/          HTTP, PostgreSQL, config, clock, IDs
 migrations/                 PostgreSQL migrations
-sql/                        Queries used by sqlc
-openapi/                    Public HTTP API definition
+sql/                        Queries if sqlc is adopted
+openapi/                    HTTP contract
 ```
 
-Each module should separate:
+Keep each module pragmatic. Prefer module-owned files such as `domain.go`, `service.go`, `repository.go`, and `http.go` over deep ceremonial layering.
 
-1. HTTP transport
-2. Application services
-3. Domain rules
-4. Repository and external-service adapters
-
-No module may update another module's tables directly. Cross-module work occurs through application services inside a database transaction or through outbox events.
+No module updates another module's tables directly. Cross-module state changes use application services inside one database transaction. External side effects use an outbox.
 
 ## 4. Technical stack
 
-- Go with `net/http` and `chi`
+- Go 1.27.2
+- `net/http` with a small router such as `chi`
 - PostgreSQL
-- `pgx` for database connectivity
-- `sqlc` for typed queries
-- `goose` for SQL migrations
+- `pgx`
+- SQL migrations
 - Standard `net/http` client for PayPal REST APIs
-- Official Go SDK for the AI provider where available
 - `slog` for structured logs
-- OpenAPI for the HTTP contract
+- OpenAPI for the public contract
 
-Redis, Kafka, and separate microservices are out of scope.
+Redis, Kafka, microservices, and PYUSD are out of scope for the MVP.
 
 ## 5. Data conventions
 
 - IDs are UUIDs.
-- All timestamps are stored as UTC `timestamptz` values.
-- Money is stored as integer minor units plus an ISO currency code.
-- Floating-point values must never represent money.
-- API field names use `camelCase`.
-- Database column names use `snake_case`.
+- Timestamps are UTC `timestamptz`.
+- Money uses integer minor units and an ISO currency code.
+- Floating point must never represent money.
+- JSON uses `camelCase`; SQL uses `snake_case`.
 - State values are uppercase strings.
-- Every mutable aggregate has an integer `version` for optimistic concurrency.
-
-Example money value:
+- Mutable aggregates use integer versions for optimistic concurrency.
+- Ledger and audit records are append-only.
 
 ```json
 {
@@ -101,265 +101,328 @@ Example money value:
 }
 ```
 
-## 6. Domain model
+## 6. Identity and wallet onboarding
 
-### 6.1 Pact
+Creating a user atomically creates:
+
+- One Pay Pact wallet
+- Available ledger account
+- Pending ledger account
+- Commitment Reserve ledger account
+
+The wallet starts with a zero balance. A PayPal identity or payment method may be connected later, but it is not the Pay Pact wallet itself.
+
+Initial demo endpoints:
+
+```text
+POST   /v1/demo/users
+POST   /v1/demo/sessions
+DELETE /v1/sessions/current
+GET    /v1/users/current
+GET    /v1/wallet
+GET    /v1/wallet/transactions
+```
+
+## 7. Double-entry ledger
+
+The ledger is the monetary source of truth.
+
+Core records:
+
+- Ledger account
+- Journal transaction
+- Debit entry
+- Credit entry
+- Currency
+- Reference type and ID
+- Idempotency key
+- Posted or reversed status
+
+Minimum tables:
+
+```text
+ledger_accounts
+ledger_transactions
+ledger_entries
+idempotency_keys
+```
+
+Invariants:
+
+1. Every posted journal balances.
+2. A journal contains one currency.
+3. Posted entries are immutable.
+4. A reversal creates a new journal.
+5. An idempotency key posts at most once.
+6. Available balances cannot become negative.
+7. No application code edits a stored balance directly.
+
+A cached balance projection is permitted but must reconcile to entries.
+
+## 8. Wallet funding and custody
+
+Funding flow:
+
+```text
+Create funding intent
+-> obtain PayPal approval
+-> PayPal capture succeeds
+-> verify provider result or webhook
+-> credit user's available ledger account
+```
+
+The browser redirect is never authoritative.
+
+Internal Pay Pact-to-Pay Pact sends use only ledger movement. External sends and withdrawals reserve funds internally, call the provider asynchronously, and then settle or release the reservation.
+
+All outgoing wallet operations pass through pact policy, including withdrawal.
+
+Custody adapter:
+
+```go
+type Custody interface {
+    CreateFundingOrder(context.Context, CreateFundingOrder) (FundingOrder, error)
+    CaptureFundingOrder(context.Context, CaptureFundingOrder) (FundingCapture, error)
+    CreatePayout(context.Context, CreatePayout) (Payout, error)
+    GetPayout(context.Context, string) (Payout, error)
+    VerifyWebhook(context.Context, WebhookRequest) (VerifiedEvent, error)
+}
+```
+
+Implementations:
+
+- `FakeCustody` for deterministic application and integration tests
+- `PayPalCustody` after the full fake-provider flow works
+
+## 9. Pact domain
+
+A pact contains:
+
+- Owner ID
+- Financial goal
+- Spending intent
+- Spending limit
+- Stake amount
+- Start and end timestamps
+- Accountability circle ID
+- Break consequence
+- Status, outcome, and version
+- Internal stake reservation ID after activation
+
+The only valid MVP break consequence is:
+
+```text
+COMMITMENT_RESERVE
+```
+
+Lifecycle:
 
 ```text
 DRAFT
   -> AWAITING_STAKE
+  -> SCHEDULED
   -> ACTIVE
-  -> ACTIVE_WITH_EXCEPTION
-  -> SUCCEEDED
-  -> BREACHED
+  -> RESOLVED
+
+DRAFT | AWAITING_STAKE | SCHEDULED -> CANCELLED
 ```
 
-Terminal states are `SUCCEEDED` and `BREACHED`.
-
-A pact contains:
-
-- Owner
-- Spending limit
-- Stake amount
-- Currency
-- Start and end timestamps
-- Neutral-fund destination
-- Four ordered accountability partners
-- Current round-robin pointer
-- Current status and version
-
-Active pact financial terms are immutable.
-
-### 6.2 Stake payment
-
-Stake payment state is separate from pact state.
+Outcomes:
 
 ```text
-NOT_FUNDED
-  -> ORDER_CREATED
-  -> CAPTURE_PENDING
-  -> FUNDED
-  -> REFUND_PENDING -> REFUNDED
-  -> FORFEIT_PENDING -> FORFEITED
-  -> FAILED
+NONE
+KEPT
+KEPT_WITH_EXCEPTIONS
+BROKEN
+CANCELLED
 ```
 
-The pact becomes `ACTIVE` only after the backend verifies that the stake capture is completed.
+Terms are immutable after confirmation.
 
-### 6.3 Purchase intent
+## 10. Stake Vault and Commitment Reserve
 
-A purchase intent represents an attempted purchase inside the controlled MVP environment.
+The Stake Vault is one global internal ledger account with an allocation record for each pact.
+
+Minimum stake data:
 
 ```text
-PENDING_CHECK
-  -> ALLOWED
-  -> OVERRIDE_REQUIRED
-  -> APPROVED_BY_OVERRIDE
-  -> DENIED
-  -> COMPLETED
-  -> CANCELLED
+stake_allocations
+  id
+  owner_id
+  pact_id
+  amount_minor
+  currency
+  ledger_transaction_id
+  status
+  created_at
+  resolved_at
 ```
 
-Completing a purchase adds its captured amount to the pact spending ledger. A purchase must not be counted from a browser callback alone.
-
-An approved override applies only to the purchase intent and amount referenced by the override. It is not a general limit increase.
-
-### 6.4 Override request
-
-Types:
-
-- `EMERGENCY_EXCEPTION`
-- `CONSCIOUS_BREAK`
-
-States:
+Ledger movement:
 
 ```text
-REQUESTED
-  -> ASSIGNED
-  -> AWAITING_USER
-  -> REASSIGNED
-  -> APPROVED
-  -> DENIED
-  -> EXPIRED
+Pact activation:   user available -> Stake Vault
+Pact success:      Stake Vault -> user available
+Scheduled cancel:  Stake Vault -> user available
+Emergency:         no stake movement
+Conscious break:   Stake Vault -> user Commitment Reserve
+Recovery success:  Commitment Reserve -> user available
 ```
 
-Resolution effects:
+The ledger journal and pact transition must commit in the same database transaction.
 
-| Type | Approved access | Pact effect | Stake effect |
-|---|---|---|---|
-| Emergency exception | Grant requested purchase | `ACTIVE_WITH_EXCEPTION` | Preserve until pact completion |
-| Conscious break | Grant requested purchase | `BREACHED` | Forfeit |
-| Denied or expired | No grant | No change | Preserve |
+Recovery rules must prevent a trivial follow-up pact from immediately unlocking reserves. Their detailed eligibility policy is deferred until the recovery flow is implemented.
 
-AI cannot choose the request type or decide whether an emergency is legitimate.
+## 11. Accountability
 
-### 6.5 Partner assignment
-
-Each override has one active assignment at a time.
-
-```text
-ACTIVE
-  -> ACKNOWLEDGED
-  -> RESPONDED
-  -> TIMED_OUT
-  -> SUPERSEDED
-```
+A circle contains `n` accepted partners where `n >= 1`.
 
 Rules:
 
-- Select the next partner using the pact's round-robin pointer.
+- Every partner is distinct.
+- The owner cannot be a partner.
+- Partners have stable positions.
+- Each request has one active assignment.
+- Assignment advances round robin.
 - The owner cannot select the reviewer.
-- Failure to acknowledge before the deadline creates an assignment for the next partner.
-- Only the current active assignment can resolve the override.
-- A timed-out partner's late response is rejected.
-- Advance the round-robin pointer once per override, regardless of outcome.
+- Only the current assignment can resolve a request.
+- A late response to a superseded assignment is rejected.
+- Scores measure response timing, not approval or denial.
 
-### 6.6 Responsiveness projection
-
-Responsiveness is derived from assignment events and is not authoritative domain state.
-
-Score the last ten assignments:
-
-| Acknowledgement time | Points |
-|---|---:|
-| Within 5 minutes | 5 |
-| Within 30 minutes | 4 |
-| Within 2 hours | 3 |
-| Before deadline | 2 |
-| After deadline | 1 |
-| No response | 0 |
-
-Approval and denial decisions do not affect the score.
-
-## 7. Core invariants
-
-1. A pact cannot activate before its stake is funded.
-2. An owner cannot be an accountability partner on their own pact.
-3. A pact must have four distinct accountability partners before confirmation.
-4. Active pact financial terms cannot be edited.
-5. Only one assignment may be active for an override.
-6. Only an active assignment may resolve an override.
-7. One approved override grants only its referenced purchase and amount.
-8. A pact may be settled only once.
-9. A PayPal order, capture, refund, payout, and webhook event may be processed only once.
-10. AI output never overrides domain validation.
-11. Emergency exceptions are recorded without being treated as absolute failures.
-12. The operating account is not a forfeiture destination.
-13. Every consequential state change creates an audit event.
-
-## 8. HTTP API
-
-All endpoints use the `/v1` prefix.
-
-### 8.1 Identity
+Core states:
 
 ```text
-POST /v1/demo/sessions
-DELETE /v1/sessions/current
-GET /v1/users/current
+Request:     REQUESTED -> ASSIGNED -> APPROVED | DENIED | EXPIRED
+Assignment:  ACTIVE -> ACKNOWLEDGED -> RESPONDED | TIMED_OUT | SUPERSEDED
 ```
 
-The MVP may use seeded demo identities and secure HTTP-only session cookies. Production authentication is out of scope.
+An approved response must classify the request as:
 
-Partner review links use random, single-purpose, expiring tokens. Store only a hash of each token.
+- `EMERGENCY`
+- `CONSCIOUS_BREAK`
 
-### 8.2 AI pact proposal
+## 12. Transaction intents and policy
+
+Every outgoing operation begins as a transaction intent:
 
 ```text
-POST /v1/ai/pact-proposals
+CREATED
+  -> CHECKING_POLICY
+  -> AUTHORIZED
+  -> APPROVAL_REQUIRED
+  -> APPROVED
+  -> EXECUTING
+  -> COMPLETED
+
+Any non-terminal state -> FAILED | CANCELLED | EXPIRED
 ```
 
-Request:
+Policy evaluation:
 
-```json
-{
-  "message": "Keep my discretionary spending below $150 next week. I will stake $25."
-}
-```
+1. Load every active pact for the owner.
+2. Calculate confirmed and pending consumption for each pact.
+3. Evaluate the proposed total debit against each pact.
+4. Return every blocking pact.
+5. Authorize immediately only if every pact permits the transaction.
+6. Otherwise create one accountability request referencing all blocking pacts.
 
-Response:
+Rules:
 
-```json
-{
-  "proposal": {
-    "limit": { "amountMinor": 15000, "currency": "USD" },
-    "stake": { "amountMinor": 2500, "currency": "USD" },
-    "startsAt": "2026-10-19T00:00:00Z",
-    "endsAt": "2026-10-26T00:00:00Z"
-  },
-  "assumptions": [],
-  "missingInformation": ["Four accountability partners are required."],
-  "warnings": []
-}
-```
+- The same outgoing transaction consumes capacity in every active pact.
+- Pending transactions reserve wallet and pact capacity.
+- Failed and expired transactions release capacity.
+- Confirmed refunds restore capacity.
+- Incoming funds do not consume or increase fixed pact limits.
+- An approval applies only to its referenced transaction and amount.
 
-This endpoint proposes terms only. It does not create or activate a pact.
+Resolution effects:
 
-### 8.3 Pacts
+| Partner decision | Transaction | Pact effect | Stake effect |
+|---|---|---|---|
+| Deny | Blocked | Continues | Remains locked |
+| Approve emergency | Allowed | Records exception | Remains locked |
+| Approve conscious break | Allowed | Resolves as broken | Moves to Commitment Reserve |
+| Timeout | Blocked or reassigned | Continues | Remains locked |
+
+## 13. Database model
+
+Initial target tables:
 
 ```text
-POST /v1/pacts
-GET /v1/pacts/{pactId}
-POST /v1/pacts/{pactId}/partners
-POST /v1/pacts/{pactId}/confirm
-GET /v1/pacts/{pactId}/events
+users
+sessions
+wallets
+ledger_accounts
+ledger_transactions
+ledger_entries
+idempotency_keys
+pacts
+circles
+circle_members
+stake_allocations
+transaction_intents
+pact_transaction_evaluations
+approval_requests
+assignments
+partner_responses
+funding_intents
+payouts
+processed_webhooks
+outbox_events
+scheduled_jobs
+audit_events
 ```
 
-`confirm` validates the full pact and moves it from `DRAFT` to `AWAITING_STAKE`.
+Use foreign keys, positive-amount checks, valid-time checks, unique provider IDs, unique idempotency keys, and a partial unique index enforcing one active assignment per request.
 
-### 8.4 Stake funding
+## 14. Transactions and external calls
 
-```text
-POST /v1/pacts/{pactId}/stake/orders
-POST /v1/pacts/{pactId}/stake/orders/{orderId}/capture
-GET /v1/pacts/{pactId}/stake
-```
+Every state-changing application command runs in a database transaction.
 
-The backend calculates the stake amount from the pact. A client-supplied amount is never trusted.
+Never hold a database transaction open while calling PayPal:
 
-Order capture is accepted only when the order belongs to the pact and the authenticated owner approved it.
+1. Validate and reserve internally.
+2. Commit state and an outbox event.
+3. Call the provider outside the database transaction.
+4. Persist the result in a new transaction.
+5. Settle or release the reservation.
 
-### 8.5 Purchase intents
+Use row locks or optimistic versions for wallet debits, pact transitions, assignment resolution, stake movement, and webhook application.
 
-```text
-POST /v1/pacts/{pactId}/purchase-intents
-GET /v1/purchase-intents/{purchaseIntentId}
-POST /v1/purchase-intents/{purchaseIntentId}/orders
-POST /v1/purchase-intents/{purchaseIntentId}/orders/{orderId}/capture
-```
+## 15. Idempotency
 
-Creating a purchase intent runs the deterministic budget check. If the purchase exceeds the remaining limit, the response is `OVERRIDE_REQUIRED` and no purchase order is created.
+State-changing public endpoints accept `Idempotency-Key`.
 
-### 8.6 Overrides
+Store:
 
-```text
-POST /v1/purchase-intents/{purchaseIntentId}/overrides
-GET /v1/overrides/{overrideId}
-POST /v1/overrides/{overrideId}/additional-information
-```
+- Caller identity
+- Command name
+- Idempotency key
+- Request hash
+- Final response
 
-The request type is explicitly selected by the owner. AI may help draft the reason but cannot submit a different type without owner confirmation.
+Reusing a key with a different request returns a conflict.
 
-### 8.7 Partner review
+Use stable PayPal request IDs, and enforce uniqueness for orders, captures, payouts, ledger references, and webhook event IDs.
 
-```text
-GET /v1/partner/assignments/{reviewToken}
-POST /v1/partner/assignments/{reviewToken}/acknowledge
-POST /v1/partner/assignments/{reviewToken}/respond
-```
+## 16. Outbox and background jobs
 
-Response body:
+PostgreSQL is the MVP job queue. Workers claim work using row locking and leases.
 
-```json
-{
-  "decision": "APPROVE",
-  "message": "Approved as presented."
-}
-```
+Jobs include:
 
-Allowed decisions are `APPROVE`, `DENY`, and `NEED_MORE_INFO`.
+- Start scheduled pact
+- Complete active pact
+- Expire or reassign partner assignment
+- Send notification
+- Execute funding capture
+- Execute external payout
+- Reconcile provider transaction
+- Deliver audit or notification event
 
-### 8.8 PayPal webhooks
+Jobs must be safe to run more than once. Retry transient failures with bounded backoff and expose permanent failures in the audit timeline.
+
+## 17. PayPal webhooks
 
 ```text
 POST /v1/webhooks/paypal
@@ -367,353 +430,122 @@ POST /v1/webhooks/paypal
 
 The handler must:
 
-1. Read and preserve the original request body.
-2. Verify webhook authenticity using PayPal's verification mechanism.
-3. Insert the PayPal event ID into a table with a unique constraint.
-4. Return success for already processed events.
-5. Apply state changes transactionally.
-6. Return a non-success response only when retrying is useful.
+1. Preserve the original body.
+2. Verify authenticity.
+3. insert the event ID under a unique constraint.
+4. Return success for an already processed event.
+5. Apply the state change transactionally.
+6. Return failure only when a retry is useful.
 
-Browser callbacks are not authoritative payment confirmation.
+## 18. Audit timeline
 
-### 8.9 Health
+Record every consequential fact:
 
-```text
-GET /health/live
-GET /health/ready
-```
+- User and wallet creation
+- Funding initiated and completed
+- Pact created, confirmed, scheduled, started, and resolved
+- Stake reserved, released, or moved to Commitment Reserve
+- Transaction created, authorized, blocked, approved, denied, and completed
+- Partner assigned, acknowledged, timed out, and responded
+- External payout initiated and settled
+- Provider webhook applied
 
-Readiness checks database connectivity but must not depend on PayPal or the AI provider being reachable.
+Audit events are append-only and contain actor, aggregate, timestamp, correlation ID, and safe metadata.
 
-## 9. Error format
+## 19. AI boundary
+
+AI is not required for the first backend milestone.
+
+Later, AI may:
+
+- Propose pact terms using wallet history and user intent
+- Produce a factual partner brief from verified records
+
+AI may not:
+
+- Calculate authoritative balances
+- Post ledger entries
+- Authorize transactions
+- Approve or classify a request
+- Change active pact terms
+- Call PayPal
+
+## 20. Error format
 
 ```json
 {
   "error": {
     "code": "PACT_INVALID_TRANSITION",
-    "message": "An active pact cannot be confirmed again.",
+    "message": "The requested pact transition is not allowed.",
     "requestId": "6dd8dc79-34d4-4f97-8926-469578d32545",
     "details": {}
   }
 }
 ```
 
-Expected domain failures return `4xx`. Unexpected failures return `500` with no secret or provider response body exposed.
+Expected domain failures return `4xx`. Unexpected failures return `500` without exposing credentials or raw provider responses.
 
-## 10. Database model
-
-Minimum tables:
-
-```text
-users
-sessions
-pacts
-pact_partners
-stake_payments
-purchase_intents
-spend_events
-override_requests
-assignments
-partner_responses
-outbox_jobs
-paypal_webhook_events
-audit_events
-ai_runs
-```
-
-Required database protections include:
-
-- Unique partner position per pact
-- Unique partner membership per pact
-- Partial unique index for one active assignment per override
-- Unique PayPal order, capture, refund, payout, and webhook event IDs
-- Unique successful settlement per pact
-- Foreign keys for every aggregate relationship
-- Check constraints for positive money amounts and valid time ranges
-
-## 11. Transactions and concurrency
-
-Use a database transaction for each state-changing application command.
-
-Lock or compare the aggregate version before transitions that may race:
-
-- Pact confirmation
-- PayPal capture processing
-- Partner reassignment
-- Partner response
-- Pact completion
-- Refund or forfeiture scheduling
-
-External network calls must not occur while holding long-lived database locks.
-
-Use this pattern:
-
-1. Validate and reserve the operation in a transaction.
-2. Commit an outbox job.
-3. Perform the provider call outside the transaction.
-4. Persist the provider result in a new transaction.
-
-## 12. Idempotency
-
-State-changing public endpoints accept an `Idempotency-Key` header.
-
-The backend stores:
-
-- Caller identity
-- Endpoint or command name
-- Idempotency key
-- Request hash
-- Final response
-
-Reusing a key with a different request body returns a conflict.
-
-Use a stable `PayPal-Request-Id` for each retryable PayPal operation. Provider IDs and webhook event IDs also have unique database constraints.
-
-## 13. Background jobs
-
-Use PostgreSQL as the MVP job queue. Workers claim jobs with row locking and leases.
-
-Job types:
-
-- `ASSIGN_PARTNER`
-- `EXPIRE_ASSIGNMENT`
-- `SEND_PARTNER_NOTIFICATION`
-- `COMPLETE_PACT`
-- `REFUND_STAKE`
-- `FORFEIT_STAKE`
-- `RECONCILE_PAYPAL_PAYMENT`
-
-Jobs must be safe to run more than once. Retry transient failures with bounded exponential backoff. Permanent failures move to a failed state visible in the audit timeline.
-
-## 14. PayPal adapter
-
-Define a narrow internal interface rather than exposing PayPal types to the domain:
-
-```go
-type Payments interface {
-    CreateStakeOrder(context.Context, CreateStakeOrder) (Order, error)
-    CaptureOrder(context.Context, CaptureOrder) (Capture, error)
-    RefundStake(context.Context, RefundStake) (Refund, error)
-    ForfeitStake(context.Context, ForfeitStake) (Payout, error)
-    VerifyWebhook(context.Context, WebhookRequest) (VerifiedEvent, error)
-}
-```
-
-Provide two implementations:
-
-- `PayPalPayments`
-- `FakePayments`
-
-Rules:
-
-- PayPal credentials remain server-side.
-- Use sandbox endpoints for the hackathon.
-- Stake orders use the amount stored on the pact.
-- Refunds reference the original stake capture.
-- Forfeitures target only the configured neutral-fund sandbox account.
-- Log PayPal resource IDs, never credentials or full sensitive payloads.
-- A completed webhook or reconciliation result is required before final payment state is trusted.
-
-## 15. AI adapter
-
-Use structured outputs for pact proposals and partner summaries. Use function calling only for application capabilities exposed as narrow tools.
-
-Initial AI operations:
-
-- `ProposePact`
-- `ExplainPact`
-- `SuggestPurchaseAlternatives`
-- `PrepareOverrideBrief`
-
-Allowed tools:
-
-- `get_pact`
-- `check_purchase`
-- `create_override_draft`
-
-The AI is not permitted to call payment settlement functions.
-
-Every AI run records:
-
-- Purpose
-- Model identifier
-- Prompt or prompt version
-- Tool calls
-- Structured result
-- Latency
-- Success or failure
-- Related pact or override ID
-
-Do not place PayPal credentials, review tokens, or unnecessary personal information in model input. Disable provider-side response storage where supported.
-
-## 16. Audit events
-
-Audit events are append-only and include:
-
-- Event type
-- Aggregate type and ID
-- Actor type and ID
-- Timestamp
-- Request ID
-- Previous and resulting state where applicable
-- Non-sensitive metadata
-
-Minimum events:
-
-```text
-PACT_CREATED
-PACT_CONFIRMED
-STAKE_ORDER_CREATED
-STAKE_FUNDED
-PACT_ACTIVATED
-PURCHASE_CHECKED
-OVERRIDE_REQUESTED
-PARTNER_ASSIGNED
-PARTNER_ACKNOWLEDGED
-ASSIGNMENT_TIMED_OUT
-OVERRIDE_APPROVED
-OVERRIDE_DENIED
-EMERGENCY_EXCEPTION_APPLIED
-PACT_SUCCEEDED
-PACT_BREACHED
-STAKE_REFUNDED
-STAKE_FORFEITED
-```
-
-## 17. Security requirements
-
-- Secrets are loaded from environment or the deployment secret store.
-- Session cookies are `HttpOnly`, `Secure`, and `SameSite=Lax` or stricter.
-- Partner review tokens are random, hashed at rest, scoped to one assignment, and expire.
-- Apply authorization checks inside application services, not only HTTP middleware.
-- Verify PayPal webhooks before processing them.
-- Rate-limit AI, authentication, partner response, and payment endpoints.
-- Validate currency and amount consistency at every payment boundary.
-- Never accept a PayPal resource ID without checking its database ownership.
-- Redact secrets and personal data from logs.
-- Include request IDs in logs and error responses.
-
-## 18. Testing strategy
+## 21. Test strategy
 
 ### Unit tests
 
-Test domain state transitions and invariants without external services:
+- Ledger balance and immutability rules
+- Pact transitions and terms
+- Stake consequence decisions
+- Policy evaluation across multiple pacts
+- Round-robin assignment
+- Timeout and response scoring
 
-- Pact confirmation and activation
-- Spending limit calculations
-- Emergency exception behavior
-- Conscious-break behavior
-- Round-robin selection
-- Timeout and late-response rejection
-- Responsiveness scoring
-- Settlement eligibility
+### PostgreSQL integration tests
 
-### Repository tests
-
-Run against PostgreSQL and verify constraints, transactions, concurrent responses, and job claiming.
+- Concurrent debits
+- Atomic stake and pact transitions
+- Idempotency conflicts
+- Outbox claiming
+- Webhook replay
+- One-active-assignment constraint
 
 ### Provider contract tests
 
-Test PayPal and AI adapters against recorded or local fake HTTP servers. Never make normal unit tests depend on external services.
+Run the same wallet application scenarios against `FakeCustody` and PayPal Sandbox adapters where practical.
 
-### Sandbox integration tests
-
-Run explicit tests against PayPal Sandbox for:
-
-- Stake order creation and capture
-- Duplicate capture handling
-- Webhook verification and replay
-- Refund
-- Payout or documented forfeiture fallback
-
-### End-to-end test
-
-The required automated happy path is:
+### End-to-end non-AI flow
 
 ```text
-create pact
--> add four partners
--> confirm
--> fund stake
--> activate
--> create over-limit purchase intent
--> request emergency exception
--> time out first partner
--> assign next partner
--> approve
--> complete purchase
--> complete pact
--> refund stake
+create user
+-> create wallet
+-> fund wallet
+-> create circle and pact
+-> reserve stake
+-> attempt over-limit withdrawal
+-> approve conscious break
+-> execute withdrawal
+-> move stake to Commitment Reserve
+-> inspect audit timeline
 ```
 
-A second path covers an approved conscious break and forfeiture.
+## 22. Security baseline
 
-## 19. Observability
+- Keep provider credentials server-side.
+- Store session cookies as secure, HTTP-only, and same-site.
+- Hash single-purpose review tokens.
+- Verify every webhook.
+- Rate-limit authentication, funding, payout, and partner-decision endpoints.
+- Never log secrets, full tokens, or unnecessarily sensitive financial payloads.
+- Require authenticated ownership checks on every wallet and pact command.
+- Validate money, currency, state, and references at every boundary.
 
-Every request log includes:
+## 23. MVP completion criteria
 
-- Request ID
-- Method and route
-- Authenticated actor ID
-- Status code
-- Duration
+The deterministic backend is complete when APIs can demonstrate:
 
-Metrics should include:
-
-- HTTP error rate and latency
-- Active and failed jobs
-- Partner acknowledgement latency
-- PayPal operation failures
-- Webhook processing lag
-- AI latency and structured-output failures
-
-Do not log model prompts or payment payloads indiscriminately.
-
-## 20. Delivery phases
-
-### Phase 1: Fake-provider vertical slice
-
-- Database and migrations
-- Pact state machine
-- Purchase checks
-- Round-robin partner workflow
-- Fake payments
-- Audit timeline
-- End-to-end API test
-
-### Phase 2: PayPal Sandbox
-
-- Checkout order creation
-- Capture
-- Webhook verification
-- Refund
-- Payout or documented forfeiture fallback
-- Idempotency and reconciliation
-
-### Phase 3: AI
-
-- Structured pact proposal
-- Purchase alternatives
-- Override brief
-- Tool-call authorization and audit
-
-### Phase 4: Submission hardening
-
-- Demo identities and seeded data
-- Public API documentation
-- Deployment configuration
-- Error and loading behavior
-- Reproducible judge setup
-- Demo script
-
-## 21. MVP exclusions
-
-- Production wallet, escrow, or custody claims
-- Real prepaid cards
-- Bank aggregation
-- Monitoring transactions outside Pay Pact
-- Real charitable or tax-deductible donation claims
-- Quorum or weighted voting
-- Multiple simultaneous active pacts per owner
-- Microservices or a distributed message broker
-- AI deciding emergency legitimacy or moving money autonomously
+1. User onboarding creates a wallet and ledger accounts.
+2. Fake custody and PayPal Sandbox can fund that wallet.
+3. Internal sends preserve ledger balance.
+4. Pacts reserve stakes from wallet funds.
+5. Every outgoing debit is checked against all active pacts.
+6. Accountability can approve emergencies or conscious breaks.
+7. Conscious breaks move stakes into Commitment Reserve.
+8. Recovery can release an eligible reserve.
+9. Retries do not duplicate money or decisions.
+10. The audit timeline explains every consequential action.
