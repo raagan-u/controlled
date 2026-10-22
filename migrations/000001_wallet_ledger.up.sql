@@ -1,5 +1,3 @@
-BEGIN;
-
 CREATE TABLE users (
     id uuid PRIMARY KEY,
     email text NOT NULL,
@@ -251,5 +249,3 @@ SELECT account.id AS account_id,
   FROM ledger_accounts AS account
   LEFT JOIN ledger_entries AS entry ON entry.account_id = account.id
  GROUP BY account.id;
-
-COMMIT;
