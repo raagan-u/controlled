@@ -11,10 +11,43 @@ import (
 	"time"
 
 	"github.com/raagan-u/pay-pact/internal/platform"
+	"github.com/raagan-u/pay-pact/internal/platform/config"
+	"github.com/raagan-u/pay-pact/internal/platform/httpapi"
+	platformpostgres "github.com/raagan-u/pay-pact/internal/platform/postgres"
 	"github.com/raagan-u/pay-pact/internal/wallet"
 )
 
 func main() {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	if err := run(ctx); err != nil {
+		slog.Error("PayPact API stopped", "error", err)
+		os.Exit(1)
+	}
+}
+
+func run(ctx context.Context) error {
+	configuration, err := config.Load()
+	if err != nil {
+		return err
+	}
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: configuration.LogLevel})))
+
+	database, err := platformpostgres.Open(ctx, platformpostgres.Options{
+		URL:         configuration.DatabaseURL,
+		MaxConns:    configuration.DatabaseMaxConns,
+		MinConns:    configuration.DatabaseMinConns,
+		PingTimeout: configuration.DatabasePingTimeout,
+	})
+	if err != nil {
+		return err
+	}
+	defer database.Close()
+	if err := platformpostgres.Migrate(ctx, database); err != nil {
+		return err
+	}
+
 	store := wallet.NewMemoryProvisioningStore()
 	onboarding := wallet.NewOnboardingService(
 		platform.NewUUIDGenerator(),
@@ -24,16 +57,12 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.Handle("POST /v1/demo/users", wallet.NewOnboardingHandler(onboarding))
-	mux.HandleFunc("GET /healthz", func(response http.ResponseWriter, _ *http.Request) {
-		response.WriteHeader(http.StatusNoContent)
-	})
+	health := httpapi.NewHealthHandler(database, configuration.DatabasePingTimeout)
+	mux.HandleFunc("GET /healthz", health.Liveness)
+	mux.HandleFunc("GET /readyz", health.Readiness)
 
-	address := ":8080"
-	if port := os.Getenv("PORT"); port != "" {
-		address = ":" + port
-	}
 	server := &http.Server{
-		Addr:              address,
+		Addr:              configuration.HTTPAddress,
 		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
@@ -41,27 +70,23 @@ func main() {
 		IdleTimeout:       60 * time.Second,
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
 	serverErrors := make(chan error, 1)
 	go func() {
-		slog.Info("PayPact API listening", "address", address)
+		slog.Info("PayPact API listening", "address", configuration.HTTPAddress)
 		serverErrors <- server.ListenAndServe()
 	}()
 
 	select {
 	case err := <-serverErrors:
 		if !errors.Is(err, http.ErrServerClosed) {
-			slog.Error("PayPact API stopped", "error", err)
-			os.Exit(1)
+			return err
 		}
 	case <-ctx.Done():
-		shutdownContext, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		shutdownContext, cancel := context.WithTimeout(context.Background(), configuration.ShutdownTimeout)
 		defer cancel()
 		if err := server.Shutdown(shutdownContext); err != nil {
-			slog.Error("PayPact API shutdown failed", "error", err)
-			os.Exit(1)
+			return err
 		}
 	}
+	return nil
 }
