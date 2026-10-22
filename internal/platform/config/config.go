@@ -61,9 +61,13 @@ func load(lookup lookupEnv) (Config, error) {
 	if minConns > maxConns {
 		return Config{}, fmt.Errorf("%w: PAYPACT_DB_MIN_CONNS must not exceed PAYPACT_DB_MAX_CONNS", ErrInvalidConfig)
 	}
+	httpAddress := strings.TrimSpace(value(lookup, "PAYPACT_HTTP_ADDR", ":8080"))
+	if httpAddress == "" {
+		return Config{}, fmt.Errorf("%w: PAYPACT_HTTP_ADDR", ErrInvalidConfig)
+	}
 
 	return Config{
-		HTTPAddress:         strings.TrimSpace(value(lookup, "PAYPACT_HTTP_ADDR", ":8080")),
+		HTTPAddress:         httpAddress,
 		DatabaseURL:         databaseURL,
 		LogLevel:            logLevel,
 		ShutdownTimeout:     shutdownTimeout,

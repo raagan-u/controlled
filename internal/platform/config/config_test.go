@@ -62,6 +62,7 @@ func TestLoadRejectsInvalidConfiguration(t *testing.T) {
 		{name: "missing database", values: map[string]string{}, wantErr: ErrDatabaseURLRequired},
 		{name: "log level", values: map[string]string{"DATABASE_URL": "postgres://db", "PAYPACT_LOG_LEVEL": "TRACE"}, wantErr: ErrInvalidConfig},
 		{name: "duration", values: map[string]string{"DATABASE_URL": "postgres://db", "PAYPACT_DB_PING_TIMEOUT": "0s"}, wantErr: ErrInvalidConfig},
+		{name: "empty address", values: map[string]string{"DATABASE_URL": "postgres://db", "PAYPACT_HTTP_ADDR": " "}, wantErr: ErrInvalidConfig},
 		{name: "connection count", values: map[string]string{"DATABASE_URL": "postgres://db", "PAYPACT_DB_MAX_CONNS": "0"}, wantErr: ErrInvalidConfig},
 		{name: "minimum exceeds maximum", values: map[string]string{"DATABASE_URL": "postgres://db", "PAYPACT_DB_MAX_CONNS": "2", "PAYPACT_DB_MIN_CONNS": "3"}, wantErr: ErrInvalidConfig},
 	}
