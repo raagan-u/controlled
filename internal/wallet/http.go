@@ -2,16 +2,13 @@ package wallet
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
 	"time"
 
 	"github.com/raagan-u/pay-pact/internal/identity"
+	"github.com/raagan-u/pay-pact/internal/platform/httpapi"
 )
-
-const maxOnboardingBodyBytes = 1 << 20
 
 type Onboarder interface {
 	Onboard(context.Context, string, OnboardingRequest) (OnboardingResult, error)
@@ -28,7 +25,7 @@ func NewOnboardingHandler(onboarder Onboarder) *OnboardingHandler {
 func (h *OnboardingHandler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
 	if request.Method != http.MethodPost {
 		response.Header().Set("Allow", http.MethodPost)
-		writeAPIError(response, http.StatusMethodNotAllowed, "method_not_allowed", "Only POST is supported.")
+		httpapi.WriteError(response, http.StatusMethodNotAllowed, "method_not_allowed", "Only POST is supported.")
 		return
 	}
 
@@ -37,15 +34,8 @@ func (h *OnboardingHandler) ServeHTTP(response http.ResponseWriter, request *htt
 		DisplayName string `json:"displayName"`
 		Currency    string `json:"currency"`
 	}
-	request.Body = http.MaxBytesReader(response, request.Body, maxOnboardingBodyBytes)
-	decoder := json.NewDecoder(request.Body)
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&input); err != nil {
-		writeAPIError(response, http.StatusBadRequest, "invalid_request", "Request body must be a valid onboarding object.")
-		return
-	}
-	if err := ensureJSONEnd(decoder); err != nil {
-		writeAPIError(response, http.StatusBadRequest, "invalid_request", "Request body must contain one JSON object.")
+	if err := httpapi.ReadJSON(response, request, &input, httpapi.DefaultMaxBodyBytes); err != nil {
+		httpapi.WriteError(response, http.StatusBadRequest, "invalid_request", "Request body must be a valid onboarding object.")
 		return
 	}
 
@@ -67,7 +57,7 @@ func (h *OnboardingHandler) ServeHTTP(response http.ResponseWriter, request *htt
 	if result.Duplicate {
 		status = http.StatusOK
 	}
-	writeJSON(response, status, onboardingResponse(result))
+	httpapi.WriteJSON(response, status, onboardingResponse(result))
 }
 
 type moneyResponse struct {
@@ -128,43 +118,19 @@ func onboardingResponse(result OnboardingResult) onboardingAPIResponse {
 func writeOnboardingError(response http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrInvalidIdempotencyKey):
-		writeAPIError(response, http.StatusBadRequest, "invalid_idempotency_key", "A non-empty Idempotency-Key header is required.")
+		httpapi.WriteError(response, http.StatusBadRequest, "invalid_idempotency_key", "A non-empty Idempotency-Key header is required.")
 	case errors.Is(err, identity.ErrInvalidUserID),
 		errors.Is(err, identity.ErrInvalidEmail),
 		errors.Is(err, identity.ErrInvalidDisplayName),
 		errors.Is(err, identity.ErrInvalidCreatedAt),
 		errors.Is(err, ErrInvalidWallet),
 		errors.Is(err, ErrInvalidAccountSet):
-		writeAPIError(response, http.StatusUnprocessableEntity, "invalid_onboarding", "Email, display name, and a supported currency are required.")
+		httpapi.WriteError(response, http.StatusUnprocessableEntity, "invalid_onboarding", "Email, display name, and a supported currency are required.")
 	case errors.Is(err, ErrIdempotencyConflict):
-		writeAPIError(response, http.StatusConflict, "idempotency_conflict", "This Idempotency-Key was already used with different input.")
+		httpapi.WriteError(response, http.StatusConflict, "idempotency_conflict", "This Idempotency-Key was already used with different input.")
 	case errors.Is(err, ErrUserExists), errors.Is(err, ErrWalletExists), errors.Is(err, ErrProvisioningExists):
-		writeAPIError(response, http.StatusConflict, "user_exists", "A PayPact user already exists for this email.")
+		httpapi.WriteError(response, http.StatusConflict, "user_exists", "A PayPact user already exists for this email.")
 	default:
-		writeAPIError(response, http.StatusInternalServerError, "internal_error", "PayPact could not create the wallet.")
+		httpapi.WriteError(response, http.StatusInternalServerError, "internal_error", "PayPact could not create the wallet.")
 	}
-}
-
-func ensureJSONEnd(decoder *json.Decoder) error {
-	var trailing any
-	err := decoder.Decode(&trailing)
-	if errors.Is(err, io.EOF) {
-		return nil
-	}
-	return errors.New("unexpected trailing JSON")
-}
-
-func writeAPIError(response http.ResponseWriter, status int, code, message string) {
-	writeJSON(response, status, map[string]any{
-		"error": map[string]string{
-			"code":    code,
-			"message": message,
-		},
-	})
-}
-
-func writeJSON(response http.ResponseWriter, status int, value any) {
-	response.Header().Set("Content-Type", "application/json")
-	response.WriteHeader(status)
-	_ = json.NewEncoder(response).Encode(value)
 }
