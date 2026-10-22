@@ -20,4 +20,7 @@ var (
 	ErrIdempotencyConflict     = errors.New("idempotency key was reused for a different journal")
 	ErrInsufficientBalance     = errors.New("ledger posting would make an account balance negative")
 	ErrJournalAlreadyReversed  = errors.New("ledger journal has already been reversed")
+	ErrReferenceExists         = errors.New("ledger reference already exists")
+	ErrInvalidPersistenceID    = errors.New("ledger persistence requires UUID identifiers")
+	ErrLedgerUnavailable       = errors.New("ledger persistence is unavailable")
 )
