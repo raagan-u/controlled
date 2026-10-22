@@ -1,7 +1,6 @@
 package ledger
 
 import (
-	"math"
 	"sync"
 
 	"github.com/raagan-u/pay-pact/internal/money"
@@ -90,37 +89,13 @@ func (b *Book) Post(journal Journal) (PostResult, error) {
 		}
 	}
 
-	deltas := make(map[AccountID]int64, len(journal.entries))
-	for _, entry := range journal.entries {
-		account, exists := b.accounts[entry.accountID]
-		if !exists {
-			return PostResult{}, ErrAccountNotFound
-		}
-		if account.currency != entry.amount.Currency() {
-			return PostResult{}, ErrAccountCurrencyMismatch
-		}
-
-		delta := entry.amount.AmountMinor()
-		if entry.side != account.normalSide {
-			delta = -delta
-		}
-		updated, ok := safeSignedAdd(deltas[entry.accountID], delta)
-		if !ok {
-			return PostResult{}, ErrAmountOverflow
-		}
-		deltas[entry.accountID] = updated
+	states := make(map[AccountID]accountState, len(b.accounts))
+	for accountID, account := range b.accounts {
+		states[accountID] = accountState{account: account, balance: b.balances[accountID]}
 	}
-
-	nextBalances := make(map[AccountID]int64, len(deltas))
-	for accountID, delta := range deltas {
-		next, ok := safeSignedAdd(b.balances[accountID], delta)
-		if !ok {
-			return PostResult{}, ErrAmountOverflow
-		}
-		if next < 0 {
-			return PostResult{}, ErrInsufficientBalance
-		}
-		nextBalances[accountID] = next
+	nextBalances, err := evaluatePosting(journal, states)
+	if err != nil {
+		return PostResult{}, err
 	}
 
 	for accountID, balance := range nextBalances {
@@ -207,14 +182,4 @@ func oppositeEntries(original, reversal []Entry) bool {
 		}
 	}
 	return true
-}
-
-func safeSignedAdd(left, right int64) (int64, bool) {
-	if right > 0 && left > math.MaxInt64-right {
-		return 0, false
-	}
-	if right < 0 && left < math.MinInt64-right {
-		return 0, false
-	}
-	return left + right, true
 }
