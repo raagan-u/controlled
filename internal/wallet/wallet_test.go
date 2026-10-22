@@ -113,6 +113,25 @@ func TestOnboardingRejectsDuplicateEmail(t *testing.T) {
 	}
 }
 
+func TestOnboardingPropagatesIDFailure(t *testing.T) {
+	t.Parallel()
+
+	wantErr := errors.New("entropy unavailable")
+	service := wallet.NewOnboardingService(
+		failingIDs{err: wantErr},
+		fixedClock{now: time.Now()},
+		wallet.NewMemoryProvisioningStore(),
+	)
+	_, err := service.Onboard(t.Context(), "onboard-1", wallet.OnboardingRequest{
+		Email:       "founder@example.com",
+		DisplayName: "Raagan",
+		Currency:    "USD",
+	})
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("Onboard() error = %v, want %v", err, wantErr)
+	}
+}
+
 func assertAccountKinds(t *testing.T, accounts []ledger.Account) {
 	t.Helper()
 
@@ -146,13 +165,21 @@ type sequenceIDs struct {
 	next int
 }
 
-func (s *sequenceIDs) NewID() string {
+func (s *sequenceIDs) NewID() (string, error) {
 	s.next++
-	return "id-" + strconv.Itoa(s.next)
+	return "id-" + strconv.Itoa(s.next), nil
 }
 
 type fixedClock struct {
 	now time.Time
+}
+
+type failingIDs struct {
+	err error
+}
+
+func (f failingIDs) NewID() (string, error) {
+	return "", f.err
 }
 
 func (c fixedClock) Now() time.Time {

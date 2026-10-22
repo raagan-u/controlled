@@ -10,7 +10,7 @@ import (
 )
 
 type IDGenerator interface {
-	NewID() string
+	NewID() (string, error)
 }
 
 type Clock interface {
@@ -94,8 +94,12 @@ func (s *OnboardingService) Onboard(
 	}
 
 	now := s.clock.Now()
+	userID, err := s.ids.NewID()
+	if err != nil {
+		return OnboardingResult{}, err
+	}
 	user, err := identity.NewUser(
-		identity.UserID(s.ids.NewID()),
+		identity.UserID(userID),
 		request.Email,
 		request.DisplayName,
 		now,
@@ -104,13 +108,21 @@ func (s *OnboardingService) Onboard(
 		return OnboardingResult{}, err
 	}
 
+	accountIDs, err := generateIDs(s.ids, 3)
+	if err != nil {
+		return OnboardingResult{}, err
+	}
 	accountSet := AccountSet{
-		Available:         ledger.AccountID(s.ids.NewID()),
-		Pending:           ledger.AccountID(s.ids.NewID()),
-		CommitmentReserve: ledger.AccountID(s.ids.NewID()),
+		Available:         ledger.AccountID(accountIDs[0]),
+		Pending:           ledger.AccountID(accountIDs[1]),
+		CommitmentReserve: ledger.AccountID(accountIDs[2]),
+	}
+	walletID, err := s.ids.NewID()
+	if err != nil {
+		return OnboardingResult{}, err
 	}
 	wallet, err := NewWallet(
-		WalletID(s.ids.NewID()),
+		WalletID(walletID),
 		user.ID(),
 		strings.ToUpper(strings.TrimSpace(request.Currency)),
 		accountSet,
@@ -134,6 +146,18 @@ func (s *OnboardingService) Onboard(
 		return OnboardingResult{}, err
 	}
 	return OnboardingResult{Provisioning: stored, Duplicate: duplicate}, nil
+}
+
+func generateIDs(generator IDGenerator, count int) ([]string, error) {
+	ids := make([]string, 0, count)
+	for range count {
+		id, err := generator.NewID()
+		if err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, nil
 }
 
 func walletAccounts(wallet Wallet) ([]ledger.Account, error) {
