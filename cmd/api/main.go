@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/raagan-u/pay-pact/internal/identity"
 	"github.com/raagan-u/pay-pact/internal/platform"
 	"github.com/raagan-u/pay-pact/internal/platform/config"
 	"github.com/raagan-u/pay-pact/internal/platform/httpapi"
@@ -54,9 +55,19 @@ func run(ctx context.Context) error {
 		platform.SystemClock{},
 		store,
 	)
+	sessions := identity.NewSessionService(
+		platform.NewUUIDGenerator(),
+		platform.NewTokenGenerator(),
+		platform.SystemClock{},
+		identity.NewPostgresSessionStore(database),
+		24*time.Hour,
+	)
+	sessionHandler := identity.NewSessionHandler(sessions)
 
 	mux := http.NewServeMux()
 	mux.Handle("POST /v1/demo/users", wallet.NewOnboardingHandler(onboarding))
+	mux.HandleFunc("POST /v1/demo/sessions", sessionHandler.Start)
+	mux.HandleFunc("DELETE /v1/sessions/current", sessionHandler.End)
 	health := httpapi.NewHealthHandler(database, configuration.DatabasePingTimeout)
 	mux.HandleFunc("GET /healthz", health.Liveness)
 	mux.HandleFunc("GET /readyz", health.Readiness)

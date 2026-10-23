@@ -32,6 +32,30 @@ func TestUUIDGeneratorPropagatesReaderFailure(t *testing.T) {
 	}
 }
 
+func TestTokenGenerator(t *testing.T) {
+	t.Parallel()
+
+	generator := platform.NewTokenGeneratorFrom(bytes.NewReader(make([]byte, 32)))
+	token, err := generator.NewToken()
+	if err != nil {
+		t.Fatalf("NewToken() error = %v", err)
+	}
+	if token != "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" {
+		t.Fatalf("NewToken() = %q", token)
+	}
+}
+
+func TestTokenGeneratorPropagatesReaderFailure(t *testing.T) {
+	t.Parallel()
+
+	wantErr := errors.New("entropy unavailable")
+	generator := platform.NewTokenGeneratorFrom(failingReader{err: wantErr})
+	_, err := generator.NewToken()
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("NewToken() error = %v, want %v", err, wantErr)
+	}
+}
+
 type failingReader struct {
 	err error
 }

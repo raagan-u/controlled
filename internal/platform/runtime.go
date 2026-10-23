@@ -3,6 +3,7 @@ package platform
 
 import (
 	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"time"
@@ -12,6 +13,31 @@ type SystemClock struct{}
 
 func (SystemClock) Now() time.Time {
 	return time.Now().UTC()
+}
+
+type TokenGenerator struct {
+	reader io.Reader
+}
+
+func NewTokenGenerator() TokenGenerator {
+	return TokenGenerator{reader: rand.Reader}
+}
+
+func NewTokenGeneratorFrom(reader io.Reader) TokenGenerator {
+	return TokenGenerator{reader: reader}
+}
+
+func (g TokenGenerator) NewToken() (string, error) {
+	reader := g.reader
+	if reader == nil {
+		reader = rand.Reader
+	}
+
+	var value [32]byte
+	if _, err := io.ReadFull(reader, value[:]); err != nil {
+		return "", fmt.Errorf("generate session token: %w", err)
+	}
+	return base64.RawURLEncoding.EncodeToString(value[:]), nil
 }
 
 type UUIDGenerator struct {
