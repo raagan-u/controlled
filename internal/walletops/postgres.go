@@ -74,7 +74,7 @@ func (r *PostgresRepository) CreateFunding(
 		INSERT INTO funding_intents (
 			id, owner_id, wallet_id, idempotency_key, amount_minor, currency,
 			status, created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, 'CREATED', $7, $7)
+		) VALUES ($1, $2, $3::text::uuid, $4, $5, $6, 'CREATED', $7, $7)
 	`, parsedID, ownerID, walletID, key, candidate.Amount.AmountMinor(), currency, candidate.CreatedAt)
 	if err != nil {
 		return FundingIntent{}, mapOperationError(err)
@@ -109,7 +109,7 @@ func (r *PostgresRepository) AttachFundingOrder(
 		       status = 'AWAITING_CONFIRMATION',
 		       updated_at = $5
 		 WHERE id = $1
-		   AND owner_id = $2
+		   AND owner_id = $2::text::uuid
 		   AND status = 'CREATED'
 	`, parsedID, ownerID, order.ID, order.ApprovalURL, now)
 	if err != nil {
@@ -202,11 +202,11 @@ func (r *PostgresRepository) CompleteFunding(
 	_, err = tx.Exec(ctx, `
 		UPDATE funding_intents
 		   SET status = 'COMPLETED',
-		       ledger_transaction_id = $2,
+		       ledger_transaction_id = $2::text::uuid,
 		       updated_at = $3,
 		       completed_at = $3
-		 WHERE id = $1
-	`, id, posted.JournalID, now)
+		 WHERE id = $1::text::uuid
+	`, string(id), string(posted.JournalID), now)
 	if err != nil {
 		return FundingIntent{}, mapOperationError(err)
 	}
@@ -318,8 +318,8 @@ func (r *PostgresRepository) CreateTransfer(
 		INSERT INTO internal_transfers (
 			id, sender_wallet_id, recipient_wallet_id, idempotency_key,
 			amount_minor, currency, ledger_transaction_id, created_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-	`, parsedID, senderWallet, recipientWallet, key, candidate.Amount.AmountMinor(), currency, posted.JournalID, candidate.CreatedAt)
+		) VALUES ($1, $2::text::uuid, $3::text::uuid, $4, $5, $6, $7::text::uuid, $8)
+	`, parsedID, senderWallet, recipientWallet, key, candidate.Amount.AmountMinor(), currency, string(posted.JournalID), candidate.CreatedAt)
 	if err != nil {
 		return Transfer{}, mapOperationError(err)
 	}
@@ -412,8 +412,8 @@ func (r *PostgresRepository) ReserveWithdrawal(
 			id, owner_id, wallet_id, idempotency_key, destination,
 			amount_minor, currency, status, reservation_transaction_id,
 			created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, 'RESERVED', $8, $9, $9)
-	`, parsedID, ownerID, walletID, key, candidate.Destination, candidate.Amount.AmountMinor(), currency, posted.JournalID, candidate.CreatedAt)
+		) VALUES ($1, $2, $3::text::uuid, $4, $5, $6, $7, 'RESERVED', $8::text::uuid, $9, $9)
+	`, parsedID, ownerID, walletID, key, candidate.Destination, candidate.Amount.AmountMinor(), currency, string(posted.JournalID), candidate.CreatedAt)
 	if err != nil {
 		return Withdrawal{}, mapOperationError(err)
 	}
@@ -447,7 +447,7 @@ func (r *PostgresRepository) AttachPayout(
 		       status = 'PENDING',
 		       updated_at = $4
 		 WHERE id = $1
-		   AND owner_id = $2
+		   AND owner_id = $2::text::uuid
 		   AND status = 'RESERVED'
 	`, parsedID, ownerID, payout.ID, now)
 	if err != nil {
@@ -559,11 +559,11 @@ func (r *PostgresRepository) SettleWithdrawal(
 	_, err = tx.Exec(ctx, `
 		UPDATE withdrawals
 		   SET status = $2,
-		       settlement_transaction_id = $3,
+		       settlement_transaction_id = $3::text::uuid,
 		       updated_at = $4,
 		       completed_at = $4
-		 WHERE id = $1
-	`, id, status, posted.JournalID, now)
+		 WHERE id = $1::text::uuid
+	`, string(id), status, string(posted.JournalID), now)
 	if err != nil {
 		return Withdrawal{}, mapOperationError(err)
 	}
@@ -628,7 +628,7 @@ func accountForWallet(
 	err := query.QueryRow(ctx, `
 		SELECT id::text, currency
 		  FROM ledger_accounts
-		 WHERE wallet_id = $1 AND kind = $2
+		 WHERE wallet_id = $1::text::uuid AND kind = $2
 	`, walletID, kind).Scan(&accountID, &currency)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", "", ledger.ErrAccountNotFound
@@ -686,7 +686,7 @@ func loadFundingByKey(
 		       status, COALESCE(provider_order_id, ''), COALESCE(approval_url, ''),
 		       COALESCE(ledger_transaction_id::text, ''), created_at, updated_at, completed_at
 		  FROM funding_intents
-		 WHERE owner_id = $1 AND idempotency_key = $2`+suffix, ownerID, key))
+		 WHERE owner_id = $1::text::uuid AND idempotency_key = $2`+suffix, string(ownerID), key))
 }
 
 func loadFunding(
@@ -705,7 +705,7 @@ func loadFunding(
 		       status, COALESCE(provider_order_id, ''), COALESCE(approval_url, ''),
 		       COALESCE(ledger_transaction_id::text, ''), created_at, updated_at, completed_at
 		  FROM funding_intents
-		 WHERE owner_id = $1 AND id = $2`+suffix, ownerID, id))
+		 WHERE owner_id = $1::text::uuid AND id = $2::text::uuid`+suffix, string(ownerID), string(id)))
 }
 
 func scanFunding(row pgx.Row) (FundingIntent, error) {
@@ -769,9 +769,9 @@ func loadTransferByKey(
 		  JOIN wallets AS sender ON sender.id = transfer.sender_wallet_id
 		  JOIN wallets AS recipient ON recipient.id = transfer.recipient_wallet_id
 		  JOIN users AS recipient_user ON recipient_user.id = recipient.owner_id
-		 WHERE sender.owner_id = $1 AND transfer.idempotency_key = $2
+		 WHERE sender.owner_id = $1::text::uuid AND transfer.idempotency_key = $2
 		 FOR UPDATE OF transfer
-	`, senderID, key).Scan(
+	`, string(senderID), key).Scan(
 		&id, &storedSenderID, &recipientID, &result.RecipientEmail,
 		&amountMinor, &currency, &result.LedgerTransactionID, &createdAt,
 	)
@@ -804,7 +804,7 @@ func loadWithdrawalByKey(
 	if forUpdate {
 		suffix = " FOR UPDATE"
 	}
-	return scanWithdrawal(query.QueryRow(ctx, withdrawalSelect+` WHERE owner_id = $1 AND idempotency_key = $2`+suffix, ownerID, key))
+	return scanWithdrawal(query.QueryRow(ctx, withdrawalSelect+` WHERE owner_id = $1::text::uuid AND idempotency_key = $2`+suffix, string(ownerID), key))
 }
 
 func loadWithdrawal(
@@ -818,7 +818,7 @@ func loadWithdrawal(
 	if forUpdate {
 		suffix = " FOR UPDATE"
 	}
-	return scanWithdrawal(query.QueryRow(ctx, withdrawalSelect+` WHERE owner_id = $1 AND id = $2`+suffix, ownerID, id))
+	return scanWithdrawal(query.QueryRow(ctx, withdrawalSelect+` WHERE owner_id = $1::text::uuid AND id = $2::text::uuid`+suffix, string(ownerID), string(id)))
 }
 
 const withdrawalSelect = `
