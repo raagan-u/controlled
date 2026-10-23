@@ -14,12 +14,100 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/raagan-u/pay-pact/internal/identity"
 	"github.com/raagan-u/pay-pact/internal/ledger"
+	"github.com/raagan-u/pay-pact/internal/money"
 )
 
 const onboardingIdempotencyScope = "wallet_onboarding"
 
 type PostgresProvisioningStore struct {
 	pool *pgxpool.Pool
+}
+
+func (s *PostgresProvisioningStore) WalletByUser(
+	ctx context.Context,
+	userID identity.UserID,
+) (Snapshot, error) {
+	if s == nil || s.pool == nil {
+		return Snapshot{}, ErrStoreUnavailable
+	}
+	parsedUserID, err := walletUUID(string(userID))
+	if err != nil {
+		return Snapshot{}, err
+	}
+
+	var walletID string
+	var currency string
+	var createdAt pgtype.Timestamptz
+	var availableID string
+	var pendingID string
+	var reserveID string
+	var availableMinor int64
+	var pendingMinor int64
+	var reserveMinor int64
+	err = s.pool.QueryRow(ctx, `
+		SELECT wallet.id::text,
+		       wallet.currency,
+		       wallet.created_at,
+		       max(account.id::text) FILTER (WHERE account.kind = 'AVAILABLE'),
+		       max(account.id::text) FILTER (WHERE account.kind = 'PENDING'),
+		       max(account.id::text) FILTER (WHERE account.kind = 'COMMITMENT_RESERVE'),
+		       max(balance.amount_minor) FILTER (WHERE account.kind = 'AVAILABLE'),
+		       max(balance.amount_minor) FILTER (WHERE account.kind = 'PENDING'),
+		       max(balance.amount_minor) FILTER (WHERE account.kind = 'COMMITMENT_RESERVE')
+		  FROM wallets AS wallet
+		  JOIN ledger_accounts AS account ON account.wallet_id = wallet.id
+		  JOIN ledger_account_balances AS balance ON balance.account_id = account.id
+		 WHERE wallet.owner_id = $1
+		 GROUP BY wallet.id
+	`, parsedUserID).Scan(
+		&walletID,
+		&currency,
+		&createdAt,
+		&availableID,
+		&pendingID,
+		&reserveID,
+		&availableMinor,
+		&pendingMinor,
+		&reserveMinor,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Snapshot{}, ErrProvisioningNotFound
+	}
+	if err != nil {
+		return Snapshot{}, fmt.Errorf("read wallet: %w", err)
+	}
+
+	wallet, err := NewWallet(
+		WalletID(walletID),
+		userID,
+		currency,
+		AccountSet{
+			Available:         ledger.AccountID(availableID),
+			Pending:           ledger.AccountID(pendingID),
+			CommitmentReserve: ledger.AccountID(reserveID),
+		},
+		createdAt.Time,
+	)
+	if err != nil {
+		return Snapshot{}, err
+	}
+	available, err := money.New(availableMinor, currency)
+	if err != nil {
+		return Snapshot{}, err
+	}
+	pending, err := money.New(pendingMinor, currency)
+	if err != nil {
+		return Snapshot{}, err
+	}
+	reserve, err := money.New(reserveMinor, currency)
+	if err != nil {
+		return Snapshot{}, err
+	}
+	return NewSnapshot(wallet, BalanceSet{
+		Available:         available,
+		Pending:           pending,
+		CommitmentReserve: reserve,
+	})
 }
 
 func NewPostgresProvisioningStore(pool *pgxpool.Pool) *PostgresProvisioningStore {

@@ -63,11 +63,14 @@ func run(ctx context.Context) error {
 		24*time.Hour,
 	)
 	sessionHandler := identity.NewSessionHandler(sessions)
+	walletReadHandler := wallet.NewReadHandler(store)
 
 	mux := http.NewServeMux()
 	mux.Handle("POST /v1/demo/users", wallet.NewOnboardingHandler(onboarding))
 	mux.HandleFunc("POST /v1/demo/sessions", sessionHandler.Start)
 	mux.HandleFunc("DELETE /v1/sessions/current", sessionHandler.End)
+	mux.Handle("GET /v1/users/current", identity.RequireSession(sessions, http.HandlerFunc(identity.CurrentUserHandler)))
+	mux.Handle("GET /v1/wallet", identity.RequireSession(sessions, http.HandlerFunc(walletReadHandler.Wallet)))
 	health := httpapi.NewHealthHandler(database, configuration.DatabasePingTimeout)
 	mux.HandleFunc("GET /healthz", health.Liveness)
 	mux.HandleFunc("GET /readyz", health.Readiness)

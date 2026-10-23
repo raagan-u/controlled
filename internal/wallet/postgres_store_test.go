@@ -15,6 +15,9 @@ func TestPostgresProvisioningStoreRequiresPool(t *testing.T) {
 	if _, err := store.ByUser(t.Context(), "user"); !errors.Is(err, ErrStoreUnavailable) {
 		t.Fatalf("ByUser() error = %v, want %v", err, ErrStoreUnavailable)
 	}
+	if _, err := store.WalletByUser(t.Context(), "user"); !errors.Is(err, ErrStoreUnavailable) {
+		t.Fatalf("WalletByUser() error = %v, want %v", err, ErrStoreUnavailable)
+	}
 }
 
 func TestWalletUUIDRejectsDomainIdentifiers(t *testing.T) {

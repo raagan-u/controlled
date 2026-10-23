@@ -26,6 +26,17 @@ func NewSessionHandler(sessions SessionManager) *SessionHandler {
 	return &SessionHandler{sessions: sessions}
 }
 
+func CurrentUserHandler(response http.ResponseWriter, request *http.Request) {
+	user, ok := CurrentUser(request.Context())
+	if !ok {
+		httpapi.WriteError(response, http.StatusUnauthorized, "authentication_required", "A valid PayPact session is required.")
+		return
+	}
+	httpapi.WriteJSON(response, http.StatusOK, struct {
+		User userResponse `json:"user"`
+	}{User: newUserResponse(user)})
+}
+
 func (h *SessionHandler) Start(response http.ResponseWriter, request *http.Request) {
 	var input struct {
 		Email string `json:"email"`
