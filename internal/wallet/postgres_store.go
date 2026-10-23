@@ -1,0 +1,312 @@
+package wallet
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/raagan-u/pay-pact/internal/identity"
+	"github.com/raagan-u/pay-pact/internal/ledger"
+)
+
+const onboardingIdempotencyScope = "wallet_onboarding"
+
+type PostgresProvisioningStore struct {
+	pool *pgxpool.Pool
+}
+
+func NewPostgresProvisioningStore(pool *pgxpool.Pool) *PostgresProvisioningStore {
+	return &PostgresProvisioningStore{pool: pool}
+}
+
+func (s *PostgresProvisioningStore) Create(
+	ctx context.Context,
+	idempotencyKey string,
+	provisioning Provisioning,
+) (Provisioning, bool, error) {
+	if s == nil || s.pool == nil {
+		return Provisioning{}, false, ErrStoreUnavailable
+	}
+	if idempotencyKey == "" {
+		return Provisioning{}, false, ErrInvalidIdempotencyKey
+	}
+
+	transaction, err := s.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
+	if err != nil {
+		return Provisioning{}, false, fmt.Errorf("begin wallet provisioning: %w", err)
+	}
+	defer func() {
+		_ = transaction.Rollback(context.Background())
+	}()
+
+	if _, err := transaction.Exec(
+		ctx,
+		"SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+		onboardingIdempotencyScope+":"+idempotencyKey,
+	); err != nil {
+		return Provisioning{}, false, fmt.Errorf("lock onboarding key: %w", err)
+	}
+
+	requestHash := onboardingHash(provisioning)
+	stored, found, err := loadIdempotentProvisioning(ctx, transaction, idempotencyKey, requestHash)
+	if err != nil {
+		return Provisioning{}, false, err
+	}
+	if found {
+		return stored, true, nil
+	}
+
+	if err := insertProvisioning(ctx, transaction, provisioning); err != nil {
+		return Provisioning{}, false, err
+	}
+	responseBody, err := json.Marshal(struct {
+		UserID string `json:"userId"`
+	}{UserID: string(provisioning.user.ID())})
+	if err != nil {
+		return Provisioning{}, false, fmt.Errorf("encode onboarding response: %w", err)
+	}
+	if _, err := transaction.Exec(ctx, `
+		INSERT INTO idempotency_keys (scope, key, request_hash, response_status, response_body)
+		VALUES ($1, $2, $3, 201, $4)
+	`, onboardingIdempotencyScope, idempotencyKey, requestHash, responseBody); err != nil {
+		return Provisioning{}, false, mapProvisioningError(err)
+	}
+	if err := transaction.Commit(ctx); err != nil {
+		return Provisioning{}, false, mapProvisioningError(err)
+	}
+	return provisioning, false, nil
+}
+
+func (s *PostgresProvisioningStore) ByUser(
+	ctx context.Context,
+	userID identity.UserID,
+) (Provisioning, error) {
+	if s == nil || s.pool == nil {
+		return Provisioning{}, ErrStoreUnavailable
+	}
+	return loadProvisioning(ctx, s.pool, userID)
+}
+
+type provisioningQuerier interface {
+	Query(context.Context, string, ...any) (pgx.Rows, error)
+	QueryRow(context.Context, string, ...any) pgx.Row
+}
+
+func loadIdempotentProvisioning(
+	ctx context.Context,
+	transaction pgx.Tx,
+	idempotencyKey string,
+	requestHash string,
+) (Provisioning, bool, error) {
+	var storedHash string
+	var responseBody []byte
+	err := transaction.QueryRow(ctx, `
+		SELECT request_hash, response_body
+		  FROM idempotency_keys
+		 WHERE scope = $1 AND key = $2
+	`, onboardingIdempotencyScope, idempotencyKey).Scan(&storedHash, &responseBody)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Provisioning{}, false, nil
+	}
+	if err != nil {
+		return Provisioning{}, false, fmt.Errorf("read onboarding key: %w", err)
+	}
+	if storedHash != requestHash {
+		return Provisioning{}, false, ErrIdempotencyConflict
+	}
+
+	var response struct {
+		UserID string `json:"userId"`
+	}
+	if err := json.Unmarshal(responseBody, &response); err != nil || response.UserID == "" {
+		return Provisioning{}, false, fmt.Errorf("decode onboarding response: %w", err)
+	}
+	stored, err := loadProvisioning(ctx, transaction, identity.UserID(response.UserID))
+	return stored, true, err
+}
+
+func insertProvisioning(ctx context.Context, transaction pgx.Tx, provisioning Provisioning) error {
+	userID, err := walletUUID(string(provisioning.user.ID()))
+	if err != nil {
+		return err
+	}
+	walletID, err := walletUUID(string(provisioning.wallet.ID()))
+	if err != nil {
+		return err
+	}
+
+	if _, err := transaction.Exec(ctx, `
+		INSERT INTO users (id, email, display_name, created_at)
+		VALUES ($1, $2, $3, $4)
+	`, userID, provisioning.user.Email(), provisioning.user.DisplayName(), provisioning.user.CreatedAt()); err != nil {
+		return mapProvisioningError(err)
+	}
+	if _, err := transaction.Exec(ctx, `
+		INSERT INTO wallets (id, owner_id, currency, created_at)
+		VALUES ($1, $2, $3, $4)
+	`, walletID, userID, provisioning.wallet.Currency(), provisioning.wallet.CreatedAt()); err != nil {
+		return mapProvisioningError(err)
+	}
+	for _, account := range provisioning.accounts {
+		accountID, err := walletUUID(string(account.ID()))
+		if err != nil {
+			return err
+		}
+		if _, err := transaction.Exec(ctx, `
+			INSERT INTO ledger_accounts (id, wallet_id, kind, normal_side, currency, created_at)
+			VALUES ($1, $2, $3, $4, $5, $6)
+		`, accountID, walletID, account.Kind(), account.NormalSide(), account.Currency(), provisioning.wallet.CreatedAt()); err != nil {
+			return mapProvisioningError(err)
+		}
+	}
+	return nil
+}
+
+func loadProvisioning(
+	ctx context.Context,
+	query provisioningQuerier,
+	userID identity.UserID,
+) (Provisioning, error) {
+	parsedUserID, err := walletUUID(string(userID))
+	if err != nil {
+		return Provisioning{}, err
+	}
+
+	var storedUserID string
+	var email string
+	var displayName string
+	var userCreatedAt pgtype.Timestamptz
+	var walletID string
+	var currency string
+	var walletCreatedAt pgtype.Timestamptz
+	err = query.QueryRow(ctx, `
+		SELECT users.id::text,
+		       users.email,
+		       users.display_name,
+		       users.created_at,
+		       wallets.id::text,
+		       wallets.currency,
+		       wallets.created_at
+		  FROM users
+		  JOIN wallets ON wallets.owner_id = users.id
+		 WHERE users.id = $1
+	`, parsedUserID).Scan(
+		&storedUserID,
+		&email,
+		&displayName,
+		&userCreatedAt,
+		&walletID,
+		&currency,
+		&walletCreatedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Provisioning{}, ErrProvisioningNotFound
+	}
+	if err != nil {
+		return Provisioning{}, fmt.Errorf("read wallet provisioning: %w", err)
+	}
+
+	user, err := identity.NewUser(identity.UserID(storedUserID), email, displayName, userCreatedAt.Time)
+	if err != nil {
+		return Provisioning{}, err
+	}
+
+	rows, err := query.Query(ctx, `
+		SELECT id::text, kind, normal_side, currency
+		  FROM ledger_accounts
+		 WHERE wallet_id = $1
+		   AND kind IN ('AVAILABLE', 'PENDING', 'COMMITMENT_RESERVE')
+		 ORDER BY kind
+	`, walletID)
+	if err != nil {
+		return Provisioning{}, fmt.Errorf("read wallet accounts: %w", err)
+	}
+	defer rows.Close()
+
+	var accounts []ledger.Account
+	accountSet := AccountSet{}
+	for rows.Next() {
+		var accountID string
+		var kind ledger.AccountKind
+		var normalSide ledger.Side
+		var accountCurrency string
+		if err := rows.Scan(&accountID, &kind, &normalSide, &accountCurrency); err != nil {
+			return Provisioning{}, fmt.Errorf("scan wallet account: %w", err)
+		}
+		account, err := ledger.NewAccount(
+			ledger.AccountID(accountID),
+			ledger.OwnerID(storedUserID),
+			kind,
+			accountCurrency,
+		)
+		if err != nil || account.NormalSide() != normalSide {
+			return Provisioning{}, ErrInvalidAccountSet
+		}
+		accounts = append(accounts, account)
+		switch kind {
+		case ledger.AccountKindAvailable:
+			accountSet.Available = account.ID()
+		case ledger.AccountKindPending:
+			accountSet.Pending = account.ID()
+		case ledger.AccountKindCommitmentReserve:
+			accountSet.CommitmentReserve = account.ID()
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return Provisioning{}, fmt.Errorf("iterate wallet accounts: %w", err)
+	}
+
+	wallet, err := NewWallet(
+		WalletID(walletID),
+		user.ID(),
+		currency,
+		accountSet,
+		walletCreatedAt.Time,
+	)
+	if err != nil {
+		return Provisioning{}, err
+	}
+	return newProvisioning(user, wallet, accounts)
+}
+
+func onboardingHash(provisioning Provisioning) string {
+	value := provisioning.user.Email() + "\x00" +
+		provisioning.user.DisplayName() + "\x00" +
+		provisioning.wallet.Currency()
+	sum := sha256.Sum256([]byte(value))
+	return hex.EncodeToString(sum[:])
+}
+
+func walletUUID(value string) (pgtype.UUID, error) {
+	var parsed pgtype.UUID
+	if err := parsed.Scan(value); err != nil || !parsed.Valid {
+		return pgtype.UUID{}, fmt.Errorf("%w: %q", ErrPersistenceID, value)
+	}
+	return parsed, nil
+}
+
+func mapProvisioningError(err error) error {
+	var databaseError *pgconn.PgError
+	if !errors.As(err, &databaseError) {
+		return err
+	}
+	switch databaseError.ConstraintName {
+	case "users_email_unique":
+		return ErrUserExists
+	case "wallets_owner_id_key":
+		return ErrWalletExists
+	case "users_pkey", "wallets_pkey", "ledger_accounts_pkey", "ledger_wallet_account_kind_unique":
+		return ErrProvisioningExists
+	case "idempotency_keys_pkey":
+		return ErrIdempotencyConflict
+	default:
+		return err
+	}
+}
