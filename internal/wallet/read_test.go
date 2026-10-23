@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/raagan-u/pay-pact/internal/identity"
+	"github.com/raagan-u/pay-pact/internal/ledger"
 	"github.com/raagan-u/pay-pact/internal/money"
 	"github.com/raagan-u/pay-pact/internal/wallet"
 )
@@ -70,8 +71,68 @@ func TestWalletReadHandlerReturnsAuthenticatedWallet(t *testing.T) {
 	}
 }
 
+func TestWalletTransactionsHandler(t *testing.T) {
+	t.Parallel()
+
+	user, err := identity.NewUser("user-1", "founder@example.com", "Raagan", time.Now())
+	if err != nil {
+		t.Fatalf("NewUser() error = %v", err)
+	}
+	amount, err := money.New(2500, "USD")
+	if err != nil {
+		t.Fatalf("money.New() error = %v", err)
+	}
+	reader := stubWalletReader{transactions: []wallet.Transaction{{
+		ID:          "journal-1",
+		Reference:   ledger.Reference{Type: "FUNDING", ID: "funding-1"},
+		Description: "Wallet funding",
+		OccurredAt:  time.Now().UTC(),
+		PostedAt:    time.Now().UTC(),
+		Entries: []wallet.TransactionEntry{{
+			AccountID: "available-1", AccountKind: ledger.AccountKindAvailable,
+			Side: ledger.SideCredit, Amount: amount,
+		}},
+	}}}
+	handler := wallet.NewReadHandler(reader)
+	protected := identity.RequireSession(walletSessionManager{user: user}, http.HandlerFunc(handler.Transactions))
+	request := httptest.NewRequest(http.MethodGet, "/v1/wallet/transactions", nil)
+	request.Header.Set("Authorization", "Bearer test-token")
+	response := httptest.NewRecorder()
+	protected.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+	}
+	var payload struct {
+		Transactions []struct {
+			ID        string `json:"id"`
+			Reference struct {
+				Type string `json:"type"`
+			} `json:"reference"`
+			Entries []struct {
+				Amount struct {
+					AmountMinor int64 `json:"amountMinor"`
+				} `json:"amount"`
+			} `json:"entries"`
+		} `json:"transactions"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(payload.Transactions) != 1 || payload.Transactions[0].ID != "journal-1" ||
+		payload.Transactions[0].Reference.Type != "FUNDING" ||
+		payload.Transactions[0].Entries[0].Amount.AmountMinor != 2500 {
+		t.Fatalf("response = %#v", payload)
+	}
+}
+
 type stubWalletReader struct {
-	snapshot wallet.Snapshot
+	snapshot     wallet.Snapshot
+	transactions []wallet.Transaction
+}
+
+func (s stubWalletReader) TransactionsByUser(context.Context, identity.UserID, int) ([]wallet.Transaction, error) {
+	return s.transactions, nil
 }
 
 func (s stubWalletReader) WalletByUser(context.Context, identity.UserID) (wallet.Snapshot, error) {

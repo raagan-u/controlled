@@ -110,6 +110,128 @@ func (s *PostgresProvisioningStore) WalletByUser(
 	})
 }
 
+func (s *PostgresProvisioningStore) TransactionsByUser(
+	ctx context.Context,
+	userID identity.UserID,
+	limit int,
+) ([]Transaction, error) {
+	if s == nil || s.pool == nil {
+		return nil, ErrStoreUnavailable
+	}
+	parsedUserID, err := walletUUID(string(userID))
+	if err != nil {
+		return nil, err
+	}
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+
+	rows, err := s.pool.Query(ctx, `
+		WITH wallet_accounts AS (
+			SELECT account.id, account.kind
+			  FROM wallets AS wallet
+			  JOIN ledger_accounts AS account ON account.wallet_id = wallet.id
+			 WHERE wallet.owner_id = $1
+		), recent_transactions AS (
+			SELECT transaction.id, transaction.posted_at
+			  FROM ledger_transactions AS transaction
+			 WHERE EXISTS (
+				SELECT 1
+				  FROM ledger_entries AS entry
+				  JOIN wallet_accounts ON wallet_accounts.id = entry.account_id
+				 WHERE entry.transaction_id = transaction.id
+			 )
+			 ORDER BY transaction.posted_at DESC, transaction.id DESC
+			 LIMIT $2
+		)
+		SELECT transaction.id::text,
+		       transaction.reference_type,
+		       transaction.reference_id,
+		       transaction.description,
+		       transaction.occurred_at,
+		       transaction.posted_at,
+		       EXISTS (
+			       SELECT 1
+			         FROM ledger_transactions AS reversal
+			        WHERE reversal.reverses_transaction_id = transaction.id
+		       ) AS reversed,
+		       entry.account_id::text,
+		       wallet_accounts.kind,
+		       entry.side,
+		       entry.amount_minor,
+		       entry.currency
+		  FROM recent_transactions
+		  JOIN ledger_transactions AS transaction ON transaction.id = recent_transactions.id
+		  JOIN ledger_entries AS entry ON entry.transaction_id = transaction.id
+		  JOIN wallet_accounts ON wallet_accounts.id = entry.account_id
+		 ORDER BY transaction.posted_at DESC, transaction.id DESC, entry.line_number
+	`, parsedUserID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("read wallet transactions: %w", err)
+	}
+	defer rows.Close()
+
+	transactions := make([]Transaction, 0)
+	byID := make(map[ledger.JournalID]int)
+	for rows.Next() {
+		var id string
+		var reference ledger.Reference
+		var description string
+		var occurredAt pgtype.Timestamptz
+		var postedAt pgtype.Timestamptz
+		var reversed bool
+		var accountID string
+		var accountKind ledger.AccountKind
+		var side ledger.Side
+		var amountMinor int64
+		var currency string
+		if err := rows.Scan(
+			&id,
+			&reference.Type,
+			&reference.ID,
+			&description,
+			&occurredAt,
+			&postedAt,
+			&reversed,
+			&accountID,
+			&accountKind,
+			&side,
+			&amountMinor,
+			&currency,
+		); err != nil {
+			return nil, fmt.Errorf("scan wallet transaction: %w", err)
+		}
+		amount, err := money.New(amountMinor, currency)
+		if err != nil {
+			return nil, err
+		}
+		journalID := ledger.JournalID(id)
+		index, exists := byID[journalID]
+		if !exists {
+			index = len(transactions)
+			byID[journalID] = index
+			transactions = append(transactions, Transaction{
+				ID:          journalID,
+				Reference:   reference,
+				Description: description,
+				OccurredAt:  occurredAt.Time,
+				PostedAt:    postedAt.Time,
+				Reversed:    reversed,
+			})
+		}
+		transactions[index].Entries = append(transactions[index].Entries, TransactionEntry{
+			AccountID:   ledger.AccountID(accountID),
+			AccountKind: accountKind,
+			Side:        side,
+			Amount:      amount,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate wallet transactions: %w", err)
+	}
+	return transactions, nil
+}
+
 func NewPostgresProvisioningStore(pool *pgxpool.Pool) *PostgresProvisioningStore {
 	return &PostgresProvisioningStore{pool: pool}
 }

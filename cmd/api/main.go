@@ -71,6 +71,7 @@ func run(ctx context.Context) error {
 	mux.HandleFunc("DELETE /v1/sessions/current", sessionHandler.End)
 	mux.Handle("GET /v1/users/current", identity.RequireSession(sessions, http.HandlerFunc(identity.CurrentUserHandler)))
 	mux.Handle("GET /v1/wallet", identity.RequireSession(sessions, http.HandlerFunc(walletReadHandler.Wallet)))
+	mux.Handle("GET /v1/wallet/transactions", identity.RequireSession(sessions, http.HandlerFunc(walletReadHandler.Transactions)))
 	health := httpapi.NewHealthHandler(database, configuration.DatabasePingTimeout)
 	mux.HandleFunc("GET /healthz", health.Liveness)
 	mux.HandleFunc("GET /readyz", health.Readiness)

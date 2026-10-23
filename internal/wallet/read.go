@@ -2,8 +2,10 @@ package wallet
 
 import (
 	"context"
+	"time"
 
 	"github.com/raagan-u/pay-pact/internal/identity"
+	"github.com/raagan-u/pay-pact/internal/ledger"
 	"github.com/raagan-u/pay-pact/internal/money"
 )
 
@@ -33,4 +35,22 @@ func (s Snapshot) Balances() BalanceSet { return s.balances }
 
 type Reader interface {
 	WalletByUser(context.Context, identity.UserID) (Snapshot, error)
+	TransactionsByUser(context.Context, identity.UserID, int) ([]Transaction, error)
+}
+
+type TransactionEntry struct {
+	AccountID   ledger.AccountID
+	AccountKind ledger.AccountKind
+	Side        ledger.Side
+	Amount      money.Money
+}
+
+type Transaction struct {
+	ID          ledger.JournalID
+	Reference   ledger.Reference
+	Description string
+	OccurredAt  time.Time
+	PostedAt    time.Time
+	Reversed    bool
+	Entries     []TransactionEntry
 }
