@@ -48,7 +48,7 @@ func run(ctx context.Context) error {
 		return err
 	}
 
-	store := wallet.NewMemoryProvisioningStore()
+	store := wallet.NewPostgresProvisioningStore(database)
 	onboarding := wallet.NewOnboardingService(
 		platform.NewUUIDGenerator(),
 		platform.SystemClock{},
