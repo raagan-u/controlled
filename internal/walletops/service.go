@@ -1,0 +1,330 @@
+package walletops
+
+import (
+	"context"
+	"strings"
+	"time"
+
+	"github.com/raagan-u/pay-pact/internal/custody"
+	"github.com/raagan-u/pay-pact/internal/identity"
+	"github.com/raagan-u/pay-pact/internal/ledger"
+	"github.com/raagan-u/pay-pact/internal/money"
+)
+
+type IDGenerator interface {
+	NewID() (string, error)
+}
+
+type Clock interface {
+	Now() time.Time
+}
+
+type Repository interface {
+	CreateFunding(context.Context, string, FundingIntent) (FundingIntent, error)
+	AttachFundingOrder(context.Context, identity.UserID, OperationID, custody.FundingOrder, time.Time) (FundingIntent, error)
+	Funding(context.Context, identity.UserID, OperationID) (FundingIntent, error)
+	CompleteFunding(context.Context, identity.UserID, OperationID, string, ledger.JournalID, ledger.AccountID, time.Time) (FundingIntent, error)
+	CreateTransfer(context.Context, string, Transfer, ledger.JournalID) (Transfer, error)
+	ReserveWithdrawal(context.Context, string, Withdrawal, ledger.JournalID) (Withdrawal, error)
+	AttachPayout(context.Context, identity.UserID, OperationID, custody.Payout, time.Time) (Withdrawal, error)
+	Withdrawal(context.Context, identity.UserID, OperationID) (Withdrawal, error)
+	SettleWithdrawal(context.Context, identity.UserID, OperationID, bool, ledger.JournalID, ledger.AccountID, time.Time) (Withdrawal, error)
+}
+
+type Service struct {
+	ids     IDGenerator
+	clock   Clock
+	repo    Repository
+	custody custody.Provider
+	policy  Policy
+}
+
+func NewService(
+	ids IDGenerator,
+	clock Clock,
+	repo Repository,
+	provider custody.Provider,
+	policy Policy,
+) *Service {
+	return &Service{ids: ids, clock: clock, repo: repo, custody: provider, policy: policy}
+}
+
+func (s *Service) CreateFunding(
+	ctx context.Context,
+	key string,
+	ownerID identity.UserID,
+	amountMinor int64,
+	currency string,
+) (FundingIntent, error) {
+	if err := s.available(); err != nil {
+		return FundingIntent{}, err
+	}
+	key, err := normalizeKey(key)
+	if err != nil {
+		return FundingIntent{}, err
+	}
+	amount, err := money.New(amountMinor, strings.ToUpper(strings.TrimSpace(currency)))
+	if err != nil || !amount.Positive() || ownerID == "" {
+		return FundingIntent{}, ErrInvalidOperation
+	}
+	id, err := s.ids.NewID()
+	if err != nil {
+		return FundingIntent{}, err
+	}
+	now := s.clock.Now().UTC()
+	intent, err := s.repo.CreateFunding(ctx, key, FundingIntent{
+		ID: OperationID(id), OwnerID: ownerID, Amount: amount, Status: FundingCreated,
+		CreatedAt: now, UpdatedAt: now,
+	})
+	if err != nil {
+		return FundingIntent{}, err
+	}
+	if intent.Status != FundingCreated {
+		return intent, nil
+	}
+	order, err := s.custody.CreateFundingOrder(ctx, custody.CreateFundingOrder{
+		IdempotencyKey: "funding:" + string(intent.ID),
+		Amount:         intent.Amount,
+	})
+	if err != nil {
+		return FundingIntent{}, err
+	}
+	attached, err := s.repo.AttachFundingOrder(ctx, ownerID, intent.ID, order, s.clock.Now().UTC())
+	if err != nil {
+		return FundingIntent{}, err
+	}
+	attached.Duplicate = intent.Duplicate
+	return attached, nil
+}
+
+func (s *Service) ConfirmFunding(
+	ctx context.Context,
+	ownerID identity.UserID,
+	id OperationID,
+) (FundingIntent, error) {
+	if err := s.available(); err != nil {
+		return FundingIntent{}, err
+	}
+	intent, err := s.repo.Funding(ctx, ownerID, id)
+	if err != nil {
+		return FundingIntent{}, err
+	}
+	if intent.Status == FundingCompleted {
+		intent.Duplicate = true
+		return intent, nil
+	}
+	if intent.Status != FundingAwaitingConfirmation || intent.ProviderOrderID == "" {
+		return FundingIntent{}, ErrInvalidState
+	}
+	order, err := s.custody.CaptureFundingOrder(ctx, intent.ProviderOrderID)
+	if err != nil {
+		return FundingIntent{}, err
+	}
+	if order.Status != custody.FundingCaptured || !order.Amount.Equal(intent.Amount) {
+		return FundingIntent{}, ErrInvalidState
+	}
+	generated, err := generateIDs(s.ids, 2)
+	if err != nil {
+		return FundingIntent{}, err
+	}
+	return s.repo.CompleteFunding(
+		ctx,
+		ownerID,
+		id,
+		order.ID,
+		ledger.JournalID(generated[0]),
+		ledger.AccountID(generated[1]),
+		s.clock.Now().UTC(),
+	)
+}
+
+func (s *Service) Transfer(
+	ctx context.Context,
+	key string,
+	senderID identity.UserID,
+	recipientEmail string,
+	amountMinor int64,
+	currency string,
+) (Transfer, error) {
+	if err := s.available(); err != nil {
+		return Transfer{}, err
+	}
+	key, err := normalizeKey(key)
+	if err != nil {
+		return Transfer{}, err
+	}
+	recipientEmail = normalizedEmail(recipientEmail)
+	amount, err := money.New(amountMinor, strings.ToUpper(strings.TrimSpace(currency)))
+	if err != nil || !amount.Positive() || senderID == "" || recipientEmail == "" {
+		return Transfer{}, ErrInvalidOperation
+	}
+	if err := s.policy.Authorize(ctx, DebitRequest{
+		OwnerID: senderID, Kind: DebitInternalTransfer,
+		ReferenceKey: "internal-transfer:" + string(senderID) + ":" + key,
+		Amount:       amount,
+	}); err != nil {
+		return Transfer{}, err
+	}
+	generated, err := generateIDs(s.ids, 2)
+	if err != nil {
+		return Transfer{}, err
+	}
+	return s.repo.CreateTransfer(ctx, key, Transfer{
+		ID: OperationID(generated[0]), SenderID: senderID,
+		RecipientEmail: recipientEmail, Amount: amount, CreatedAt: s.clock.Now().UTC(),
+	}, ledger.JournalID(generated[1]))
+}
+
+func (s *Service) CreateWithdrawal(
+	ctx context.Context,
+	key string,
+	ownerID identity.UserID,
+	destination string,
+	amountMinor int64,
+	currency string,
+) (Withdrawal, error) {
+	if err := s.available(); err != nil {
+		return Withdrawal{}, err
+	}
+	key, err := normalizeKey(key)
+	if err != nil {
+		return Withdrawal{}, err
+	}
+	destination = strings.TrimSpace(destination)
+	amount, err := money.New(amountMinor, strings.ToUpper(strings.TrimSpace(currency)))
+	if err != nil || !amount.Positive() || ownerID == "" || destination == "" {
+		return Withdrawal{}, ErrInvalidOperation
+	}
+	if err := s.policy.Authorize(ctx, DebitRequest{
+		OwnerID: ownerID, Kind: DebitWithdrawal,
+		ReferenceKey: "withdrawal:" + string(ownerID) + ":" + key,
+		Amount:       amount,
+	}); err != nil {
+		return Withdrawal{}, err
+	}
+	generated, err := generateIDs(s.ids, 2)
+	if err != nil {
+		return Withdrawal{}, err
+	}
+	now := s.clock.Now().UTC()
+	withdrawal, err := s.repo.ReserveWithdrawal(ctx, key, Withdrawal{
+		ID: OperationID(generated[0]), OwnerID: ownerID, Destination: destination,
+		Amount: amount, Status: WithdrawalReserved, CreatedAt: now, UpdatedAt: now,
+	}, ledger.JournalID(generated[1]))
+	if err != nil {
+		return Withdrawal{}, err
+	}
+	if withdrawal.Status != WithdrawalReserved {
+		return withdrawal, nil
+	}
+	payout, err := s.custody.CreatePayout(ctx, custody.CreatePayout{
+		IdempotencyKey: "withdrawal:" + string(withdrawal.ID),
+		Amount:         withdrawal.Amount,
+		Destination:    withdrawal.Destination,
+	})
+	if err != nil {
+		return Withdrawal{}, err
+	}
+	attached, err := s.repo.AttachPayout(ctx, ownerID, withdrawal.ID, payout, s.clock.Now().UTC())
+	if err != nil {
+		return Withdrawal{}, err
+	}
+	attached.Duplicate = withdrawal.Duplicate
+	return attached, nil
+}
+
+func (s *Service) ReconcileWithdrawal(
+	ctx context.Context,
+	ownerID identity.UserID,
+	id OperationID,
+) (Withdrawal, error) {
+	if err := s.available(); err != nil {
+		return Withdrawal{}, err
+	}
+	withdrawal, err := s.repo.Withdrawal(ctx, ownerID, id)
+	if err != nil {
+		return Withdrawal{}, err
+	}
+	if withdrawal.Status == WithdrawalCompleted || withdrawal.Status == WithdrawalFailed {
+		withdrawal.Duplicate = true
+		return withdrawal, nil
+	}
+	if withdrawal.Status != WithdrawalPending || withdrawal.ProviderPayoutID == "" {
+		return Withdrawal{}, ErrInvalidState
+	}
+	payout, err := s.custody.GetPayout(ctx, withdrawal.ProviderPayoutID)
+	if err != nil {
+		return Withdrawal{}, err
+	}
+	if payout.Status == custody.PayoutPending {
+		return Withdrawal{}, ErrInvalidState
+	}
+	generated, err := generateIDs(s.ids, 2)
+	if err != nil {
+		return Withdrawal{}, err
+	}
+	return s.repo.SettleWithdrawal(
+		ctx,
+		ownerID,
+		id,
+		payout.Status == custody.PayoutSucceeded,
+		ledger.JournalID(generated[0]),
+		ledger.AccountID(generated[1]),
+		s.clock.Now().UTC(),
+	)
+}
+
+func (s *Service) SimulateWithdrawalSettlement(
+	ctx context.Context,
+	ownerID identity.UserID,
+	id OperationID,
+	succeed bool,
+) (Withdrawal, error) {
+	if err := s.available(); err != nil {
+		return Withdrawal{}, err
+	}
+	simulator, ok := s.custody.(custody.PayoutSimulator)
+	if !ok {
+		return Withdrawal{}, ErrUnavailable
+	}
+	withdrawal, err := s.repo.Withdrawal(ctx, ownerID, id)
+	if err != nil {
+		return Withdrawal{}, err
+	}
+	if withdrawal.Status == WithdrawalCompleted || withdrawal.Status == WithdrawalFailed {
+		withdrawal.Duplicate = true
+		return withdrawal, nil
+	}
+	if withdrawal.Status != WithdrawalPending || withdrawal.ProviderPayoutID == "" {
+		return Withdrawal{}, ErrInvalidState
+	}
+	payout, err := s.custody.GetPayout(ctx, withdrawal.ProviderPayoutID)
+	if err != nil {
+		return Withdrawal{}, err
+	}
+	if payout.Status == custody.PayoutPending {
+		if _, err := simulator.SettlePayout(ctx, payout.ID, succeed); err != nil {
+			return Withdrawal{}, err
+		}
+	}
+	return s.ReconcileWithdrawal(ctx, ownerID, id)
+}
+
+func (s *Service) available() error {
+	if s == nil || s.ids == nil || s.clock == nil || s.repo == nil || s.custody == nil || s.policy == nil {
+		return ErrUnavailable
+	}
+	return nil
+}
+
+func generateIDs(generator IDGenerator, count int) ([]string, error) {
+	values := make([]string, 0, count)
+	for range count {
+		value, err := generator.NewID()
+		if err != nil {
+			return nil, err
+		}
+		values = append(values, value)
+	}
+	return values, nil
+}
