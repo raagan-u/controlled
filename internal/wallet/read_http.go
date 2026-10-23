@@ -35,6 +35,72 @@ func (h *ReadHandler) Wallet(response http.ResponseWriter, request *http.Request
 	httpapi.WriteJSON(response, http.StatusOK, walletReadResponse(snapshot))
 }
 
+func (h *ReadHandler) Transactions(response http.ResponseWriter, request *http.Request) {
+	user, ok := identity.CurrentUser(request.Context())
+	if !ok {
+		httpapi.WriteError(response, http.StatusUnauthorized, "authentication_required", "A valid PayPact session is required.")
+		return
+	}
+	transactions, err := h.reader.TransactionsByUser(request.Context(), user.ID(), 50)
+	if err != nil {
+		httpapi.WriteError(response, http.StatusInternalServerError, "internal_error", "PayPact could not read wallet transactions.")
+		return
+	}
+
+	items := make([]transactionAPIResponse, 0, len(transactions))
+	for _, transaction := range transactions {
+		item := transactionAPIResponse{
+			ID: string(transaction.ID),
+			Reference: transactionReferenceAPIResponse{
+				Type: transaction.Reference.Type,
+				ID:   transaction.Reference.ID,
+			},
+			Description: transaction.Description,
+			OccurredAt:  transaction.OccurredAt,
+			PostedAt:    transaction.PostedAt,
+			Reversed:    transaction.Reversed,
+			Entries:     make([]transactionEntryAPIResponse, 0, len(transaction.Entries)),
+		}
+		for _, entry := range transaction.Entries {
+			item.Entries = append(item.Entries, transactionEntryAPIResponse{
+				AccountID:   string(entry.AccountID),
+				AccountKind: string(entry.AccountKind),
+				Side:        string(entry.Side),
+				Amount: moneyResponse{
+					AmountMinor: entry.Amount.AmountMinor(),
+					Currency:    entry.Amount.Currency(),
+				},
+			})
+		}
+		items = append(items, item)
+	}
+	httpapi.WriteJSON(response, http.StatusOK, struct {
+		Transactions []transactionAPIResponse `json:"transactions"`
+	}{Transactions: items})
+}
+
+type transactionAPIResponse struct {
+	ID          string                          `json:"id"`
+	Reference   transactionReferenceAPIResponse `json:"reference"`
+	Description string                          `json:"description"`
+	OccurredAt  time.Time                       `json:"occurredAt"`
+	PostedAt    time.Time                       `json:"postedAt"`
+	Reversed    bool                            `json:"reversed"`
+	Entries     []transactionEntryAPIResponse   `json:"entries"`
+}
+
+type transactionReferenceAPIResponse struct {
+	Type string `json:"type"`
+	ID   string `json:"id"`
+}
+
+type transactionEntryAPIResponse struct {
+	AccountID   string        `json:"accountId"`
+	AccountKind string        `json:"accountKind"`
+	Side        string        `json:"side"`
+	Amount      moneyResponse `json:"amount"`
+}
+
 type walletAPIResponse struct {
 	ID       string `json:"id"`
 	OwnerID  string `json:"ownerId"`

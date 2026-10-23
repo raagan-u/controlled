@@ -85,4 +85,11 @@ func TestPostgresOnboardingLifecycle(t *testing.T) {
 		snapshot.Balances().CommitmentReserve.AmountMinor() != 0 {
 		t.Fatalf("unexpected wallet snapshot: %+v", snapshot)
 	}
+	transactions, err := store.TransactionsByUser(ctx, first.Provisioning.User().ID(), 50)
+	if err != nil {
+		t.Fatalf("read transactions: %v", err)
+	}
+	if len(transactions) != 0 {
+		t.Fatalf("new wallet transactions = %d, want 0", len(transactions))
+	}
 }
