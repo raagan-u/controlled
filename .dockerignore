@@ -1,0 +1,14 @@
+.git
+.gitignore
+.DS_Store
+.env
+.env.*
+!.env.example
+**/*_test.go
+*.md
+mermaid-diagram.png
+execution_plan.md
+paypact-api
+bin/
+dist/
+tmp/
