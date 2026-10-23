@@ -735,10 +735,10 @@ func scanFunding(row pgx.Row) (FundingIntent, error) {
 	result.ID = OperationID(id)
 	result.OwnerID = identity.UserID(ownerID)
 	result.Amount = amount
-	result.CreatedAt = createdAt.Time
-	result.UpdatedAt = updatedAt.Time
+	result.CreatedAt = createdAt.Time.UTC()
+	result.UpdatedAt = updatedAt.Time.UTC()
 	if completedAt.Valid {
-		result.CompletedAt = completedAt.Time
+		result.CompletedAt = completedAt.Time.UTC()
 	}
 	return result, nil
 }
@@ -789,7 +789,7 @@ func loadTransferByKey(
 	result.SenderID = identity.UserID(storedSenderID)
 	result.RecipientID = identity.UserID(recipientID)
 	result.Amount = amount
-	result.CreatedAt = createdAt.Time
+	result.CreatedAt = createdAt.Time.UTC()
 	return result, nil
 }
 
@@ -857,10 +857,10 @@ func scanWithdrawal(row pgx.Row) (Withdrawal, error) {
 	result.ID = OperationID(id)
 	result.OwnerID = identity.UserID(ownerID)
 	result.Amount = amount
-	result.CreatedAt = createdAt.Time
-	result.UpdatedAt = updatedAt.Time
+	result.CreatedAt = createdAt.Time.UTC()
+	result.UpdatedAt = updatedAt.Time.UTC()
 	if completedAt.Valid {
-		result.CompletedAt = completedAt.Time
+		result.CompletedAt = completedAt.Time.UTC()
 	}
 	return result, nil
 }
