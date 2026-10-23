@@ -10,12 +10,15 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/raagan-u/pay-pact/internal/custody"
 	"github.com/raagan-u/pay-pact/internal/identity"
+	"github.com/raagan-u/pay-pact/internal/ledger"
 	"github.com/raagan-u/pay-pact/internal/platform"
 	"github.com/raagan-u/pay-pact/internal/platform/config"
 	"github.com/raagan-u/pay-pact/internal/platform/httpapi"
 	platformpostgres "github.com/raagan-u/pay-pact/internal/platform/postgres"
 	"github.com/raagan-u/pay-pact/internal/wallet"
+	"github.com/raagan-u/pay-pact/internal/walletops"
 )
 
 func main() {
@@ -64,6 +67,15 @@ func run(ctx context.Context) error {
 	)
 	sessionHandler := identity.NewSessionHandler(sessions)
 	walletReadHandler := wallet.NewReadHandler(store)
+	fakeCustody := custody.NewFake(platform.NewUUIDGenerator())
+	walletOperations := walletops.NewService(
+		platform.NewUUIDGenerator(),
+		platform.SystemClock{},
+		walletops.NewPostgresRepository(database, ledger.NewPostgresBook(database)),
+		fakeCustody,
+		walletops.AllowAllPolicy{},
+	)
+	walletOperationHandler := walletops.NewHandler(walletOperations)
 
 	mux := http.NewServeMux()
 	mux.Handle("POST /v1/demo/users", wallet.NewOnboardingHandler(onboarding))
@@ -72,6 +84,11 @@ func run(ctx context.Context) error {
 	mux.Handle("GET /v1/users/current", identity.RequireSession(sessions, http.HandlerFunc(identity.CurrentUserHandler)))
 	mux.Handle("GET /v1/wallet", identity.RequireSession(sessions, http.HandlerFunc(walletReadHandler.Wallet)))
 	mux.Handle("GET /v1/wallet/transactions", identity.RequireSession(sessions, http.HandlerFunc(walletReadHandler.Transactions)))
+	mux.Handle("POST /v1/wallet/funding-intents", identity.RequireSession(sessions, http.HandlerFunc(walletOperationHandler.CreateFunding)))
+	mux.Handle("POST /v1/demo/funding-intents/{id}/confirm", identity.RequireSession(sessions, http.HandlerFunc(walletOperationHandler.ConfirmFunding)))
+	mux.Handle("POST /v1/wallet/internal-transfers", identity.RequireSession(sessions, http.HandlerFunc(walletOperationHandler.CreateTransfer)))
+	mux.Handle("POST /v1/wallet/withdrawals", identity.RequireSession(sessions, http.HandlerFunc(walletOperationHandler.CreateWithdrawal)))
+	mux.Handle("POST /v1/demo/withdrawals/{id}/settle", identity.RequireSession(sessions, http.HandlerFunc(walletOperationHandler.SettleWithdrawal)))
 	health := httpapi.NewHealthHandler(database, configuration.DatabasePingTimeout)
 	mux.HandleFunc("GET /healthz", health.Liveness)
 	mux.HandleFunc("GET /readyz", health.Readiness)
