@@ -81,6 +81,23 @@ func TestRequireSessionRejectsMissingToken(t *testing.T) {
 	}
 }
 
+func TestCurrentUserHandler(t *testing.T) {
+	t.Parallel()
+
+	user := testUser(t)
+	protected := identity.RequireSession(
+		stubSessionManager{user: user},
+		http.HandlerFunc(identity.CurrentUserHandler),
+	)
+	request := httptest.NewRequest(http.MethodGet, "/v1/users/current", nil)
+	request.Header.Set("Authorization", "Bearer secret-token")
+	response := httptest.NewRecorder()
+	protected.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+	}
+}
+
 func testUser(t *testing.T) identity.User {
 	t.Helper()
 	user, err := identity.NewUser("user-1", "founder@example.com", "Raagan", time.Now())

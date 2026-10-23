@@ -44,10 +44,11 @@ func TestPostgresOnboardingLifecycle(t *testing.T) {
 		DisplayName: "Wallet Test",
 		Currency:    "USD",
 	}
+	store := wallet.NewPostgresProvisioningStore(pool)
 	service := wallet.NewOnboardingService(
 		ids,
 		platform.SystemClock{},
-		wallet.NewPostgresProvisioningStore(pool),
+		store,
 	)
 
 	first, err := service.Onboard(ctx, "test:"+emailID, request)
@@ -73,5 +74,15 @@ func TestPostgresOnboardingLifecycle(t *testing.T) {
 	}
 	if _, err := service.Onboard(ctx, "test:duplicate:"+emailID, request); !errors.Is(err, wallet.ErrUserExists) {
 		t.Fatalf("duplicate email error = %v, want %v", err, wallet.ErrUserExists)
+	}
+	snapshot, err := store.WalletByUser(ctx, first.Provisioning.User().ID())
+	if err != nil {
+		t.Fatalf("read wallet: %v", err)
+	}
+	if snapshot.Wallet().ID() != first.Provisioning.Wallet().ID() ||
+		snapshot.Balances().Available.AmountMinor() != 0 ||
+		snapshot.Balances().Pending.AmountMinor() != 0 ||
+		snapshot.Balances().CommitmentReserve.AmountMinor() != 0 {
+		t.Fatalf("unexpected wallet snapshot: %+v", snapshot)
 	}
 }
