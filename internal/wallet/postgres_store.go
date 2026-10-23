@@ -214,8 +214,8 @@ func (s *PostgresProvisioningStore) TransactionsByUser(
 				ID:          journalID,
 				Reference:   reference,
 				Description: description,
-				OccurredAt:  occurredAt.Time,
-				PostedAt:    postedAt.Time,
+				OccurredAt:  occurredAt.Time.UTC(),
+				PostedAt:    postedAt.Time.UTC(),
 				Reversed:    reversed,
 			})
 		}
