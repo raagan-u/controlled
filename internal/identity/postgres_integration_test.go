@@ -42,7 +42,7 @@ func TestPostgresSessionLifecycle(t *testing.T) {
 	email := fmt.Sprintf("session-%s@example.test", userID)
 	if _, err := pool.Exec(ctx, `
 		INSERT INTO users (id, email, display_name, created_at)
-		VALUES ($1, $2, 'Session Test', $3)
+		VALUES ($1::text::uuid, $2, 'Session Test', $3)
 	`, userID, email, time.Now().UTC()); err != nil {
 		t.Fatalf("create test user: %v", err)
 	}
