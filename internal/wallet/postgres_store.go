@@ -431,7 +431,7 @@ func loadProvisioning(
 	rows, err := query.Query(ctx, `
 		SELECT id::text, kind, normal_side, currency
 		  FROM ledger_accounts
-		 WHERE wallet_id = $1
+		 WHERE wallet_id = $1::text::uuid
 		   AND kind IN ('AVAILABLE', 'PENDING', 'COMMITMENT_RESERVE')
 		 ORDER BY kind
 	`, walletID)

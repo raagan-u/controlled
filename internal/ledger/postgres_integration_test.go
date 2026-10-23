@@ -45,19 +45,19 @@ func TestPostgresBookLifecycle(t *testing.T) {
 
 	if _, err := pool.Exec(ctx, `
 		INSERT INTO users (id, email, display_name, created_at)
-		VALUES ($1, $2, $3, $4)
+		VALUES ($1::text::uuid, $2, $3, $4)
 	`, userID, fmt.Sprintf("ledger-%s@example.test", userID), "Ledger Test", createdAt); err != nil {
 		t.Fatalf("create test user: %v", err)
 	}
 	if _, err := pool.Exec(ctx, `
 		INSERT INTO wallets (id, owner_id, currency, created_at)
-		VALUES ($1, $2, 'USD', $3)
+		VALUES ($1::text::uuid, $2::text::uuid, 'USD', $3)
 	`, walletID, userID, createdAt); err != nil {
 		t.Fatalf("create test wallet: %v", err)
 	}
 	if _, err := pool.Exec(ctx, `
 		INSERT INTO ledger_accounts (id, wallet_id, kind, normal_side, currency, created_at)
-		VALUES ($1, $2, 'AVAILABLE', 'CREDIT', 'USD', $3)
+		VALUES ($1::text::uuid, $2::text::uuid, 'AVAILABLE', 'CREDIT', 'USD', $3)
 	`, availableID, walletID, createdAt); err != nil {
 		t.Fatalf("create available account: %v", err)
 	}
@@ -185,7 +185,7 @@ func ensureCustodyAccount(
 	accountID := nextID(t, ids)
 	if _, err := pool.Exec(ctx, `
 		INSERT INTO ledger_accounts (id, kind, normal_side, currency, created_at)
-		VALUES ($1, 'CUSTODY_ASSET', 'DEBIT', 'USD', $2)
+		VALUES ($1::text::uuid, 'CUSTODY_ASSET', 'DEBIT', 'USD', $2)
 		ON CONFLICT DO NOTHING
 	`, accountID, time.Now().UTC()); err != nil {
 		t.Fatalf("ensure custody account: %v", err)
