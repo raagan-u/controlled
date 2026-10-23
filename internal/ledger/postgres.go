@@ -25,9 +25,6 @@ func (b *PostgresBook) Post(ctx context.Context, journal Journal) (PostResult, e
 	if b == nil || b.pool == nil {
 		return PostResult{}, ErrLedgerUnavailable
 	}
-	if err := journal.validate(); err != nil {
-		return PostResult{}, err
-	}
 
 	transaction, err := b.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
 	if err != nil {
@@ -36,6 +33,26 @@ func (b *PostgresBook) Post(ctx context.Context, journal Journal) (PostResult, e
 	defer func() {
 		_ = transaction.Rollback(context.Background())
 	}()
+	result, err := b.PostInTx(ctx, transaction, journal)
+	if err != nil {
+		return PostResult{}, err
+	}
+	if err := transaction.Commit(ctx); err != nil {
+		return PostResult{}, mapPostgresError(err)
+	}
+	return result, nil
+}
+
+// PostInTx posts a journal inside a caller-owned transaction so an operation
+// record and its money movement can commit atomically. The caller must use a
+// serializable transaction and remains responsible for commit or rollback.
+func (b *PostgresBook) PostInTx(ctx context.Context, transaction pgx.Tx, journal Journal) (PostResult, error) {
+	if b == nil || transaction == nil {
+		return PostResult{}, ErrLedgerUnavailable
+	}
+	if err := journal.validate(); err != nil {
+		return PostResult{}, err
+	}
 
 	if _, err := transaction.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", journal.idempotencyKey); err != nil {
 		return PostResult{}, fmt.Errorf("lock ledger idempotency key: %w", err)
@@ -118,9 +135,6 @@ func (b *PostgresBook) Post(ctx context.Context, journal Journal) (PostResult, e
 		}
 	}
 
-	if err := transaction.Commit(ctx); err != nil {
-		return PostResult{}, mapPostgresError(err)
-	}
 	return PostResult{JournalID: journal.id}, nil
 }
 

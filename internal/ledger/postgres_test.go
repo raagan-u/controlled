@@ -67,3 +67,12 @@ func TestPostgresBookRequiresPool(t *testing.T) {
 		t.Fatalf("journal: expected ErrLedgerUnavailable, got %v", err)
 	}
 }
+
+func TestPostgresBookRequiresTransaction(t *testing.T) {
+	t.Parallel()
+
+	book := &PostgresBook{}
+	if _, err := book.PostInTx(t.Context(), nil, Journal{}); !errors.Is(err, ErrLedgerUnavailable) {
+		t.Fatalf("PostInTx() error = %v, want %v", err, ErrLedgerUnavailable)
+	}
+}
