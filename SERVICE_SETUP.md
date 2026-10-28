@@ -107,6 +107,8 @@ For a remote deployment, terminate HTTPS at the platform load balancer or revers
 
 Google sign-in uses `POST /v1/auth/google`. The app sends a Google ID token; the API verifies its signature, issuer, expiry, verified email, and Web client-ID audience before issuing a Controlled session. OAuth client IDs are public configuration values—never add a Google client secret to the mobile app.
 
+Email/password registration and login use `POST /v1/auth/password/register` and `POST /v1/auth/password/login`. Passwords are bcrypt-hashed by the API and are never returned or stored by the mobile client. Email OTP verification is intentionally deferred during the current onboarding pass.
+
 ## Current development boundary
 
 This is the hackathon backend, not a production deployment:
