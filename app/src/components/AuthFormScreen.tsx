@@ -129,8 +129,8 @@ const styles = StyleSheet.create({
     fontFamily: fonts.black,
     fontSize: 54,
     letterSpacing: -3.2,
-    lineHeight: 62,
-    marginBottom: 55,
+    lineHeight: 72,
+    marginBottom: 45,
     textTransform: 'lowercase',
   },
   fields: {
