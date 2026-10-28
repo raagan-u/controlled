@@ -4,6 +4,7 @@ export const colors = {
   primary: '#2051FF',
   muted: '#69738B',
   border: '#10131B',
+  error: '#C43232',
 } as const;
 
 export const fonts = {

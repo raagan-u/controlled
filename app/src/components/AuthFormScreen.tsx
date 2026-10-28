@@ -1,4 +1,4 @@
-import { ReactNode } from 'react';
+import { ReactNode, useMemo, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -18,8 +18,12 @@ type Field = {
   autoComplete: 'email' | 'password' | 'new-password';
   keyboardType?: 'email-address';
   label: string;
+  name: string;
   secureTextEntry?: boolean;
 };
+
+export type AuthValues = Record<string, string>;
+export type AuthErrors = Partial<Record<string, string>>;
 
 type AuthFormScreenProps = {
   fields: Field[];
@@ -28,6 +32,7 @@ type AuthFormScreenProps = {
   onSubmit: () => void;
   submitLabel: string;
   title: string;
+  validate: (values: AuthValues) => AuthErrors;
 };
 
 export function AuthFormScreen({
@@ -37,7 +42,24 @@ export function AuthFormScreen({
   onSubmit,
   submitLabel,
   title,
+  validate,
 }: AuthFormScreenProps) {
+  const [values, setValues] = useState<AuthValues>({});
+  const [touched, setTouched] = useState<Set<string>>(new Set());
+  const errors = useMemo(() => validate(values), [validate, values]);
+  const isValid = Object.keys(errors).length === 0;
+
+  const handleChange = (name: string, value: string) => {
+    setValues((current) => ({ ...current, [name]: value }));
+  };
+
+  const handleSubmit = () => {
+    setTouched(new Set(fields.map((field) => field.name)));
+    if (isValid) {
+      onSubmit();
+    }
+  };
+
   return (
     <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
       <KeyboardAvoidingView
@@ -52,21 +74,31 @@ export function AuthFormScreen({
           <Text style={styles.title}>{title}</Text>
 
           <View style={styles.fields}>
-            {fields.map((field) => (
-              <TextInput
-                autoCapitalize="none"
-                autoComplete={field.autoComplete}
-                keyboardType={field.keyboardType}
-                key={field.label}
-                placeholder={field.label}
-                placeholderTextColor={colors.ink}
-                secureTextEntry={field.secureTextEntry}
-                style={styles.input}
-              />
-            ))}
+            {fields.map((field) => {
+              const error = touched.has(field.name) ? errors[field.name] : undefined;
+
+              return (
+                <View key={field.name} style={styles.field}>
+                  <TextInput
+                    autoCapitalize="none"
+                    autoComplete={field.autoComplete}
+                    autoCorrect={false}
+                    keyboardType={field.keyboardType}
+                    onBlur={() => setTouched((current) => new Set(current).add(field.name))}
+                    onChangeText={(value) => handleChange(field.name, value)}
+                    placeholder={field.label}
+                    placeholderTextColor={colors.ink}
+                    secureTextEntry={field.secureTextEntry}
+                    style={[styles.input, error && styles.inputError]}
+                    value={values[field.name] ?? ''}
+                  />
+                  {error ? <Text style={styles.error}>{error}</Text> : null}
+                </View>
+              );
+            })}
           </View>
 
-          <PrimaryButton label={submitLabel} onPress={onSubmit} />
+          <PrimaryButton disabled={!isValid} label={submitLabel} onPress={handleSubmit} />
           <View style={styles.footer}>{footer}</View>
           <Text style={styles.or}>or</Text>
           <GoogleButton onPress={onGooglePress} />
@@ -106,6 +138,9 @@ const styles = StyleSheet.create({
     marginBottom: 33,
     width: '100%',
   },
+  field: {
+    width: '100%',
+  },
   input: {
     borderColor: colors.border,
     borderRadius: 26,
@@ -117,6 +152,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     textAlign: 'center',
     width: '100%',
+  },
+  inputError: {
+    borderColor: colors.error,
+  },
+  error: {
+    color: colors.error,
+    fontFamily: fonts.medium,
+    fontSize: 13,
+    lineHeight: 18,
+    marginLeft: 20,
+    marginTop: 5,
   },
   footer: {
     marginTop: 14,
