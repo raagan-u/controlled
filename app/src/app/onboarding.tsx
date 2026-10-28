@@ -1,11 +1,19 @@
+import { router } from 'expo-router';
 import { useState } from 'react';
-import { StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { colors, fonts } from '@/theme';
 
 export default function OnboardingScreen() {
   const [isFocused, setIsFocused] = useState(false);
   const [name, setName] = useState('');
+  const normalizedName = name.trim();
+
+  const continueToHome = () => {
+    if (normalizedName) {
+      router.replace({ pathname: '/home', params: { name: normalizedName } });
+    }
+  };
 
   return (
     <View style={styles.container}>
@@ -19,12 +27,25 @@ export default function OnboardingScreen() {
           onBlur={() => setIsFocused(false)}
           onChangeText={setName}
           onFocus={() => setIsFocused(true)}
+          onSubmitEditing={continueToHome}
           returnKeyType="done"
           selectionColor={colors.primary}
           style={[styles.nameInput, isFocused && styles.nameInputFocused]}
           value={name}
         />
         <Text style={styles.greetingText}>!</Text>
+      </View>
+      <View style={styles.actionSlot}>
+        {normalizedName ? (
+          <Pressable
+            accessibilityLabel="Continue to home"
+            accessibilityRole="button"
+            onPress={continueToHome}
+            style={({ pressed }) => [styles.continueButton, pressed && styles.continuePressed]}
+          >
+            <Text style={styles.continueIcon}>&gt;</Text>
+          </Pressable>
+        ) : null}
       </View>
     </View>
   );
@@ -42,6 +63,30 @@ const styles = StyleSheet.create({
     alignItems: 'baseline',
     flexDirection: 'row',
     justifyContent: 'center',
+  },
+  actionSlot: {
+    alignItems: 'center',
+    height: 58,
+    marginTop: 28,
+  },
+  continueButton: {
+    alignItems: 'center',
+    backgroundColor: colors.primary,
+    borderRadius: 29,
+    height: 58,
+    justifyContent: 'center',
+    width: 58,
+  },
+  continueIcon: {
+    color: colors.background,
+    fontFamily: fonts.bold,
+    fontSize: 29,
+    lineHeight: 34,
+    marginLeft: 2,
+  },
+  continuePressed: {
+    opacity: 0.84,
+    transform: [{ scale: 0.96 }],
   },
   greetingText: {
     color: colors.ink,
