@@ -74,6 +74,13 @@ func run(ctx context.Context) error {
 		sessions,
 	)
 	googleAuthenticationHandler := identity.NewGoogleAuthenticationHandler(googleAuthentication)
+	passwordAuthentication := identity.NewPasswordAuthenticationService(
+		identityStore,
+		googleUserProvisioner{onboarding: onboarding},
+		identity.BcryptPasswordHasher{},
+		sessions,
+	)
+	passwordAuthenticationHandler := identity.NewPasswordAuthenticationHandler(passwordAuthentication)
 	walletReadHandler := wallet.NewReadHandler(store)
 	fakeCustody := custody.NewFake(platform.NewUUIDGenerator())
 	walletOperations := walletops.NewService(
@@ -89,6 +96,8 @@ func run(ctx context.Context) error {
 	mux.Handle("POST /v1/demo/users", wallet.NewOnboardingHandler(onboarding))
 	mux.HandleFunc("POST /v1/demo/sessions", sessionHandler.Start)
 	mux.Handle("POST /v1/auth/google", googleAuthenticationHandler)
+	mux.HandleFunc("POST /v1/auth/password/register", passwordAuthenticationHandler.Register)
+	mux.HandleFunc("POST /v1/auth/password/login", passwordAuthenticationHandler.Login)
 	mux.HandleFunc("DELETE /v1/sessions/current", sessionHandler.End)
 	mux.Handle("GET /v1/users/current", identity.RequireSession(sessions, http.HandlerFunc(identity.CurrentUserHandler)))
 	mux.Handle("GET /v1/wallet", identity.RequireSession(sessions, http.HandlerFunc(walletReadHandler.Wallet)))

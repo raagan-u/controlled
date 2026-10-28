@@ -76,6 +76,63 @@ func (s *PostgresSessionStore) LinkGoogleIdentity(
 	return fmt.Errorf("link Google identity: %w", err)
 }
 
+func (s *PostgresSessionStore) UserAndPasswordHashByEmail(
+	ctx context.Context,
+	email string,
+) (User, string, error) {
+	if s == nil || s.pool == nil {
+		return User{}, "", ErrSessionStore
+	}
+	row := s.pool.QueryRow(ctx, `
+		SELECT users.id::text,
+		       users.email,
+		       users.display_name,
+		       users.created_at,
+		       password_credentials.password_hash
+		  FROM users
+		  JOIN password_credentials ON password_credentials.user_id = users.id
+		 WHERE users.email = $1
+	`, email)
+	var id string
+	var storedEmail string
+	var displayName string
+	var createdAt pgtype.Timestamptz
+	var passwordHash string
+	if err := row.Scan(&id, &storedEmail, &displayName, &createdAt, &passwordHash); errors.Is(err, pgx.ErrNoRows) {
+		return User{}, "", ErrInvalidCredentials
+	} else if err != nil {
+		return User{}, "", fmt.Errorf("read password credential: %w", err)
+	}
+	user, err := NewUser(UserID(id), storedEmail, displayName, createdAt.Time)
+	return user, passwordHash, err
+}
+
+func (s *PostgresSessionStore) CreatePasswordCredential(
+	ctx context.Context,
+	userID UserID,
+	passwordHash string,
+) error {
+	if s == nil || s.pool == nil {
+		return ErrSessionStore
+	}
+	parsedUserID, err := identityUUID(string(userID))
+	if err != nil {
+		return err
+	}
+	_, err = s.pool.Exec(ctx, `
+		INSERT INTO password_credentials (user_id, password_hash)
+		VALUES ($1, $2)
+	`, parsedUserID, passwordHash)
+	if err == nil {
+		return nil
+	}
+	var databaseError *pgconn.PgError
+	if errors.As(err, &databaseError) && databaseError.Code == "23505" {
+		return ErrPasswordCredentialExists
+	}
+	return fmt.Errorf("create password credential: %w", err)
+}
+
 func (s *PostgresSessionStore) CreateSession(ctx context.Context, session Session) error {
 	if s == nil || s.pool == nil {
 		return ErrSessionStore
