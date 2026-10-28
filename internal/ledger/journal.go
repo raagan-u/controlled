@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/raagan-u/pay-pact/internal/money"
+	"github.com/raagan-u/controlled/internal/money"
 )
 
 type JournalID string

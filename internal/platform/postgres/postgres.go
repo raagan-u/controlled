@@ -1,4 +1,4 @@
-// Package postgres owns PostgreSQL process setup for PayPact.
+// Package postgres owns PostgreSQL process setup for Controlled.
 package postgres
 
 import (

@@ -12,9 +12,9 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/raagan-u/pay-pact/internal/identity"
-	"github.com/raagan-u/pay-pact/internal/ledger"
-	"github.com/raagan-u/pay-pact/internal/money"
+	"github.com/raagan-u/controlled/internal/identity"
+	"github.com/raagan-u/controlled/internal/ledger"
+	"github.com/raagan-u/controlled/internal/money"
 )
 
 const onboardingIdempotencyScope = "wallet_onboarding"

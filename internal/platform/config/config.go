@@ -1,4 +1,4 @@
-// Package config loads and validates PayPact process configuration.
+// Package config loads and validates Controlled process configuration.
 package config
 
 import (
@@ -38,32 +38,32 @@ func load(lookup lookupEnv) (Config, error) {
 		return Config{}, ErrDatabaseURLRequired
 	}
 
-	logLevel, err := parseLogLevel(value(lookup, "PAYPACT_LOG_LEVEL", "INFO"))
+	logLevel, err := parseLogLevel(value(lookup, "CONTROLLED_LOG_LEVEL", "INFO"))
 	if err != nil {
 		return Config{}, err
 	}
-	shutdownTimeout, err := parsePositiveDuration(lookup, "PAYPACT_SHUTDOWN_TIMEOUT", 10*time.Second)
+	shutdownTimeout, err := parsePositiveDuration(lookup, "CONTROLLED_SHUTDOWN_TIMEOUT", 10*time.Second)
 	if err != nil {
 		return Config{}, err
 	}
-	pingTimeout, err := parsePositiveDuration(lookup, "PAYPACT_DB_PING_TIMEOUT", 5*time.Second)
+	pingTimeout, err := parsePositiveDuration(lookup, "CONTROLLED_DB_PING_TIMEOUT", 5*time.Second)
 	if err != nil {
 		return Config{}, err
 	}
-	maxConns, err := parsePositiveInt32(lookup, "PAYPACT_DB_MAX_CONNS", 10)
+	maxConns, err := parsePositiveInt32(lookup, "CONTROLLED_DB_MAX_CONNS", 10)
 	if err != nil {
 		return Config{}, err
 	}
-	minConns, err := parseNonNegativeInt32(lookup, "PAYPACT_DB_MIN_CONNS", 1)
+	minConns, err := parseNonNegativeInt32(lookup, "CONTROLLED_DB_MIN_CONNS", 1)
 	if err != nil {
 		return Config{}, err
 	}
 	if minConns > maxConns {
-		return Config{}, fmt.Errorf("%w: PAYPACT_DB_MIN_CONNS must not exceed PAYPACT_DB_MAX_CONNS", ErrInvalidConfig)
+		return Config{}, fmt.Errorf("%w: CONTROLLED_DB_MIN_CONNS must not exceed CONTROLLED_DB_MAX_CONNS", ErrInvalidConfig)
 	}
-	httpAddress := strings.TrimSpace(value(lookup, "PAYPACT_HTTP_ADDR", ":8080"))
+	httpAddress := strings.TrimSpace(value(lookup, "CONTROLLED_HTTP_ADDR", ":8080"))
 	if httpAddress == "" {
-		return Config{}, fmt.Errorf("%w: PAYPACT_HTTP_ADDR", ErrInvalidConfig)
+		return Config{}, fmt.Errorf("%w: CONTROLLED_HTTP_ADDR", ErrInvalidConfig)
 	}
 
 	return Config{
@@ -95,7 +95,7 @@ func parseLogLevel(raw string) (slog.Level, error) {
 	case "ERROR":
 		return slog.LevelError, nil
 	default:
-		return 0, fmt.Errorf("%w: PAYPACT_LOG_LEVEL", ErrInvalidConfig)
+		return 0, fmt.Errorf("%w: CONTROLLED_LOG_LEVEL", ErrInvalidConfig)
 	}
 }
 

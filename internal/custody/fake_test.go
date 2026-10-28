@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/raagan-u/pay-pact/internal/custody"
-	"github.com/raagan-u/pay-pact/internal/money"
+	"github.com/raagan-u/controlled/internal/custody"
+	"github.com/raagan-u/controlled/internal/money"
 )
 
 func TestFakeFundingLifecycleIsIdempotent(t *testing.T) {

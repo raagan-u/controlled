@@ -25,14 +25,14 @@ func (h *HealthHandler) Liveness(response http.ResponseWriter, _ *http.Request) 
 
 func (h *HealthHandler) Readiness(response http.ResponseWriter, request *http.Request) {
 	if h == nil || h.database == nil || h.timeout <= 0 {
-		WriteError(response, http.StatusServiceUnavailable, "not_ready", "PayPact is not ready.")
+		WriteError(response, http.StatusServiceUnavailable, "not_ready", "Controlled is not ready.")
 		return
 	}
 
 	ctx, cancel := context.WithTimeout(request.Context(), h.timeout)
 	defer cancel()
 	if err := h.database.Ping(ctx); err != nil {
-		WriteError(response, http.StatusServiceUnavailable, "not_ready", "PayPact cannot reach its database.")
+		WriteError(response, http.StatusServiceUnavailable, "not_ready", "Controlled cannot reach its database.")
 		return
 	}
 	response.WriteHeader(http.StatusNoContent)

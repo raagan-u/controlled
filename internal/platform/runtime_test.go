@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/raagan-u/pay-pact/internal/platform"
+	"github.com/raagan-u/controlled/internal/platform"
 )
 
 func TestUUIDGenerator(t *testing.T) {

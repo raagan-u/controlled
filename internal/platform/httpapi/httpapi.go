@@ -1,4 +1,4 @@
-// Package httpapi provides the shared JSON boundary for PayPact HTTP handlers.
+// Package httpapi provides the shared JSON boundary for Controlled HTTP handlers.
 package httpapi
 
 import (

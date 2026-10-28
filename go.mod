@@ -1,4 +1,4 @@
-module github.com/raagan-u/pay-pact
+module github.com/raagan-u/controlled
 
 go 1.27.2
 

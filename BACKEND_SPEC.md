@@ -1,4 +1,4 @@
-# Pay Pact Backend Specification
+# Controlled Backend Specification
 
 Status: Foundation aligned for hackathon MVP
 
@@ -40,9 +40,9 @@ Integration tests ──────┘             │
                                       └──> AI provider later
 ```
 
-Actual sandbox funds are held in a Pay Pact-controlled PayPal account. PostgreSQL records the users to whom those funds belong and whether they are available, pending, staked, or reserved.
+Actual sandbox funds are held in a PayPal account. PostgreSQL records the users to whom those funds belong and whether they are available, pending, staked, or reserved.
 
-Money outside Pay Pact is outside the enforcement boundary.
+Money outside Controlled is outside the enforcement boundary.
 
 ## 3. Project structure
 
@@ -105,12 +105,12 @@ Redis, Kafka, microservices, and PYUSD are out of scope for the MVP.
 
 Creating a user atomically creates:
 
-- One Pay Pact wallet
+- One Controlled wallet
 - Available ledger account
 - Pending ledger account
 - Commitment Reserve ledger account
 
-The wallet starts with a zero balance. A PayPal identity or payment method may be connected later, but it is not the Pay Pact wallet itself.
+The wallet starts with a zero balance. A PayPal identity or payment method may be connected later, but it is not the Controlled wallet itself.
 
 Initial demo endpoints:
 
@@ -173,7 +173,7 @@ Create funding intent
 
 The browser redirect is never authoritative.
 
-Internal Pay Pact-to-Pay Pact sends use only ledger movement. External sends and withdrawals reserve funds internally, call the provider asynchronously, and then settle or release the reservation.
+Internal sends between Controlled users use only ledger movement. External sends and withdrawals reserve funds internally, call the provider asynchronously, and then settle or release the reservation.
 
 All outgoing wallet operations pass through pact policy, including withdrawal.
 

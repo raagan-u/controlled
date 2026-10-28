@@ -1,10 +1,10 @@
-# Pay Pact — MVP Product Specification
+# Controlled — MVP Product Specification
 
 Status: Locked foundation for backend implementation
 
 ## Product
 
-Pay Pact is a PayPal-powered wallet that enforces financial commitments before money leaves. A user funds a dedicated Pay Pact balance, states a financial goal and spending intent, chooses a daily or weekly limit, and backs the commitment with an additional stake.
+Controlled is a PayPal-powered wallet that enforces financial commitments before money leaves. A user funds a dedicated Controlled balance, states a financial goal and spending intent, chooses a daily or weekly limit, and backs the commitment with an additional stake.
 
 Without an active pact, the wallet can send, receive, spend, and withdraw freely. While one or more pacts are active, every outgoing transaction is evaluated against all of them.
 
@@ -14,7 +14,7 @@ The MVP uses an internal wallet ledger backed by PayPal Sandbox. It is a proof o
 
 Demonstrate one complete non-AI flow:
 
-1. Onboard a user and create a Pay Pact wallet.
+1. Onboard a user and create a Controlled wallet.
 2. Fund the wallet through PayPal Sandbox.
 3. Create a goal-based spending pact.
 4. Select Commitment Reserve as the break consequence.
@@ -28,24 +28,24 @@ Demonstrate one complete non-AI flow:
 
 ## Wallet
 
-Every onboarded user receives one internal Pay Pact wallet with:
+Every onboarded user receives one internal Controlled wallet with:
 
 - Available balance
 - Pending balance
 - Active stake allocations
 - Commitment Reserve balance
 
-Actual sandbox backing funds sit in a Pay Pact-controlled PayPal account. The internal double-entry ledger records ownership and availability.
+Actual sandbox backing funds sit in a PayPal account. The internal double-entry ledger records ownership and availability.
 
-Every outgoing path passes through Pay Pact policy:
+Every outgoing path passes through Controlled policy:
 
-- Pay Pact-to-Pay Pact sends
+- Internal sends between Controlled users
 - External sends
 - Merchant payments in the controlled demo
 - Withdrawals
 - Provider and platform fees included in the debit
 
-Incoming money is unrestricted. Money outside Pay Pact is outside its enforcement boundary.
+Incoming money is unrestricted. Money outside Controlled is outside its enforcement boundary.
 
 ## Pact
 
@@ -161,7 +161,7 @@ AI may propose and summarize. It may not authorize a debit, classify an emergenc
 
 ## Business model
 
-Pay Pact may charge a small fee when a pact activates. The fee must be:
+Controlled may charge a small fee when a pact activates. The fee must be:
 
 - Disclosed before activation
 - Separate from the stake
@@ -183,7 +183,7 @@ Pay Pact may charge a small fee when a pact activates. The fee must be:
 10. A pact can resolve only once.
 11. Payment, webhook, ledger, and public command retries must be idempotent.
 12. Emergency exceptions are recorded without being treated as absolute failure.
-13. Pay Pact never receives a broken pact's stake.
+13. Controlled never receives a broken pact's stake.
 14. Every consequential state change creates an audit event.
 
 ## Out of scope
@@ -191,7 +191,7 @@ Pay Pact may charge a small fee when a pact activates. The fee must be:
 - Production custody or money-transmission claims
 - PYUSD, yield, or investment returns
 - Physical or virtual cards
-- Monitoring spending outside Pay Pact
+- Monitoring spending outside Controlled
 - Lending or credit
 - Partial Commitment Reserve allocation
 - Production identity verification and compliance

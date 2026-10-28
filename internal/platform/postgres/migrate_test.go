@@ -5,7 +5,7 @@ import (
 	"testing"
 	"testing/fstest"
 
-	"github.com/raagan-u/pay-pact/migrations"
+	"github.com/raagan-u/controlled/migrations"
 )
 
 func TestDiscoverEmbeddedMigrations(t *testing.T) {

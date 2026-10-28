@@ -10,15 +10,15 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/raagan-u/pay-pact/internal/custody"
-	"github.com/raagan-u/pay-pact/internal/identity"
-	"github.com/raagan-u/pay-pact/internal/ledger"
-	"github.com/raagan-u/pay-pact/internal/platform"
-	"github.com/raagan-u/pay-pact/internal/platform/config"
-	"github.com/raagan-u/pay-pact/internal/platform/httpapi"
-	platformpostgres "github.com/raagan-u/pay-pact/internal/platform/postgres"
-	"github.com/raagan-u/pay-pact/internal/wallet"
-	"github.com/raagan-u/pay-pact/internal/walletops"
+	"github.com/raagan-u/controlled/internal/custody"
+	"github.com/raagan-u/controlled/internal/identity"
+	"github.com/raagan-u/controlled/internal/ledger"
+	"github.com/raagan-u/controlled/internal/platform"
+	"github.com/raagan-u/controlled/internal/platform/config"
+	"github.com/raagan-u/controlled/internal/platform/httpapi"
+	platformpostgres "github.com/raagan-u/controlled/internal/platform/postgres"
+	"github.com/raagan-u/controlled/internal/wallet"
+	"github.com/raagan-u/controlled/internal/walletops"
 )
 
 func main() {
@@ -26,7 +26,7 @@ func main() {
 	defer stop()
 
 	if err := run(ctx); err != nil {
-		slog.Error("PayPact API stopped", "error", err)
+		slog.Error("Controlled API stopped", "error", err)
 		os.Exit(1)
 	}
 }
@@ -104,7 +104,7 @@ func run(ctx context.Context) error {
 
 	serverErrors := make(chan error, 1)
 	go func() {
-		slog.Info("PayPact API listening", "address", configuration.HTTPAddress)
+		slog.Info("Controlled API listening", "address", configuration.HTTPAddress)
 		serverErrors <- server.ListenAndServe()
 	}()
 

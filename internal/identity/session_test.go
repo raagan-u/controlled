@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/raagan-u/pay-pact/internal/identity"
+	"github.com/raagan-u/controlled/internal/identity"
 )
 
 func TestSessionLifecycle(t *testing.T) {

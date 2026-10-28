@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/raagan-u/pay-pact/internal/platform/httpapi"
+	"github.com/raagan-u/controlled/internal/platform/httpapi"
 )
 
 func TestHealthHandler(t *testing.T) {

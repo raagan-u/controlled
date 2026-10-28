@@ -8,7 +8,7 @@
 *.md
 mermaid-diagram.png
 execution_plan.md
-paypact-api
+controlled-api
 bin/
 dist/
 tmp/

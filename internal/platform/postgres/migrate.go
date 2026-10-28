@@ -13,7 +13,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/raagan-u/pay-pact/migrations"
+	"github.com/raagan-u/controlled/migrations"
 )
 
 var (

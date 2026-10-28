@@ -1,12 +1,12 @@
-// Package wallet owns PayPact wallet identity and onboarding.
+// Package wallet owns Controlled wallet identity and onboarding.
 package wallet
 
 import (
 	"time"
 
-	"github.com/raagan-u/pay-pact/internal/identity"
-	"github.com/raagan-u/pay-pact/internal/ledger"
-	"github.com/raagan-u/pay-pact/internal/money"
+	"github.com/raagan-u/controlled/internal/identity"
+	"github.com/raagan-u/controlled/internal/ledger"
+	"github.com/raagan-u/controlled/internal/money"
 )
 
 type WalletID string

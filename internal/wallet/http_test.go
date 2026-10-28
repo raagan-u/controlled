@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/raagan-u/pay-pact/internal/wallet"
+	"github.com/raagan-u/controlled/internal/wallet"
 )
 
 func TestOnboardingHandlerCreatesAndReplaysWallet(t *testing.T) {

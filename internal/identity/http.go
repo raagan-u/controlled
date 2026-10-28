@@ -7,10 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/raagan-u/pay-pact/internal/platform/httpapi"
+	"github.com/raagan-u/controlled/internal/platform/httpapi"
 )
 
-const SessionCookieName = "paypact_session"
+const SessionCookieName = "controlled_session"
 
 type SessionManager interface {
 	Start(context.Context, string) (StartedSession, error)
@@ -29,7 +29,7 @@ func NewSessionHandler(sessions SessionManager) *SessionHandler {
 func CurrentUserHandler(response http.ResponseWriter, request *http.Request) {
 	user, ok := CurrentUser(request.Context())
 	if !ok {
-		httpapi.WriteError(response, http.StatusUnauthorized, "authentication_required", "A valid PayPact session is required.")
+		httpapi.WriteError(response, http.StatusUnauthorized, "authentication_required", "A valid Controlled session is required.")
 		return
 	}
 	httpapi.WriteJSON(response, http.StatusOK, struct {
@@ -60,7 +60,7 @@ func (h *SessionHandler) Start(response http.ResponseWriter, request *http.Reque
 func (h *SessionHandler) End(response http.ResponseWriter, request *http.Request) {
 	token, ok := sessionToken(request)
 	if !ok {
-		httpapi.WriteError(response, http.StatusUnauthorized, "authentication_required", "A valid PayPact session is required.")
+		httpapi.WriteError(response, http.StatusUnauthorized, "authentication_required", "A valid Controlled session is required.")
 		return
 	}
 	if err := h.sessions.End(request.Context(), token); err != nil && !errors.Is(err, ErrSessionNotFound) {
@@ -93,16 +93,16 @@ func RequireSession(sessions SessionManager, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		token, ok := sessionToken(request)
 		if !ok {
-			httpapi.WriteError(response, http.StatusUnauthorized, "authentication_required", "A valid PayPact session is required.")
+			httpapi.WriteError(response, http.StatusUnauthorized, "authentication_required", "A valid Controlled session is required.")
 			return
 		}
 		user, err := sessions.Authenticate(request.Context(), token)
 		if err != nil {
 			if errors.Is(err, ErrInvalidCredentials) || errors.Is(err, ErrInvalidSessionToken) {
-				httpapi.WriteError(response, http.StatusUnauthorized, "invalid_session", "The PayPact session is invalid or expired.")
+				httpapi.WriteError(response, http.StatusUnauthorized, "invalid_session", "The Controlled session is invalid or expired.")
 				return
 			}
-			httpapi.WriteError(response, http.StatusInternalServerError, "internal_error", "PayPact could not validate the session.")
+			httpapi.WriteError(response, http.StatusInternalServerError, "internal_error", "Controlled could not validate the session.")
 			return
 		}
 		ctx := context.WithValue(request.Context(), userContextKey{}, user)
@@ -159,10 +159,10 @@ func writeSessionError(response http.ResponseWriter, err error) {
 	case errors.Is(err, ErrInvalidEmail):
 		httpapi.WriteError(response, http.StatusUnprocessableEntity, "invalid_email", "A valid email address is required.")
 	case errors.Is(err, ErrInvalidCredentials):
-		httpapi.WriteError(response, http.StatusUnauthorized, "invalid_credentials", "No PayPact demo user exists for that email.")
+		httpapi.WriteError(response, http.StatusUnauthorized, "invalid_credentials", "No Controlled demo user exists for that email.")
 	case errors.Is(err, ErrInvalidSessionToken), errors.Is(err, ErrSessionNotFound):
-		httpapi.WriteError(response, http.StatusUnauthorized, "invalid_session", "The PayPact session is invalid or expired.")
+		httpapi.WriteError(response, http.StatusUnauthorized, "invalid_session", "The Controlled session is invalid or expired.")
 	default:
-		httpapi.WriteError(response, http.StatusInternalServerError, "internal_error", "PayPact could not manage the session.")
+		httpapi.WriteError(response, http.StatusInternalServerError, "internal_error", "Controlled could not manage the session.")
 	}
 }

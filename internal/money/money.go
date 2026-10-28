@@ -1,4 +1,4 @@
-// Package money provides the shared monetary value used across PayPact modules.
+// Package money provides the shared monetary value used across Controlled modules.
 package money
 
 import "errors"

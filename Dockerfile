@@ -15,20 +15,20 @@ RUN CGO_ENABLED=0 go build \
     -trimpath \
     -buildvcs=false \
     -ldflags="-s -w" \
-    -o /out/paypact-api \
+    -o /out/controlled-api \
     ./cmd/api
 
 FROM alpine:3.22
 
 RUN apk add --no-cache ca-certificates \
-    && addgroup -S paypact \
-    && adduser -S -G paypact paypact
+    && addgroup -S controlled \
+    && adduser -S -G controlled controlled
 
 WORKDIR /app
 
-COPY --from=build --chown=paypact:paypact /out/paypact-api ./paypact-api
+COPY --from=build --chown=controlled:controlled /out/controlled-api ./controlled-api
 
-USER paypact
+USER controlled
 
 EXPOSE 8080
 
@@ -37,4 +37,4 @@ HEALTHCHECK --interval=10s --timeout=3s --start-period=10s --retries=5 \
 
 STOPSIGNAL SIGTERM
 
-ENTRYPOINT ["/app/paypact-api"]
+ENTRYPOINT ["/app/controlled-api"]

@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/raagan-u/pay-pact/internal/custody"
-	"github.com/raagan-u/pay-pact/internal/identity"
-	"github.com/raagan-u/pay-pact/internal/ledger"
-	"github.com/raagan-u/pay-pact/internal/walletops"
+	"github.com/raagan-u/controlled/internal/custody"
+	"github.com/raagan-u/controlled/internal/identity"
+	"github.com/raagan-u/controlled/internal/ledger"
+	"github.com/raagan-u/controlled/internal/walletops"
 )
 
 func TestFundingCreditsOnlyAfterConfirmation(t *testing.T) {

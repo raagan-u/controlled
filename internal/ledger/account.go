@@ -1,6 +1,6 @@
 package ledger
 
-import "github.com/raagan-u/pay-pact/internal/money"
+import "github.com/raagan-u/controlled/internal/money"
 
 type AccountID string
 type OwnerID string

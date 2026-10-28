@@ -9,16 +9,16 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/raagan-u/pay-pact/internal/ledger"
-	"github.com/raagan-u/pay-pact/internal/money"
-	"github.com/raagan-u/pay-pact/internal/platform"
-	platformpostgres "github.com/raagan-u/pay-pact/internal/platform/postgres"
+	"github.com/raagan-u/controlled/internal/ledger"
+	"github.com/raagan-u/controlled/internal/money"
+	"github.com/raagan-u/controlled/internal/platform"
+	platformpostgres "github.com/raagan-u/controlled/internal/platform/postgres"
 )
 
 func TestPostgresBookLifecycle(t *testing.T) {
-	databaseURL := os.Getenv("PAYPACT_TEST_DATABASE_URL")
+	databaseURL := os.Getenv("CONTROLLED_TEST_DATABASE_URL")
 	if databaseURL == "" {
-		t.Skip("PAYPACT_TEST_DATABASE_URL is not set")
+		t.Skip("CONTROLLED_TEST_DATABASE_URL is not set")
 	}
 
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)

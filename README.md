@@ -1,18 +1,18 @@
-# Pay Pact
+# Controlled
 
 **A PayPal-powered, intent-aware wallet that helps people keep the financial promises they make to themselves.**
 
-Pay Pact is part of the *From My Heart* series and is being built for the PayPal AI Hackathon.
+Controlled is part of the *From My Heart* series and is being built for the PayPal AI Hackathon.
 
-## Why Pay Pact?
+## Why Controlled?
 
-Most budgeting apps explain overspending after the money is gone. Pay Pact intervenes before the debit happens.
+Most budgeting apps explain overspending after the money is gone. Controlled intervenes before the debit happens.
 
 Users can send, receive, and spend normally. When they want more control, they create an account-wide pact with a goal, a spending limit, a duration, and an additional financial stake. While a pact is active, every outgoing transaction is checked against it.
 
 ## How it works
 
-1. Fund the Pay Pact wallet through PayPal.
+1. Fund the Controlled wallet through PayPal.
 2. State a financial goal and create a daily or weekly spending pact.
 3. Back the budget with an additional stake held separately from spendable funds.
 4. Add n ( n>=1) trusted accountability partners.
@@ -27,11 +27,11 @@ Before activating a pact, the user must explicitly select what happens to the st
 
 - **Commitment Reserve:** the stake remains the user's money but becomes unavailable to spend, send, or withdraw. It can be unlocked by successfully completing a recovery pact.
 
-The onboarding interface will also show options such as a neutral fund, goal vault, and split consequence as disabled **Coming soon** choices. Pay Pact does not receive forfeited or reserved stakes.
+The onboarding interface will also show options such as a neutral fund, goal vault, and split consequence as disabled **Coming soon** choices. Controlled does not receive forfeited or reserved stakes.
 
 PYUSD is not part of the initial MVP. We intend to explore PYUSD rewards or other responsible ways for locked stakes to create value instead of remaining idle, but no reward, yield, or investment return is currently promised.
 
-## AI in Pay Pact
+## AI in Controlled
 
 AI understands the intent behind a pact, but it never moves money or replaces human accountability.
 
@@ -59,7 +59,7 @@ The prototype is a sandbox proof of concept, not a production bank, custodial wa
 
 ## Business model
 
-Pay Pact may charge a small, transparent fee when a pact activates. The fee is independent of whether the user succeeds or breaks the pact and remains separate from stakes, Commitment Reserves, provider fees, and any future user rewards.
+Controlled may charge a small, transparent fee when a pact activates. The fee is independent of whether the user succeeds or breaks the pact and remains separate from stakes, Commitment Reserves, provider fees, and any future user rewards.
 
 ## Technology
 
@@ -69,4 +69,4 @@ Pay Pact may charge a small, transparent fee when a pact activates. The fee is i
 - PayPal Sandbox payment flows
 - AI with structured, grounded outputs
 
-See the [product specification](./SPEC.md) and [backend specification](./BACKEND_SPEC.md) for the evolving system design.
+See the [product specification](./SPEC.md) and [backend specification](./BACKEND_SPEC.md) for the evolving system design. To run and exercise the implemented backend, use the [service setup runbook](./SERVICE_SETUP.md) and [external API integration specification](./API_INTEGRATION_SPEC.md).

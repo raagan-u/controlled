@@ -1,4 +1,4 @@
-// Package identity owns PayPact users and their authentication identity.
+// Package identity owns Controlled users and their authentication identity.
 package identity
 
 import (

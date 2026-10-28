@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/raagan-u/pay-pact/internal/pact"
+	"github.com/raagan-u/controlled/internal/pact"
 )
 
 func TestPactSuccessfulLifecycle(t *testing.T) {

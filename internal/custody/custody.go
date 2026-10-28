@@ -1,4 +1,4 @@
-// Package custody defines the boundary between PayPact's internal ledger and
+// Package custody defines the boundary between Controlled's internal ledger and
 // external providers that hold or move its backing funds.
 package custody
 
@@ -6,7 +6,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/raagan-u/pay-pact/internal/money"
+	"github.com/raagan-u/controlled/internal/money"
 )
 
 var (

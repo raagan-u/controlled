@@ -3,10 +3,10 @@ package ledger
 import (
 	"sync"
 
-	"github.com/raagan-u/pay-pact/internal/money"
+	"github.com/raagan-u/controlled/internal/money"
 )
 
-// Book is the in-memory reference implementation of PayPact's ledger rules.
+// Book is the in-memory reference implementation of Controlled's ledger rules.
 // The PostgreSQL adapter must preserve the same atomicity and invariants.
 type Book struct {
 	mu          sync.RWMutex

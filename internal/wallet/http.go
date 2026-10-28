@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/raagan-u/pay-pact/internal/identity"
-	"github.com/raagan-u/pay-pact/internal/platform/httpapi"
+	"github.com/raagan-u/controlled/internal/identity"
+	"github.com/raagan-u/controlled/internal/platform/httpapi"
 )
 
 type Onboarder interface {
@@ -129,8 +129,8 @@ func writeOnboardingError(response http.ResponseWriter, err error) {
 	case errors.Is(err, ErrIdempotencyConflict):
 		httpapi.WriteError(response, http.StatusConflict, "idempotency_conflict", "This Idempotency-Key was already used with different input.")
 	case errors.Is(err, ErrUserExists), errors.Is(err, ErrWalletExists), errors.Is(err, ErrProvisioningExists):
-		httpapi.WriteError(response, http.StatusConflict, "user_exists", "A PayPact user already exists for this email.")
+		httpapi.WriteError(response, http.StatusConflict, "user_exists", "A Controlled user already exists for this email.")
 	default:
-		httpapi.WriteError(response, http.StatusInternalServerError, "internal_error", "PayPact could not create the wallet.")
+		httpapi.WriteError(response, http.StatusInternalServerError, "internal_error", "Controlled could not create the wallet.")
 	}
 }

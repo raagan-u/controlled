@@ -6,10 +6,10 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/raagan-u/pay-pact/internal/custody"
-	"github.com/raagan-u/pay-pact/internal/identity"
-	"github.com/raagan-u/pay-pact/internal/ledger"
-	"github.com/raagan-u/pay-pact/internal/platform/httpapi"
+	"github.com/raagan-u/controlled/internal/custody"
+	"github.com/raagan-u/controlled/internal/identity"
+	"github.com/raagan-u/controlled/internal/ledger"
+	"github.com/raagan-u/controlled/internal/platform/httpapi"
 )
 
 type Commander interface {
@@ -246,7 +246,7 @@ func withdrawalResponse(withdrawal Withdrawal) struct {
 }
 
 func writeAuthenticationRequired(response http.ResponseWriter) {
-	httpapi.WriteError(response, http.StatusUnauthorized, "authentication_required", "A valid PayPact session is required.")
+	httpapi.WriteError(response, http.StatusUnauthorized, "authentication_required", "A valid Controlled session is required.")
 }
 
 func writeOperationError(response http.ResponseWriter, err error) {
@@ -262,12 +262,12 @@ func writeOperationError(response http.ResponseWriter, err error) {
 	case errors.Is(err, ledger.ErrInsufficientBalance):
 		httpapi.WriteError(response, http.StatusConflict, "insufficient_balance", "The wallet does not have enough available balance.")
 	case errors.Is(err, ErrPolicyDenied):
-		httpapi.WriteError(response, http.StatusConflict, "policy_denied", "An active PayPact policy blocked this operation.")
+		httpapi.WriteError(response, http.StatusConflict, "policy_denied", "An active Controlled policy blocked this operation.")
 	case errors.Is(err, ErrInvalidState):
 		httpapi.WriteError(response, http.StatusConflict, "invalid_operation_state", "The wallet operation cannot transition from its current state.")
 	case errors.Is(err, custody.ErrUnavailable):
 		httpapi.WriteError(response, http.StatusBadGateway, "custody_unavailable", "The custody provider is unavailable.")
 	default:
-		httpapi.WriteError(response, http.StatusInternalServerError, "internal_error", "PayPact could not complete the wallet operation.")
+		httpapi.WriteError(response, http.StatusInternalServerError, "internal_error", "Controlled could not complete the wallet operation.")
 	}
 }

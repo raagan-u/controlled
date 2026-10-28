@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/raagan-u/pay-pact/internal/identity"
-	"github.com/raagan-u/pay-pact/internal/ledger"
-	"github.com/raagan-u/pay-pact/internal/money"
-	"github.com/raagan-u/pay-pact/internal/wallet"
+	"github.com/raagan-u/controlled/internal/identity"
+	"github.com/raagan-u/controlled/internal/ledger"
+	"github.com/raagan-u/controlled/internal/money"
+	"github.com/raagan-u/controlled/internal/wallet"
 )
 
 func TestWalletReadHandlerReturnsAuthenticatedWallet(t *testing.T) {

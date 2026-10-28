@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/raagan-u/pay-pact/internal/platform/httpapi"
+	"github.com/raagan-u/controlled/internal/platform/httpapi"
 )
 
 func TestReadJSON(t *testing.T) {
@@ -18,8 +18,8 @@ func TestReadJSON(t *testing.T) {
 		body    string
 		wantErr error
 	}{
-		{name: "valid", body: `{"name":"PayPact"}`},
-		{name: "unknown field", body: `{"name":"PayPact","admin":true}`, wantErr: httpapi.ErrInvalidJSON},
+		{name: "valid", body: `{"name":"Controlled"}`},
+		{name: "unknown field", body: `{"name":"Controlled","admin":true}`, wantErr: httpapi.ErrInvalidJSON},
 		{name: "trailing object", body: `{}` + `{}`, wantErr: httpapi.ErrInvalidJSON},
 		{name: "empty", wantErr: httpapi.ErrInvalidJSON},
 	}

@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/raagan-u/pay-pact/internal/identity"
-	"github.com/raagan-u/pay-pact/internal/platform/httpapi"
+	"github.com/raagan-u/controlled/internal/identity"
+	"github.com/raagan-u/controlled/internal/platform/httpapi"
 )
 
 type ReadHandler struct {
@@ -20,16 +20,16 @@ func NewReadHandler(reader Reader) *ReadHandler {
 func (h *ReadHandler) Wallet(response http.ResponseWriter, request *http.Request) {
 	user, ok := identity.CurrentUser(request.Context())
 	if !ok {
-		httpapi.WriteError(response, http.StatusUnauthorized, "authentication_required", "A valid PayPact session is required.")
+		httpapi.WriteError(response, http.StatusUnauthorized, "authentication_required", "A valid Controlled session is required.")
 		return
 	}
 	snapshot, err := h.reader.WalletByUser(request.Context(), user.ID())
 	if err != nil {
 		if errors.Is(err, ErrProvisioningNotFound) {
-			httpapi.WriteError(response, http.StatusNotFound, "wallet_not_found", "The PayPact wallet was not found.")
+			httpapi.WriteError(response, http.StatusNotFound, "wallet_not_found", "The Controlled wallet was not found.")
 			return
 		}
-		httpapi.WriteError(response, http.StatusInternalServerError, "internal_error", "PayPact could not read the wallet.")
+		httpapi.WriteError(response, http.StatusInternalServerError, "internal_error", "Controlled could not read the wallet.")
 		return
 	}
 	httpapi.WriteJSON(response, http.StatusOK, walletReadResponse(snapshot))
@@ -38,12 +38,12 @@ func (h *ReadHandler) Wallet(response http.ResponseWriter, request *http.Request
 func (h *ReadHandler) Transactions(response http.ResponseWriter, request *http.Request) {
 	user, ok := identity.CurrentUser(request.Context())
 	if !ok {
-		httpapi.WriteError(response, http.StatusUnauthorized, "authentication_required", "A valid PayPact session is required.")
+		httpapi.WriteError(response, http.StatusUnauthorized, "authentication_required", "A valid Controlled session is required.")
 		return
 	}
 	transactions, err := h.reader.TransactionsByUser(request.Context(), user.ID(), 50)
 	if err != nil {
-		httpapi.WriteError(response, http.StatusInternalServerError, "internal_error", "PayPact could not read wallet transactions.")
+		httpapi.WriteError(response, http.StatusInternalServerError, "internal_error", "Controlled could not read wallet transactions.")
 		return
 	}
 

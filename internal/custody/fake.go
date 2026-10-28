@@ -62,7 +62,7 @@ func (f *Fake) CreateFundingOrder(
 		ID:          id,
 		Amount:      request.Amount,
 		Status:      FundingAwaitingApproval,
-		ApprovalURL: fmt.Sprintf("https://fake.paypact.local/approve/%s", id),
+		ApprovalURL: fmt.Sprintf("https://fake.controlled.local/approve/%s", id),
 	}
 	f.fundingByID[id] = order
 	f.fundingByKey[request.IdempotencyKey] = id

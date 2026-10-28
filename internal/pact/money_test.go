@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/raagan-u/pay-pact/internal/pact"
+	"github.com/raagan-u/controlled/internal/pact"
 )
 
 func TestNewMoney(t *testing.T) {

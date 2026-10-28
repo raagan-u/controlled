@@ -1,6 +1,6 @@
 package pact
 
-import sharedmoney "github.com/raagan-u/pay-pact/internal/money"
+import sharedmoney "github.com/raagan-u/controlled/internal/money"
 
 type Money = sharedmoney.Money
 

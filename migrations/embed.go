@@ -1,4 +1,4 @@
-// Package migrations embeds PayPact's versioned PostgreSQL schema migrations.
+// Package migrations embeds Controlled's versioned PostgreSQL schema migrations.
 package migrations
 
 import "embed"
