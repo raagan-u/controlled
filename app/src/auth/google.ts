@@ -45,11 +45,14 @@ export async function authenticateWithGoogle(): Promise<GoogleAuthenticationResu
     if (isNoSavedCredentialFoundResponse(response)) {
       response = await GoogleOneTapSignIn.createAccount();
     }
+    if (isNoSavedCredentialFoundResponse(response)) {
+      response = await GoogleOneTapSignIn.presentExplicitSignIn();
+    }
     if (isCancelledResponse(response)) {
       return 'cancelled';
     }
     if (!isSuccessResponse(response) || !response.data.idToken) {
-      throw new Error('Google sign-in did not return a valid identity token.');
+      throw new Error(`Google sign-in ended without an identity token (${response.type}).`);
     }
 
     const apiResponse = await fetch(`${apiURL}/v1/auth/google`, {
