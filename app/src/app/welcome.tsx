@@ -31,12 +31,16 @@ const styles = StyleSheet.create({
   safeArea: {
     backgroundColor: colors.background,
     flex: 1,
-    justifyContent: 'space-between',
+    justifyContent: 'flex-end',
     paddingHorizontal: 18,
   },
   brandBlock: {
     alignItems: 'center',
-    marginTop: '5%',
+    left: 18,
+    position: 'absolute',
+    right: 18,
+    top: '50%',
+    transform: [{ translateY: -52 }],
   },
   tagline: {
     color: colors.muted,
