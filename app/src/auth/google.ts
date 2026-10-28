@@ -1,5 +1,3 @@
-import * as SecureStore from 'expo-secure-store';
-import { Platform } from 'react-native';
 import {
   GoogleOneTapSignIn,
   isCancelledResponse,
@@ -9,15 +7,12 @@ import {
   statusCodes,
 } from 'react-native-nitro-google-signin';
 
+import { createControlledSession } from '@/auth/session';
+
 const webClientId =
   '376706277927-s4mest4okp2a4par7m6tl69b9ut3rl7c.apps.googleusercontent.com';
 const iosClientId =
   '376706277927-p59kimeh6k4qbvfmekj2je0uqom151br.apps.googleusercontent.com';
-const sessionKey = 'controlled_session';
-
-const localAPIURL = Platform.OS === 'android' ? 'http://10.0.2.2:8080' : 'http://127.0.0.1:8080';
-const apiURL = (process.env.EXPO_PUBLIC_API_URL ?? localAPIURL).replace(/\/$/, '');
-
 GoogleOneTapSignIn.configure({
   autoSelectOnSignIn: false,
   iosClientId,
@@ -26,16 +21,6 @@ GoogleOneTapSignIn.configure({
 });
 
 type GoogleAuthenticationResult = 'authenticated' | 'cancelled';
-
-type SessionResponse = {
-  sessionToken?: string;
-};
-
-type APIError = {
-  error?: {
-    message?: string;
-  };
-};
 
 export async function authenticateWithGoogle(): Promise<GoogleAuthenticationResult> {
   try {
@@ -55,20 +40,7 @@ export async function authenticateWithGoogle(): Promise<GoogleAuthenticationResu
       throw new Error(`Google sign-in ended without an identity token (${response.type}).`);
     }
 
-    const apiResponse = await fetch(`${apiURL}/v1/auth/google`, {
-      body: JSON.stringify({ idToken: response.data.idToken }),
-      headers: { 'Content-Type': 'application/json' },
-      method: 'POST',
-    });
-    const payload = (await apiResponse.json()) as SessionResponse & APIError;
-    if (!apiResponse.ok) {
-      throw new Error(payload.error?.message ?? 'Controlled could not complete Google sign-in.');
-    }
-    if (!payload.sessionToken) {
-      throw new Error('Controlled did not return a session token.');
-    }
-
-    await SecureStore.setItemAsync(sessionKey, payload.sessionToken);
+    await createControlledSession('/v1/auth/google', { idToken: response.data.idToken });
     return 'authenticated';
   } catch (error) {
     if (isErrorWithCode(error) && error.code === statusCodes.SIGN_IN_CANCELLED) {
