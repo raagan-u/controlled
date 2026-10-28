@@ -4,13 +4,43 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { AuthFormScreen } from '@/components/AuthFormScreen';
 import { colors, fonts } from '@/theme';
 
+const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function validateSignUp(values: Record<string, string>) {
+  const errors: Record<string, string> = {};
+
+  if (!emailPattern.test(values.email?.trim() ?? '')) {
+    errors.email = 'Enter a valid email address';
+  }
+  if (!(values.password?.trim() ?? '')) {
+    errors.password = 'Enter a password';
+  }
+  if (!(values.confirmPassword?.trim() ?? '')) {
+    errors.confirmPassword = 'Confirm your password';
+  } else if (values.confirmPassword !== values.password) {
+    errors.confirmPassword = 'Passwords do not match';
+  }
+
+  return errors;
+}
+
 export default function SignUpScreen() {
   return (
     <AuthFormScreen
       fields={[
-        { autoComplete: 'email', keyboardType: 'email-address', label: 'email' },
-        { autoComplete: 'new-password', label: 'password', secureTextEntry: true },
-        { autoComplete: 'new-password', label: 'confirm password', secureTextEntry: true },
+        { autoComplete: 'email', keyboardType: 'email-address', label: 'email', name: 'email' },
+        {
+          autoComplete: 'new-password',
+          label: 'password',
+          name: 'password',
+          secureTextEntry: true,
+        },
+        {
+          autoComplete: 'new-password',
+          label: 'confirm password',
+          name: 'confirmPassword',
+          secureTextEntry: true,
+        },
       ]}
       footer={
         <View style={styles.row}>
@@ -24,6 +54,7 @@ export default function SignUpScreen() {
       onSubmit={() => router.push('/verify-email')}
       submitLabel="Create account"
       title="sign up"
+      validate={validateSignUp}
     />
   );
 }
