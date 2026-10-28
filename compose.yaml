@@ -31,6 +31,7 @@ services:
       CONTROLLED_DB_PING_TIMEOUT: ${CONTROLLED_DB_PING_TIMEOUT:-5s}
       CONTROLLED_DB_MAX_CONNS: ${CONTROLLED_DB_MAX_CONNS:-10}
       CONTROLLED_DB_MIN_CONNS: ${CONTROLLED_DB_MIN_CONNS:-1}
+      CONTROLLED_GOOGLE_CLIENT_ID: ${CONTROLLED_GOOGLE_CLIENT_ID:-376706277927-s4mest4okp2a4par7m6tl69b9ut3rl7c.apps.googleusercontent.com}
     depends_on:
       postgres:
         condition: service_healthy

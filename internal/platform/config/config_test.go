@@ -21,7 +21,8 @@ func TestLoadUsesValidatedDefaults(t *testing.T) {
 		configuration.ShutdownTimeout != 10*time.Second ||
 		configuration.DatabaseMaxConns != 10 ||
 		configuration.DatabaseMinConns != 1 ||
-		configuration.DatabasePingTimeout != 5*time.Second {
+		configuration.DatabasePingTimeout != 5*time.Second ||
+		configuration.GoogleClientID != defaultGoogleClientID {
 		t.Fatalf("load() = %#v", configuration)
 	}
 }
@@ -37,6 +38,7 @@ func TestLoadReadsOverrides(t *testing.T) {
 		"CONTROLLED_DB_PING_TIMEOUT":  "2s",
 		"CONTROLLED_DB_MAX_CONNS":     "20",
 		"CONTROLLED_DB_MIN_CONNS":     "4",
+		"CONTROLLED_GOOGLE_CLIENT_ID": "google-client-id",
 	}))
 	if err != nil {
 		t.Fatalf("load() error = %v", err)
@@ -46,7 +48,8 @@ func TestLoadReadsOverrides(t *testing.T) {
 		configuration.ShutdownTimeout != 3*time.Second ||
 		configuration.DatabasePingTimeout != 2*time.Second ||
 		configuration.DatabaseMaxConns != 20 ||
-		configuration.DatabaseMinConns != 4 {
+		configuration.DatabaseMinConns != 4 ||
+		configuration.GoogleClientID != "google-client-id" {
 		t.Fatalf("load() = %#v", configuration)
 	}
 }
@@ -63,6 +66,7 @@ func TestLoadRejectsInvalidConfiguration(t *testing.T) {
 		{name: "log level", values: map[string]string{"DATABASE_URL": "postgres://db", "CONTROLLED_LOG_LEVEL": "TRACE"}, wantErr: ErrInvalidConfig},
 		{name: "duration", values: map[string]string{"DATABASE_URL": "postgres://db", "CONTROLLED_DB_PING_TIMEOUT": "0s"}, wantErr: ErrInvalidConfig},
 		{name: "empty address", values: map[string]string{"DATABASE_URL": "postgres://db", "CONTROLLED_HTTP_ADDR": " "}, wantErr: ErrInvalidConfig},
+		{name: "empty Google client ID", values: map[string]string{"DATABASE_URL": "postgres://db", "CONTROLLED_GOOGLE_CLIENT_ID": " "}, wantErr: ErrInvalidConfig},
 		{name: "connection count", values: map[string]string{"DATABASE_URL": "postgres://db", "CONTROLLED_DB_MAX_CONNS": "0"}, wantErr: ErrInvalidConfig},
 		{name: "minimum exceeds maximum", values: map[string]string{"DATABASE_URL": "postgres://db", "CONTROLLED_DB_MAX_CONNS": "2", "CONTROLLED_DB_MIN_CONNS": "3"}, wantErr: ErrInvalidConfig},
 	}

@@ -60,6 +60,7 @@ Defaults are intended only for local development. Override them through shell va
 | `CONTROLLED_DB_PING_TIMEOUT` | `5s` | database ping timeout |
 | `CONTROLLED_DB_MAX_CONNS` | `10` | maximum connection-pool size |
 | `CONTROLLED_DB_MIN_CONNS` | `1` | minimum connection-pool size |
+| `CONTROLLED_GOOGLE_CLIENT_ID` | Controlled Web OAuth client ID | accepted audience for Google ID tokens |
 
 If you change `POSTGRES_DB`, `POSTGRES_USER`, or `POSTGRES_PASSWORD`, also set a matching `DATABASE_URL`; its default is a literal URL using the default credentials.
 
@@ -103,6 +104,8 @@ docker run --rm \
 Replace the database URL with credentials and TLS settings appropriate for the deployment. Do not use `localhost` for a database in another container: inside the API container, `localhost` refers to the API container itself.
 
 For a remote deployment, terminate HTTPS at the platform load balancer or reverse proxy, inject `DATABASE_URL` from the platform's secret manager, keep PostgreSQL off the public network, and persist the database independently of the API container. The API image is stateless except for the current process-local fake custody provider described below.
+
+Google sign-in uses `POST /v1/auth/google`. The app sends a Google ID token; the API verifies its signature, issuer, expiry, verified email, and Web client-ID audience before issuing a Controlled session. OAuth client IDs are public configuration values—never add a Google client secret to the mobile app.
 
 ## Current development boundary
 

@@ -32,6 +32,50 @@ func (s *PostgresSessionStore) UserByEmail(ctx context.Context, email string) (U
 	`, email))
 }
 
+func (s *PostgresSessionStore) UserByGoogleSubject(ctx context.Context, subject string) (User, error) {
+	if s == nil || s.pool == nil {
+		return User{}, ErrSessionStore
+	}
+	user, err := scanUser(s.pool.QueryRow(ctx, `
+		SELECT users.id::text, users.email, users.display_name, users.created_at
+		  FROM oauth_identities
+		  JOIN users ON users.id = oauth_identities.user_id
+		 WHERE oauth_identities.provider = 'google'
+		   AND oauth_identities.subject = $1
+	`, subject))
+	if errors.Is(err, ErrInvalidCredentials) {
+		return User{}, ErrGoogleIdentityNotFound
+	}
+	return user, err
+}
+
+func (s *PostgresSessionStore) LinkGoogleIdentity(
+	ctx context.Context,
+	userID UserID,
+	subject string,
+	email string,
+) error {
+	if s == nil || s.pool == nil {
+		return ErrSessionStore
+	}
+	parsedUserID, err := identityUUID(string(userID))
+	if err != nil {
+		return err
+	}
+	_, err = s.pool.Exec(ctx, `
+		INSERT INTO oauth_identities (provider, subject, user_id, email_at_link)
+		VALUES ('google', $1, $2, $3)
+	`, subject, parsedUserID, email)
+	if err == nil {
+		return nil
+	}
+	var databaseError *pgconn.PgError
+	if errors.As(err, &databaseError) && databaseError.Code == "23505" {
+		return ErrGoogleIdentityExists
+	}
+	return fmt.Errorf("link Google identity: %w", err)
+}
+
 func (s *PostgresSessionStore) CreateSession(ctx context.Context, session Session) error {
 	if s == nil || s.pool == nil {
 		return ErrSessionStore
