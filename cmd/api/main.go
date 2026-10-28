@@ -58,14 +58,22 @@ func run(ctx context.Context) error {
 		platform.SystemClock{},
 		store,
 	)
+	identityStore := identity.NewPostgresSessionStore(database)
 	sessions := identity.NewSessionService(
 		platform.NewUUIDGenerator(),
 		platform.NewTokenGenerator(),
 		platform.SystemClock{},
-		identity.NewPostgresSessionStore(database),
+		identityStore,
 		24*time.Hour,
 	)
 	sessionHandler := identity.NewSessionHandler(sessions)
+	googleAuthentication := identity.NewGoogleAuthenticationService(
+		identity.NewGoogleVerifier(configuration.GoogleClientID),
+		identityStore,
+		googleUserProvisioner{onboarding: onboarding},
+		sessions,
+	)
+	googleAuthenticationHandler := identity.NewGoogleAuthenticationHandler(googleAuthentication)
 	walletReadHandler := wallet.NewReadHandler(store)
 	fakeCustody := custody.NewFake(platform.NewUUIDGenerator())
 	walletOperations := walletops.NewService(
@@ -80,6 +88,7 @@ func run(ctx context.Context) error {
 	mux := http.NewServeMux()
 	mux.Handle("POST /v1/demo/users", wallet.NewOnboardingHandler(onboarding))
 	mux.HandleFunc("POST /v1/demo/sessions", sessionHandler.Start)
+	mux.Handle("POST /v1/auth/google", googleAuthenticationHandler)
 	mux.HandleFunc("DELETE /v1/sessions/current", sessionHandler.End)
 	mux.Handle("GET /v1/users/current", identity.RequireSession(sessions, http.HandlerFunc(identity.CurrentUserHandler)))
 	mux.Handle("GET /v1/wallet", identity.RequireSession(sessions, http.HandlerFunc(walletReadHandler.Wallet)))

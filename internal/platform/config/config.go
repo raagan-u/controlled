@@ -16,6 +16,8 @@ var (
 	ErrInvalidConfig       = errors.New("configuration value is invalid")
 )
 
+const defaultGoogleClientID = "376706277927-s4mest4okp2a4par7m6tl69b9ut3rl7c.apps.googleusercontent.com"
+
 type Config struct {
 	HTTPAddress         string
 	DatabaseURL         string
@@ -24,6 +26,7 @@ type Config struct {
 	DatabaseMaxConns    int32
 	DatabaseMinConns    int32
 	DatabasePingTimeout time.Duration
+	GoogleClientID      string
 }
 
 func Load() (Config, error) {
@@ -65,6 +68,10 @@ func load(lookup lookupEnv) (Config, error) {
 	if httpAddress == "" {
 		return Config{}, fmt.Errorf("%w: CONTROLLED_HTTP_ADDR", ErrInvalidConfig)
 	}
+	googleClientID := strings.TrimSpace(value(lookup, "CONTROLLED_GOOGLE_CLIENT_ID", defaultGoogleClientID))
+	if googleClientID == "" {
+		return Config{}, fmt.Errorf("%w: CONTROLLED_GOOGLE_CLIENT_ID", ErrInvalidConfig)
+	}
 
 	return Config{
 		HTTPAddress:         httpAddress,
@@ -74,6 +81,7 @@ func load(lookup lookupEnv) (Config, error) {
 		DatabaseMaxConns:    maxConns,
 		DatabaseMinConns:    minConns,
 		DatabasePingTimeout: pingTimeout,
+		GoogleClientID:      googleClientID,
 	}, nil
 }
 
