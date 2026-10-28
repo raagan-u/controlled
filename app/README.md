@@ -1,6 +1,6 @@
 # Controlled mobile app
 
-Expo React Native client for Controlled, targeting Android and iOS. The current UI implements the supplied onboarding reference through the initial greeting screen. Google authentication exchanges a verified Google ID token for a Controlled session.
+Expo React Native client for Controlled, targeting Android and iOS. The current UI implements the supplied onboarding reference through the initial greeting screen. Google and email/password authentication exchange verified credentials for a Controlled session. Email OTP verification is intentionally deferred.
 
 ## Run locally
 

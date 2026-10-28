@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { AuthFormScreen } from '@/components/AuthFormScreen';
 import { useGoogleAuthentication } from '@/hooks/useGoogleAuthentication';
+import { usePasswordAuthentication } from '@/hooks/usePasswordAuthentication';
 import { colors, fonts } from '@/theme';
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -27,6 +28,7 @@ function validateSignUp(values: Record<string, string>) {
 
 export default function SignUpScreen() {
   const google = useGoogleAuthentication();
+  const password = usePasswordAuthentication('register');
 
   return (
     <AuthFormScreen
@@ -53,10 +55,12 @@ export default function SignUpScreen() {
           </Pressable>
         </View>
       }
+      formError={password.error}
       googleError={google.error}
       googleLoading={google.loading}
       onGooglePress={google.authenticate}
-      onSubmit={() => router.push('/verify-email')}
+      onSubmit={password.authenticate}
+      submitting={password.loading}
       submitLabel="Create account"
       title="sign up"
       validate={validateSignUp}

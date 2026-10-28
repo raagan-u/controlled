@@ -28,10 +28,12 @@ export type AuthErrors = Partial<Record<string, string>>;
 type AuthFormScreenProps = {
   fields: Field[];
   footer: ReactNode;
+  formError?: string;
   googleError?: string;
   googleLoading?: boolean;
   onGooglePress: () => void;
-  onSubmit: () => void;
+  onSubmit: (values: AuthValues) => void;
+  submitting?: boolean;
   submitLabel: string;
   title: string;
   validate: (values: AuthValues) => AuthErrors;
@@ -40,10 +42,12 @@ type AuthFormScreenProps = {
 export function AuthFormScreen({
   fields,
   footer,
+  formError,
   googleError,
   googleLoading = false,
   onGooglePress,
   onSubmit,
+  submitting = false,
   submitLabel,
   title,
   validate,
@@ -60,7 +64,7 @@ export function AuthFormScreen({
   const handleSubmit = () => {
     setTouched(new Set(fields.map((field) => field.name)));
     if (isValid) {
-      onSubmit();
+      onSubmit(values);
     }
   };
 
@@ -102,7 +106,12 @@ export function AuthFormScreen({
             })}
           </View>
 
-          <PrimaryButton disabled={!isValid} label={submitLabel} onPress={handleSubmit} />
+          <PrimaryButton
+            disabled={!isValid || submitting}
+            label={submitLabel}
+            onPress={handleSubmit}
+          />
+          {formError ? <Text style={styles.formError}>{formError}</Text> : null}
           <View style={styles.footer}>{footer}</View>
           <Text style={styles.or}>or</Text>
           <GoogleButton disabled={googleLoading} onPress={onGooglePress} />
@@ -168,6 +177,14 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     marginLeft: 20,
     marginTop: 5,
+  },
+  formError: {
+    color: colors.error,
+    fontFamily: fonts.medium,
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: 10,
+    textAlign: 'center',
   },
   googleError: {
     color: colors.error,
