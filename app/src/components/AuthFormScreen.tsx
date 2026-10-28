@@ -28,6 +28,8 @@ export type AuthErrors = Partial<Record<string, string>>;
 type AuthFormScreenProps = {
   fields: Field[];
   footer: ReactNode;
+  googleError?: string;
+  googleLoading?: boolean;
   onGooglePress: () => void;
   onSubmit: () => void;
   submitLabel: string;
@@ -38,6 +40,8 @@ type AuthFormScreenProps = {
 export function AuthFormScreen({
   fields,
   footer,
+  googleError,
+  googleLoading = false,
   onGooglePress,
   onSubmit,
   submitLabel,
@@ -101,7 +105,8 @@ export function AuthFormScreen({
           <PrimaryButton disabled={!isValid} label={submitLabel} onPress={handleSubmit} />
           <View style={styles.footer}>{footer}</View>
           <Text style={styles.or}>or</Text>
-          <GoogleButton onPress={onGooglePress} />
+          <GoogleButton disabled={googleLoading} onPress={onGooglePress} />
+          {googleError ? <Text style={styles.googleError}>{googleError}</Text> : null}
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -163,6 +168,14 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     marginLeft: 20,
     marginTop: 5,
+  },
+  googleError: {
+    color: colors.error,
+    fontFamily: fonts.medium,
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: 10,
+    textAlign: 'center',
   },
   footer: {
     marginTop: 14,

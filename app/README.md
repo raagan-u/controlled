@@ -1,6 +1,6 @@
 # Controlled mobile app
 
-Expo React Native client for Controlled, targeting Android and iOS. The current UI implements the supplied onboarding reference through the initial greeting screen. Authentication actions are intentionally local navigation placeholders until the API integration pass.
+Expo React Native client for Controlled, targeting Android and iOS. The current UI implements the supplied onboarding reference through the initial greeting screen. Google authentication exchanges a verified Google ID token for a Controlled session.
 
 ## Run locally
 
@@ -9,14 +9,21 @@ Use Node 24, then install dependencies and start Expo from this directory:
 ```bash
 nvm use
 npm install
+npm run android
+```
+
+Google sign-in uses native modules, so it requires a development build and does not run in Expo Go. After the first native build, start Metro with:
+
+```bash
 npm start
 ```
 
-From the Expo terminal, press `a` for Android or `i` for iOS. You can also run a platform directly:
+Use `npm run ios` to create and run the iOS development build.
+
+The Android emulator reaches the local API at `http://10.0.2.2:8080` by default; iOS uses `http://127.0.0.1:8080`. For a physical device or hosted API, set `EXPO_PUBLIC_API_URL` before starting Expo:
 
 ```bash
-npm run android
-npm run ios
+EXPO_PUBLIC_API_URL=http://192.168.1.20:8080 npm start
 ```
 
 ## Checks

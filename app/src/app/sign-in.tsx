@@ -2,6 +2,7 @@ import { router } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { AuthFormScreen } from '@/components/AuthFormScreen';
+import { useGoogleAuthentication } from '@/hooks/useGoogleAuthentication';
 import { colors, fonts } from '@/theme';
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -20,6 +21,8 @@ function validateSignIn(values: Record<string, string>) {
 }
 
 export default function SignInScreen() {
+  const google = useGoogleAuthentication();
+
   return (
     <AuthFormScreen
       fields={[
@@ -39,7 +42,9 @@ export default function SignInScreen() {
           </Pressable>
         </View>
       }
-      onGooglePress={() => {}}
+      googleError={google.error}
+      googleLoading={google.loading}
+      onGooglePress={google.authenticate}
       onSubmit={() => router.push('/onboarding')}
       submitLabel="sign in"
       title="sign in"
