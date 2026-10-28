@@ -64,9 +64,9 @@ Controlled may charge a small, transparent fee when a pact activates. The fee is
 ## Technology
 
 - Go modular-monolith backend
-- Web frontend
+- Expo React Native mobile app for Android and iOS
 - PostgreSQL ledger and audit history
 - PayPal Sandbox payment flows
 - AI with structured, grounded outputs
 
-See the [product specification](./SPEC.md) and [backend specification](./BACKEND_SPEC.md) for the evolving system design. To run and exercise the implemented backend, use the [service setup runbook](./SERVICE_SETUP.md) and [external API integration specification](./API_INTEGRATION_SPEC.md).
+See the [product specification](./SPEC.md) and [backend specification](./BACKEND_SPEC.md) for the evolving system design. To run the mobile UI, use the [app setup guide](./app/README.md). To run and exercise the implemented backend, use the [service setup runbook](./SERVICE_SETUP.md) and [external API integration specification](./API_INTEGRATION_SPEC.md).
