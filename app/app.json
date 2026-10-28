@@ -25,7 +25,15 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-router"
+      "expo-router",
+      "expo-dev-client",
+      "expo-secure-store",
+      [
+        "react-native-nitro-google-signin",
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.376706277927-p59kimeh6k4qbvfmekj2je0uqom151br"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
