@@ -278,6 +278,10 @@ func (r *PostgresRepository) Save(ctx context.Context, pact *Pact, expectedVersi
 		}
 	}
 	terms := pact.Terms()
+	events := pact.Events()
+	if len(events) == 0 {
+		return ErrInvalidTimestamp
+	}
 	result, err := r.pool.Exec(ctx, `
 		UPDATE pacts
 		   SET goal = $4,
@@ -294,12 +298,13 @@ func (r *PostgresRepository) Save(ctx context.Context, pact *Pact, expectedVersi
 		       stake_reservation_id = $15,
 		       emergency_count = $16,
 		       version = $17,
-		       updated_at = now()
+		       updated_at = $18
 		 WHERE id = $1 AND owner_id = $2 AND version = $3
 	`, id, ownerID, expectedVersion, terms.Goal(), terms.Intent(),
 		terms.SpendingLimit().AmountMinor(), terms.Stake().AmountMinor(), terms.SpendingLimit().Currency(),
 		terms.StartsAt(), terms.EndsAt(), circleID, terms.BreakConsequence(),
-		pact.Status(), pact.Outcome(), reservationID, pact.EmergencyCount(), pact.Version())
+		pact.Status(), pact.Outcome(), reservationID, pact.EmergencyCount(), pact.Version(),
+		events[len(events)-1].OccurredAt)
 	if err != nil {
 		return fmt.Errorf("save pact: %w", err)
 	}
