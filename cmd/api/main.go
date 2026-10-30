@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/raagan-u/controlled/internal/accountability"
 	"github.com/raagan-u/controlled/internal/custody"
 	"github.com/raagan-u/controlled/internal/identity"
 	"github.com/raagan-u/controlled/internal/ledger"
@@ -91,6 +92,12 @@ func run(ctx context.Context) error {
 		walletops.AllowAllPolicy{},
 	)
 	walletOperationHandler := walletops.NewHandler(walletOperations)
+	accountabilityService := accountability.NewService(
+		platform.NewUUIDGenerator(),
+		platform.SystemClock{},
+		accountability.NewPostgresRepository(database),
+	)
+	accountabilityHandler := accountability.NewHandler(accountabilityService)
 
 	mux := http.NewServeMux()
 	mux.Handle("POST /v1/demo/users", wallet.NewOnboardingHandler(onboarding))
@@ -107,6 +114,10 @@ func run(ctx context.Context) error {
 	mux.Handle("POST /v1/wallet/internal-transfers", identity.RequireSession(sessions, http.HandlerFunc(walletOperationHandler.CreateTransfer)))
 	mux.Handle("POST /v1/wallet/withdrawals", identity.RequireSession(sessions, http.HandlerFunc(walletOperationHandler.CreateWithdrawal)))
 	mux.Handle("POST /v1/demo/withdrawals/{id}/settle", identity.RequireSession(sessions, http.HandlerFunc(walletOperationHandler.SettleWithdrawal)))
+	mux.Handle("POST /v1/accountability/invitations", identity.RequireSession(sessions, http.HandlerFunc(accountabilityHandler.Invite)))
+	mux.Handle("POST /v1/accountability/invitations/{id}/accept", identity.RequireSession(sessions, http.HandlerFunc(accountabilityHandler.Accept)))
+	mux.Handle("POST /v1/accountability/invitations/{id}/decline", identity.RequireSession(sessions, http.HandlerFunc(accountabilityHandler.Decline)))
+	mux.Handle("POST /v1/accountability/circles", identity.RequireSession(sessions, http.HandlerFunc(accountabilityHandler.CreateCircle)))
 	health := httpapi.NewHealthHandler(database, configuration.DatabasePingTimeout)
 	mux.HandleFunc("GET /healthz", health.Liveness)
 	mux.HandleFunc("GET /readyz", health.Readiness)
