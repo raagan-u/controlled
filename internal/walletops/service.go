@@ -29,6 +29,7 @@ type Repository interface {
 	ReserveWithdrawal(context.Context, string, Withdrawal, ledger.JournalID) (Withdrawal, error)
 	AttachPayout(context.Context, identity.UserID, OperationID, custody.Payout, time.Time) (Withdrawal, error)
 	Withdrawal(context.Context, identity.UserID, OperationID) (Withdrawal, error)
+	PendingWithdrawals(context.Context, int) ([]Withdrawal, error)
 	SettleWithdrawal(context.Context, identity.UserID, OperationID, bool, ledger.JournalID, ledger.AccountID, time.Time) (Withdrawal, error)
 }
 
@@ -39,6 +40,12 @@ type Service struct {
 	custody  custody.Provider
 	policy   Policy
 	requests RequestCoordinator
+}
+
+type ReconciliationResult struct {
+	Completed int
+	Failed    int
+	Pending   int
 }
 
 func (s *Service) EnableAccountability(requests RequestCoordinator) *Service {
@@ -351,6 +358,37 @@ func (s *Service) ReconcileWithdrawal(
 		ledger.AccountID(generated[1]),
 		s.clock.Now().UTC(),
 	)
+}
+
+func (s *Service) ReconcilePendingWithdrawals(ctx context.Context, limit int) (ReconciliationResult, error) {
+	if err := s.available(); err != nil {
+		return ReconciliationResult{}, err
+	}
+	if limit <= 0 {
+		return ReconciliationResult{}, ErrInvalidOperation
+	}
+	withdrawals, err := s.repo.PendingWithdrawals(ctx, limit)
+	if err != nil {
+		return ReconciliationResult{}, err
+	}
+	var result ReconciliationResult
+	var reconciliationErrors []error
+	for _, withdrawal := range withdrawals {
+		settled, reconcileErr := s.ReconcileWithdrawal(ctx, withdrawal.OwnerID, withdrawal.ID)
+		if reconcileErr != nil {
+			reconciliationErrors = append(reconciliationErrors, reconcileErr)
+			continue
+		}
+		switch settled.Status {
+		case WithdrawalCompleted:
+			result.Completed++
+		case WithdrawalFailed:
+			result.Failed++
+		default:
+			result.Pending++
+		}
+	}
+	return result, errors.Join(reconciliationErrors...)
 }
 
 func (s *Service) SimulateWithdrawalSettlement(

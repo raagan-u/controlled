@@ -113,7 +113,7 @@ func run(ctx context.Context) error {
 	pactHandler := pact.NewHandler(pactService)
 	paymentRequestService := paymentrequest.NewService(platform.NewUUIDGenerator(), platform.SystemClock{}, paymentrequest.NewPostgresRepository(database), walletOperations)
 	paymentRequestHandler := paymentrequest.NewHandler(paymentRequestService)
-	go runMaintenance(ctx, accountabilityService, pactService, paymentRequestService)
+	go runMaintenance(ctx, accountabilityService, pactService, paymentRequestService, walletOperations)
 
 	mux := http.NewServeMux()
 	mux.Handle("POST /v1/demo/users", wallet.NewOnboardingHandler(onboarding))
@@ -203,7 +203,7 @@ func configuredCustodyProvider(configuration config.Config) (custody.Provider, e
 	return custody.NewFake(platform.NewUUIDGenerator()), nil
 }
 
-func runMaintenance(ctx context.Context, accountabilityService *accountability.Service, pactService *pact.Service, paymentRequests *paymentrequest.Service) {
+func runMaintenance(ctx context.Context, accountabilityService *accountability.Service, pactService *pact.Service, paymentRequests *paymentrequest.Service, walletOperations *walletops.Service) {
 	run := func() {
 		if result, err := accountabilityService.RunMaintenance(ctx); err != nil && !errors.Is(err, context.Canceled) {
 			slog.Error("Accountability maintenance failed", "error", err)
@@ -217,6 +217,11 @@ func runMaintenance(ctx context.Context, accountabilityService *accountability.S
 		}
 		if err := paymentRequests.Maintain(ctx); err != nil && !errors.Is(err, context.Canceled) {
 			slog.Error("Payment request maintenance failed", "error", err)
+		}
+		if result, err := walletOperations.ReconcilePendingWithdrawals(ctx, 100); err != nil && !errors.Is(err, context.Canceled) {
+			slog.Error("Withdrawal reconciliation failed", "error", err)
+		} else if result.Completed > 0 || result.Failed > 0 {
+			slog.Info("Withdrawal reconciliation completed", "completed", result.Completed, "failed", result.Failed, "pending", result.Pending)
 		}
 	}
 	run()

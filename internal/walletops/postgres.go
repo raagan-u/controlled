@@ -521,6 +521,29 @@ func (r *PostgresRepository) Withdrawal(
 	return loadWithdrawal(ctx, r.pool, ownerID, id, false)
 }
 
+func (r *PostgresRepository) PendingWithdrawals(ctx context.Context, limit int) ([]Withdrawal, error) {
+	if r == nil || r.pool == nil || limit <= 0 {
+		return nil, ErrUnavailable
+	}
+	rows, err := r.pool.Query(ctx, withdrawalSelect+` WHERE status = 'PENDING' ORDER BY updated_at LIMIT $1`, limit)
+	if err != nil {
+		return nil, mapOperationError(err)
+	}
+	defer rows.Close()
+	withdrawals := make([]Withdrawal, 0)
+	for rows.Next() {
+		withdrawal, scanErr := scanWithdrawal(rows)
+		if scanErr != nil {
+			return nil, scanErr
+		}
+		withdrawals = append(withdrawals, withdrawal)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list pending withdrawals: %w", err)
+	}
+	return withdrawals, nil
+}
+
 func (r *PostgresRepository) SettleWithdrawal(
 	ctx context.Context,
 	ownerID identity.UserID,
@@ -885,7 +908,7 @@ const withdrawalSelect = `
 	       created_at, updated_at, completed_at
 	  FROM withdrawals`
 
-func scanWithdrawal(row pgx.Row) (Withdrawal, error) {
+func scanWithdrawal(row interface{ Scan(...any) error }) (Withdrawal, error) {
 	var result Withdrawal
 	var id string
 	var ownerID string

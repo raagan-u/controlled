@@ -152,6 +152,13 @@ func (r *memoryRepository) Withdrawal(context.Context, identity.UserID, walletop
 	return r.withdrawal, nil
 }
 
+func (r *memoryRepository) PendingWithdrawals(context.Context, int) ([]walletops.Withdrawal, error) {
+	if r.withdrawal.Status == walletops.WithdrawalPending {
+		return []walletops.Withdrawal{r.withdrawal}, nil
+	}
+	return nil, nil
+}
+
 func (r *memoryRepository) SettleWithdrawal(_ context.Context, _ identity.UserID, _ walletops.OperationID, succeeded bool, journalID ledger.JournalID, _ ledger.AccountID, now time.Time) (walletops.Withdrawal, error) {
 	r.withdrawalSettled = true
 	if succeeded {

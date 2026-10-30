@@ -48,7 +48,8 @@ export default function WithdrawScreen() {
     try {
       const settled = await reconcileWithdrawal(withdrawal.id);
       setWithdrawal(settled);
-      setStep(settled.status === 'COMPLETED' ? 'success' : 'failed');
+	  if (settled.status === 'COMPLETED') setStep('success');
+	  else if (settled.status === 'FAILED') setStep('failed');
     } catch (cause) { setError(apiErrorMessage(cause)); }
     finally { setSubmitting(false); }
   }
