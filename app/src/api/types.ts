@@ -33,15 +33,22 @@ export type Transfer = {
   recipientEmail: string;
   recipientId: string;
 };
+export type PaymentRequestParty = Pick<User, 'id' | 'ctrldId' | 'displayName' | 'email'>;
 export type PaymentRequest = {
   amountMinor: number;
+	accountabilityRequestId?: string;
   createdAt: string;
   currency: 'USD';
   duplicate: boolean;
+	expiresAt: string;
   id: string;
   note: string;
-  recipientId: string;
-  status: 'PENDING' | 'PAID' | 'DECLINED' | 'CANCELLED';
+	recipient: PaymentRequestParty;
+	requester: PaymentRequestParty;
+	resolvedAt?: string;
+	status: 'PENDING' | 'PROCESSING' | 'AWAITING_APPROVAL' | 'PAID' | 'DECLINED' | 'CANCELLED' | 'EXPIRED';
+	transferId?: string;
+	updatedAt: string;
 };
 export type AccountabilityRequest = {
   assignedPartnerId: string;
