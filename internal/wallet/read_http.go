@@ -87,6 +87,13 @@ func transactionResponse(transaction Transaction) transactionAPIResponse {
 		PostedAt: transaction.PostedAt, Reversed: transaction.Reversed,
 		Entries: make([]transactionEntryAPIResponse, 0, len(transaction.Entries)),
 	}
+	if transaction.Transfer != nil {
+		item.Transfer = &transferDetailsAPIResponse{
+			Sender:    partyAPIResponse{ID: string(transaction.Transfer.Sender.ID), CtrldID: transaction.Transfer.Sender.CtrldID, Email: transaction.Transfer.Sender.Email, DisplayName: transaction.Transfer.Sender.DisplayName},
+			Recipient: partyAPIResponse{ID: string(transaction.Transfer.Recipient.ID), CtrldID: transaction.Transfer.Recipient.CtrldID, Email: transaction.Transfer.Recipient.Email, DisplayName: transaction.Transfer.Recipient.DisplayName},
+			Remark:    transaction.Transfer.Remark, PaymentRequestID: transaction.Transfer.PaymentRequestID,
+		}
+	}
 	for _, entry := range transaction.Entries {
 		item.Entries = append(item.Entries, transactionEntryAPIResponse{
 			AccountID: string(entry.AccountID), AccountKind: string(entry.AccountKind), Side: string(entry.Side),
@@ -104,6 +111,20 @@ type transactionAPIResponse struct {
 	PostedAt    time.Time                       `json:"postedAt"`
 	Reversed    bool                            `json:"reversed"`
 	Entries     []transactionEntryAPIResponse   `json:"entries"`
+	Transfer    *transferDetailsAPIResponse     `json:"transferDetails,omitempty"`
+}
+
+type partyAPIResponse struct {
+	ID          string `json:"id"`
+	CtrldID     string `json:"ctrldId"`
+	Email       string `json:"email"`
+	DisplayName string `json:"displayName"`
+}
+type transferDetailsAPIResponse struct {
+	Sender           partyAPIResponse `json:"sender"`
+	Recipient        partyAPIResponse `json:"recipient"`
+	Remark           string           `json:"remark,omitempty"`
+	PaymentRequestID string           `json:"paymentRequestId,omitempty"`
 }
 
 type transactionReferenceAPIResponse struct {

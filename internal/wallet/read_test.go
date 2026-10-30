@@ -137,6 +137,11 @@ func TestWalletTransactionHandler(t *testing.T) {
 		ID: "journal-1", Reference: ledger.Reference{Type: "INTERNAL_TRANSFER", ID: "transfer-1"},
 		Description: "Controlled internal transfer", OccurredAt: time.Now(), PostedAt: time.Now(),
 		Entries: []wallet.TransactionEntry{{AccountID: "available-1", AccountKind: ledger.AccountKindAvailable, Side: ledger.SideDebit, Amount: amount}},
+		Transfer: &wallet.TransferDetails{
+			Sender:    wallet.TransactionParty{ID: "user-1", CtrldID: "ctrld00001", DisplayName: "Raagan", Email: "founder@example.com"},
+			Recipient: wallet.TransactionParty{ID: "user-2", CtrldID: "ctrld00002", DisplayName: "Friend", Email: "friend@example.com"},
+			Remark:    "Dinner", PaymentRequestID: "request-1",
+		},
 	}}
 	handler := wallet.NewReadHandler(reader)
 	protected := identity.RequireSession(walletSessionManager{user: user}, http.HandlerFunc(handler.Transaction))
@@ -150,11 +155,20 @@ func TestWalletTransactionHandler(t *testing.T) {
 	}
 	var payload struct {
 		Transaction struct {
-			ID string `json:"id"`
+			ID              string `json:"id"`
+			TransferDetails struct {
+				Remark string `json:"remark"`
+				Sender struct {
+					DisplayName string `json:"displayName"`
+				} `json:"sender"`
+			} `json:"transferDetails"`
 		} `json:"transaction"`
 	}
 	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil || payload.Transaction.ID != "journal-1" {
 		t.Fatalf("response = %s, err = %v", response.Body.String(), err)
+	}
+	if payload.Transaction.TransferDetails.Remark != "Dinner" || payload.Transaction.TransferDetails.Sender.DisplayName != "Raagan" {
+		t.Fatalf("transfer details = %#v", payload.Transaction.TransferDetails)
 	}
 }
 

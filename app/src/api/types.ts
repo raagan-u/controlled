@@ -6,7 +6,7 @@ export type Wallet = {
   createdAt: string; currency: 'USD'; id: string; ownerId: string;
 };
 export type LedgerEntry = { accountId: string; accountKind: string; amount: Money; side: 'CREDIT' | 'DEBIT' };
-export type Transaction = { description: string; entries: LedgerEntry[]; id: string; occurredAt: string; postedAt: string; reference: { id: string; type: string }; reversed: boolean };
+export type Transaction = { description: string; entries: LedgerEntry[]; id: string; occurredAt: string; postedAt: string; reference: { id: string; type: string }; reversed: boolean; transferDetails?: { paymentRequestId?: string; recipient: PaymentRequestParty; remark?: string; sender: PaymentRequestParty } };
 export type FundingIntent = {
   amount: Money;
   approvalURL?: string;

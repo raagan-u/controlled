@@ -316,6 +316,40 @@ func (s *PostgresProvisioningStore) TransactionByUser(
 	if result.ID == "" {
 		return Transaction{}, ErrTransactionNotFound
 	}
+	if result.Reference.Type == "INTERNAL_TRANSFER" {
+		transfer, err := s.transferDetails(ctx, result.Reference.ID)
+		if err != nil {
+			return Transaction{}, err
+		}
+		result.Transfer = &transfer
+	}
+	return result, nil
+}
+
+func (s *PostgresProvisioningStore) transferDetails(ctx context.Context, transferID string) (TransferDetails, error) {
+	var result TransferDetails
+	err := s.pool.QueryRow(ctx, `
+		SELECT sender.id::text, sender.ctrld_id, sender.email, sender.display_name,
+		       recipient.id::text, recipient.ctrld_id, recipient.email, recipient.display_name,
+		       COALESCE(request.note, ''), COALESCE(request.id::text, '')
+		  FROM internal_transfers AS transfer
+		  JOIN wallets AS sender_wallet ON sender_wallet.id = transfer.sender_wallet_id
+		  JOIN users AS sender ON sender.id = sender_wallet.owner_id
+		  JOIN wallets AS recipient_wallet ON recipient_wallet.id = transfer.recipient_wallet_id
+		  JOIN users AS recipient ON recipient.id = recipient_wallet.owner_id
+		  LEFT JOIN payment_requests AS request ON request.transfer_id = transfer.id
+		 WHERE transfer.id = $1::text::uuid
+	`, transferID).Scan(
+		&result.Sender.ID, &result.Sender.CtrldID, &result.Sender.Email, &result.Sender.DisplayName,
+		&result.Recipient.ID, &result.Recipient.CtrldID, &result.Recipient.Email, &result.Recipient.DisplayName,
+		&result.Remark, &result.PaymentRequestID,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return TransferDetails{}, ErrTransactionNotFound
+	}
+	if err != nil {
+		return TransferDetails{}, fmt.Errorf("read transfer details: %w", err)
+	}
 	return result, nil
 }
 

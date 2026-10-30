@@ -56,4 +56,19 @@ type Transaction struct {
 	PostedAt    time.Time
 	Reversed    bool
 	Entries     []TransactionEntry
+	Transfer    *TransferDetails
+}
+
+type TransactionParty struct {
+	ID          identity.UserID
+	CtrldID     string
+	Email       string
+	DisplayName string
+}
+
+type TransferDetails struct {
+	Sender           TransactionParty
+	Recipient        TransactionParty
+	Remark           string
+	PaymentRequestID string
 }
