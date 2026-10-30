@@ -26,6 +26,8 @@ func TestPactHandlers(t *testing.T) {
 	mux.Handle("GET /v1/pacts/{id}", identity.RequireSession(sessions, http.HandlerFunc(handler.Pact)))
 	mux.Handle("PUT /v1/pacts/{id}", identity.RequireSession(sessions, http.HandlerFunc(handler.UpdateDraft)))
 	mux.Handle("POST /v1/pacts/{id}/confirm", identity.RequireSession(sessions, http.HandlerFunc(handler.Confirm)))
+	mux.Handle("POST /v1/pacts/{id}/stake", identity.RequireSession(sessions, http.HandlerFunc(handler.ReserveStake)))
+	mux.Handle("POST /v1/pacts/{id}/cancel", identity.RequireSession(sessions, http.HandlerFunc(handler.Cancel)))
 
 	body := `{"goal":"Save for rent","intent":"Spend less","spendingLimitMinor":20000,"stakeMinor":5000,"currency":"USD","startsAt":"2026-10-31T00:00:00Z","endsAt":"2026-11-30T00:00:00Z","accountabilityCircleId":"circle","breakConsequence":"COMMITMENT_RESERVE"}`
 	tests := []struct {
@@ -35,6 +37,8 @@ func TestPactHandlers(t *testing.T) {
 		{name: "create", method: http.MethodPost, path: "/v1/pacts", body: body, want: http.StatusCreated},
 		{name: "update", method: http.MethodPut, path: "/v1/pacts/pact", body: body, want: http.StatusOK},
 		{name: "confirm", method: http.MethodPost, path: "/v1/pacts/pact/confirm", body: `{}`, want: http.StatusOK},
+		{name: "stake", method: http.MethodPost, path: "/v1/pacts/pact/stake", body: `{}`, want: http.StatusOK},
+		{name: "cancel", method: http.MethodPost, path: "/v1/pacts/pact/cancel", body: `{}`, want: http.StatusOK},
 		{name: "detail", method: http.MethodGet, path: "/v1/pacts/pact", want: http.StatusOK},
 		{name: "list", method: http.MethodGet, path: "/v1/pacts", want: http.StatusOK},
 	}
@@ -79,6 +83,24 @@ func (s stubPactCommands) Pact(_ context.Context, owner pact.UserID, _ pact.Pact
 func (s stubPactCommands) Pacts(ctx context.Context, owner pact.UserID) ([]*pact.Pact, error) {
 	value, err := s.Pact(ctx, owner, "pact")
 	return []*pact.Pact{value}, err
+}
+
+func (s stubPactCommands) ReserveStake(_ context.Context, _ string, owner pact.UserID, _ pact.PactID) (*pact.Pact, bool, error) {
+	value, err := s.Confirm(context.Background(), owner, "pact")
+	if err != nil {
+		return nil, false, err
+	}
+	err = value.RecordStakeReserved(pact.StakeReservation{ID: "journal", Amount: value.Terms().Stake()}, s.now)
+	return value, false, err
+}
+
+func (s stubPactCommands) Cancel(_ context.Context, owner pact.UserID, _ pact.PactID) (*pact.Pact, bool, error) {
+	value, err := pact.CreateDraft("pact", owner, handlerTerms(s.now), s.now)
+	if err != nil {
+		return nil, false, err
+	}
+	err = value.Cancel(s.now)
+	return value, false, err
 }
 
 func handlerTerms(now time.Time) pact.Terms {

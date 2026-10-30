@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/raagan-u/controlled/internal/identity"
+	"github.com/raagan-u/controlled/internal/ledger"
 	"github.com/raagan-u/controlled/internal/platform/httpapi"
 )
 
@@ -16,6 +17,39 @@ type Commander interface {
 	Confirm(context.Context, UserID, PactID) (*Pact, error)
 	Pact(context.Context, UserID, PactID) (*Pact, error)
 	Pacts(context.Context, UserID) ([]*Pact, error)
+	ReserveStake(context.Context, string, UserID, PactID) (*Pact, bool, error)
+	Cancel(context.Context, UserID, PactID) (*Pact, bool, error)
+}
+
+func (h *Handler) ReserveStake(response http.ResponseWriter, request *http.Request) {
+	user, ok := pactUser(response, request)
+	if !ok {
+		return
+	}
+	value, duplicate, err := h.commands.ReserveStake(
+		request.Context(), request.Header.Get("Idempotency-Key"),
+		UserID(user.ID()), PactID(request.PathValue("id")),
+	)
+	if err != nil {
+		writePactError(response, err)
+		return
+	}
+	httpapi.WriteJSON(response, http.StatusOK, pactEnvelope(value, duplicate))
+}
+
+func (h *Handler) Cancel(response http.ResponseWriter, request *http.Request) {
+	user, ok := pactUser(response, request)
+	if !ok {
+		return
+	}
+	value, duplicate, err := h.commands.Cancel(
+		request.Context(), UserID(user.ID()), PactID(request.PathValue("id")),
+	)
+	if err != nil {
+		writePactError(response, err)
+		return
+	}
+	httpapi.WriteJSON(response, http.StatusOK, pactEnvelope(value, duplicate))
 }
 
 type Handler struct {
@@ -226,6 +260,10 @@ func writePactError(response http.ResponseWriter, err error) {
 		httpapi.WriteError(response, http.StatusConflict, "invalid_pact_transition", "The pact cannot make this transition.")
 	case errors.Is(err, ErrIdempotencyConflict), errors.Is(err, ErrVersionConflict):
 		httpapi.WriteError(response, http.StatusConflict, "pact_conflict", "The pact request conflicts with existing state.")
+	case errors.Is(err, ledger.ErrInsufficientBalance):
+		httpapi.WriteError(response, http.StatusConflict, "insufficient_balance", "The wallet does not have enough available balance for the pact stake.")
+	case errors.Is(err, ErrActivePactCannotBeCancelled):
+		httpapi.WriteError(response, http.StatusConflict, "active_pact_cannot_be_cancelled", "An active pact can only exit through the conscious-break flow.")
 	default:
 		httpapi.WriteError(response, http.StatusInternalServerError, "internal_error", "Controlled could not manage the pact.")
 	}
