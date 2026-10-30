@@ -14,6 +14,7 @@ import (
 	"github.com/raagan-u/controlled/internal/custody"
 	"github.com/raagan-u/controlled/internal/identity"
 	"github.com/raagan-u/controlled/internal/ledger"
+	"github.com/raagan-u/controlled/internal/pact"
 	"github.com/raagan-u/controlled/internal/platform"
 	"github.com/raagan-u/controlled/internal/platform/config"
 	"github.com/raagan-u/controlled/internal/platform/httpapi"
@@ -98,6 +99,12 @@ func run(ctx context.Context) error {
 		accountability.NewPostgresRepository(database),
 	)
 	accountabilityHandler := accountability.NewHandler(accountabilityService)
+	pactService := pact.NewService(
+		platform.NewUUIDGenerator(),
+		platform.SystemClock{},
+		pact.NewPostgresRepository(database),
+	)
+	pactHandler := pact.NewHandler(pactService)
 
 	mux := http.NewServeMux()
 	mux.Handle("POST /v1/demo/users", wallet.NewOnboardingHandler(onboarding))
@@ -120,6 +127,11 @@ func run(ctx context.Context) error {
 	mux.Handle("POST /v1/accountability/invitations/{id}/decline", identity.RequireSession(sessions, http.HandlerFunc(accountabilityHandler.Decline)))
 	mux.Handle("POST /v1/accountability/circles", identity.RequireSession(sessions, http.HandlerFunc(accountabilityHandler.CreateCircle)))
 	mux.Handle("GET /v1/accountability/circles", identity.RequireSession(sessions, http.HandlerFunc(accountabilityHandler.Circles)))
+	mux.Handle("POST /v1/pacts", identity.RequireSession(sessions, http.HandlerFunc(pactHandler.CreateDraft)))
+	mux.Handle("GET /v1/pacts", identity.RequireSession(sessions, http.HandlerFunc(pactHandler.Pacts)))
+	mux.Handle("GET /v1/pacts/{id}", identity.RequireSession(sessions, http.HandlerFunc(pactHandler.Pact)))
+	mux.Handle("PUT /v1/pacts/{id}", identity.RequireSession(sessions, http.HandlerFunc(pactHandler.UpdateDraft)))
+	mux.Handle("POST /v1/pacts/{id}/confirm", identity.RequireSession(sessions, http.HandlerFunc(pactHandler.Confirm)))
 	health := httpapi.NewHealthHandler(database, configuration.DatabasePingTimeout)
 	mux.HandleFunc("GET /healthz", health.Liveness)
 	mux.HandleFunc("GET /readyz", health.Readiness)
