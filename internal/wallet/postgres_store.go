@@ -479,6 +479,7 @@ func loadProvisioning(
 	var storedUserID string
 	var email string
 	var displayName string
+	var ctrldID string
 	var userCreatedAt pgtype.Timestamptz
 	var walletID string
 	var currency string
@@ -487,6 +488,7 @@ func loadProvisioning(
 		SELECT users.id::text,
 		       users.email,
 		       users.display_name,
+		       users.ctrld_id,
 		       users.created_at,
 		       wallets.id::text,
 		       wallets.currency,
@@ -498,6 +500,7 @@ func loadProvisioning(
 		&storedUserID,
 		&email,
 		&displayName,
+		&ctrldID,
 		&userCreatedAt,
 		&walletID,
 		&currency,
@@ -511,6 +514,10 @@ func loadProvisioning(
 	}
 
 	user, err := identity.NewUser(identity.UserID(storedUserID), email, displayName, userCreatedAt.Time)
+	if err != nil {
+		return Provisioning{}, err
+	}
+	user, err = user.WithCtrldID(ctrldID)
 	if err != nil {
 		return Provisioning{}, err
 	}

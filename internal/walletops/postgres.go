@@ -240,7 +240,11 @@ func (r *PostgresRepository) CreateTransfer(
 
 	existing, err := loadTransferByKey(ctx, tx, candidate.SenderID, key)
 	if err == nil {
-		if existing.RecipientEmail != candidate.RecipientEmail || !existing.Amount.Equal(candidate.Amount) {
+		matches, matchErr := transferRecipientMatches(ctx, tx, existing.RecipientID, candidate.RecipientEmail)
+		if matchErr != nil {
+			return Transfer{}, matchErr
+		}
+		if !matches || !existing.Amount.Equal(candidate.Amount) {
 			return Transfer{}, ErrIdempotencyConflict
 		}
 		existing.Duplicate = true
@@ -258,14 +262,15 @@ func (r *PostgresRepository) CreateTransfer(
 		return Transfer{}, ErrCurrencyMismatch
 	}
 	var recipientID string
+	var recipientEmail string
 	var recipientWallet string
 	var recipientCurrency string
 	err = tx.QueryRow(ctx, `
-		SELECT users.id::text, wallets.id::text, wallets.currency
+		SELECT users.id::text, users.email, wallets.id::text, wallets.currency
 		  FROM users
 		  JOIN wallets ON wallets.owner_id = users.id
-		 WHERE users.email = $1
-	`, candidate.RecipientEmail).Scan(&recipientID, &recipientWallet, &recipientCurrency)
+		 WHERE users.email = $1 OR users.ctrld_id = $1
+	`, candidate.RecipientEmail).Scan(&recipientID, &recipientEmail, &recipientWallet, &recipientCurrency)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Transfer{}, ErrRecipientNotFound
 	}
@@ -278,6 +283,7 @@ func (r *PostgresRepository) CreateTransfer(
 	if recipientCurrency != currency {
 		return Transfer{}, ErrCurrencyMismatch
 	}
+	candidate.RecipientEmail = recipientEmail
 
 	senderAvailable, _, err := accountForWallet(ctx, tx, senderWallet, ledger.AccountKindAvailable)
 	if err != nil {
@@ -929,4 +935,24 @@ func mapOperationError(err error) error {
 
 func normalizedEmail(value string) string {
 	return strings.ToLower(strings.TrimSpace(value))
+}
+
+func transferRecipientMatches(
+	ctx context.Context,
+	query pgx.Tx,
+	recipientID identity.UserID,
+	identifier string,
+) (bool, error) {
+	var matches bool
+	err := query.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM users
+			 WHERE id = $1::text::uuid
+			   AND (email = $2 OR ctrld_id = $2)
+		)
+	`, recipientID, identifier).Scan(&matches)
+	if err != nil {
+		return false, fmt.Errorf("match transfer recipient: %w", err)
+	}
+	return matches, nil
 }

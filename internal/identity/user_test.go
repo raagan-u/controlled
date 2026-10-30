@@ -56,3 +56,21 @@ func TestNewUserRejectsInvalidInput(t *testing.T) {
 		})
 	}
 }
+
+func TestUserWithCtrldID(t *testing.T) {
+	t.Parallel()
+	user, err := identity.NewUser("user-1", "founder@example.com", "Raagan", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	user, err = user.WithCtrldID(" CTRLD04217 ")
+	if err != nil {
+		t.Fatalf("WithCtrldID() error = %v", err)
+	}
+	if user.CtrldID() != "ctrld04217" {
+		t.Fatalf("CtrldID() = %q", user.CtrldID())
+	}
+	if _, err := user.WithCtrldID("ctrld1234"); !errors.Is(err, identity.ErrInvalidCtrldID) {
+		t.Fatalf("WithCtrldID() error = %v", err)
+	}
+}

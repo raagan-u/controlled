@@ -68,6 +68,7 @@ type moneyResponse struct {
 type onboardingAPIResponse struct {
 	User struct {
 		ID          string    `json:"id"`
+		CtrldID     string    `json:"ctrldId"`
 		Email       string    `json:"email"`
 		DisplayName string    `json:"displayName"`
 		CreatedAt   time.Time `json:"createdAt"`
@@ -99,6 +100,7 @@ func onboardingResponse(result OnboardingResult) onboardingAPIResponse {
 
 	response := onboardingAPIResponse{Duplicate: result.Duplicate}
 	response.User.ID = string(user.ID())
+	response.User.CtrldID = user.CtrldID()
 	response.User.Email = user.Email()
 	response.User.DisplayName = user.DisplayName()
 	response.User.CreatedAt = user.CreatedAt()

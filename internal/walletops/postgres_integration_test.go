@@ -86,13 +86,13 @@ func TestPostgresWalletOperationsLifecycle(t *testing.T) {
 	assertWalletBalances(t, ctx, store, sender.Provisioning.User().ID(), 10_000, 0)
 
 	transfer, err := operations.Transfer(
-		ctx, "send:"+testID, sender.Provisioning.User().ID(), recipientEmail, 3_000, "USD",
+		ctx, "send:"+testID, sender.Provisioning.User().ID(), recipient.Provisioning.User().CtrldID(), 3_000, "USD",
 	)
 	if err != nil {
 		t.Fatalf("internal transfer: %v", err)
 	}
 	retry, err := operations.Transfer(
-		ctx, "send:"+testID, sender.Provisioning.User().ID(), recipientEmail, 3_000, "USD",
+		ctx, "send:"+testID, sender.Provisioning.User().ID(), recipient.Provisioning.User().CtrldID(), 3_000, "USD",
 	)
 	if err != nil {
 		t.Fatalf("retry internal transfer: %v", err)
