@@ -102,6 +102,26 @@ type DebitRequest struct {
 	Amount       money.Money
 }
 
+// PactBlock describes one active pact that rejects a proposed debit. Used and
+// proposed values are snapshots taken while that pact is locked.
+type PactBlock struct {
+	PactID        string
+	LimitMinor    int64
+	UsedMinor     int64
+	ProposedMinor int64
+	OverageMinor  int64
+}
+
+// PolicyBlockedError preserves every blocking pact so the accountability flow
+// can create one exact, reviewable request rather than losing policy facts in a
+// generic denial.
+type PolicyBlockedError struct {
+	Blocks []PactBlock
+}
+
+func (e *PolicyBlockedError) Error() string { return ErrPolicyDenied.Error() }
+func (e *PolicyBlockedError) Unwrap() error { return ErrPolicyDenied }
+
 type Policy interface {
 	Authorize(context.Context, DebitRequest) error
 }

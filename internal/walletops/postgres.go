@@ -287,6 +287,13 @@ func (r *PostgresRepository) CreateTransfer(
 	if err != nil {
 		return Transfer{}, err
 	}
+	if err := ensureAvailableBalance(ctx, tx, senderAvailable, candidate.Amount); err != nil {
+		return Transfer{}, err
+	}
+	pactIDs, err := enforcePactPolicy(ctx, tx, string(candidate.SenderID), candidate.Amount, candidate.CreatedAt)
+	if err != nil {
+		return Transfer{}, err
+	}
 	debit, err := ledger.NewEntry(senderAvailable, ledger.SideDebit, candidate.Amount)
 	if err != nil {
 		return Transfer{}, err
@@ -322,6 +329,12 @@ func (r *PostgresRepository) CreateTransfer(
 	`, parsedID, senderWallet, recipientWallet, key, candidate.Amount.AmountMinor(), currency, string(posted.JournalID), candidate.CreatedAt)
 	if err != nil {
 		return Transfer{}, mapOperationError(err)
+	}
+	if err := recordPactUsage(
+		ctx, tx, pactIDs, string(candidate.SenderID), DebitInternalTransfer,
+		candidate.ID, candidate.Amount, posted.JournalID, candidate.CreatedAt,
+	); err != nil {
+		return Transfer{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return Transfer{}, mapOperationError(err)
@@ -376,6 +389,13 @@ func (r *PostgresRepository) ReserveWithdrawal(
 	if err != nil {
 		return Withdrawal{}, err
 	}
+	if err := ensureAvailableBalance(ctx, tx, availableAccount, candidate.Amount); err != nil {
+		return Withdrawal{}, err
+	}
+	pactIDs, err := enforcePactPolicy(ctx, tx, string(candidate.OwnerID), candidate.Amount, candidate.CreatedAt)
+	if err != nil {
+		return Withdrawal{}, err
+	}
 	debit, err := ledger.NewEntry(availableAccount, ledger.SideDebit, candidate.Amount)
 	if err != nil {
 		return Withdrawal{}, err
@@ -416,6 +436,12 @@ func (r *PostgresRepository) ReserveWithdrawal(
 	`, parsedID, ownerID, walletID, key, candidate.Destination, candidate.Amount.AmountMinor(), currency, string(posted.JournalID), candidate.CreatedAt)
 	if err != nil {
 		return Withdrawal{}, mapOperationError(err)
+	}
+	if err := recordPactUsage(
+		ctx, tx, pactIDs, string(candidate.OwnerID), DebitWithdrawal,
+		candidate.ID, candidate.Amount, posted.JournalID, candidate.CreatedAt,
+	); err != nil {
+		return Withdrawal{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return Withdrawal{}, mapOperationError(err)
@@ -566,6 +592,11 @@ func (r *PostgresRepository) SettleWithdrawal(
 	`, string(id), status, string(posted.JournalID), now)
 	if err != nil {
 		return Withdrawal{}, mapOperationError(err)
+	}
+	if !succeeded {
+		if err := reverseWithdrawalPactUsage(ctx, tx, id, posted.JournalID, now); err != nil {
+			return Withdrawal{}, err
+		}
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return Withdrawal{}, mapOperationError(err)

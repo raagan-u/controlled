@@ -125,6 +125,58 @@ func TestPostgresPactStakeLifecycle(t *testing.T) {
 	}
 	assertPactWalletBalances(t, ctx, walletStore, owner.Provisioning.User().ID(), 10_000, 0)
 
+	activeTerms, _ := pact.NewTerms(
+		"Active spending cap", "Verify atomic enforcement", limit, stake,
+		now.Add(-time.Hour), now.Add(24*time.Hour), pact.CircleID(circle.ID()),
+		pact.BreakConsequenceCommitmentReserve,
+	)
+	active, _, err := pactService.CreateDraft(ctx, "pact-active:"+runID, draft.OwnerID(), activeTerms)
+	if err != nil {
+		t.Fatalf("create active pact: %v", err)
+	}
+	if _, err := pactService.Confirm(ctx, active.OwnerID(), active.ID()); err != nil {
+		t.Fatalf("confirm active pact: %v", err)
+	}
+	active, _, err = pactService.ReserveStake(ctx, "pact-active-stake:"+runID, active.OwnerID(), active.ID())
+	if err != nil || active.Status() != pact.StatusActive {
+		t.Fatalf("activate pact: status=%v err=%v", active.Status(), err)
+	}
+	if _, err := operations.Transfer(
+		ctx, "pact-counted-transfer:"+runID, owner.Provisioning.User().ID(),
+		partner.Provisioning.User().Email(), 3_000, "USD",
+	); err != nil {
+		t.Fatalf("transfer within pact: %v", err)
+	}
+	if _, err := operations.Transfer(
+		ctx, "pact-blocked-transfer:"+runID, owner.Provisioning.User().ID(),
+		partner.Provisioning.User().Email(), 2_001, "USD",
+	); !errors.Is(err, walletops.ErrPolicyDenied) {
+		t.Fatalf("over-limit transfer error = %v", err)
+	} else {
+		var blocked *walletops.PolicyBlockedError
+		if !errors.As(err, &blocked) || len(blocked.Blocks) != 1 || blocked.Blocks[0].OverageMinor != 1 {
+			t.Fatalf("policy block facts = %#v", blocked)
+		}
+	}
+	failedUsage, err := operations.CreateWithdrawal(
+		ctx, "pact-failed-withdrawal:"+runID, owner.Provisioning.User().ID(),
+		"paypal@example.test", 2_000, "USD",
+	)
+	if err != nil {
+		t.Fatalf("reserve withdrawal within pact: %v", err)
+	}
+	if _, err := operations.SimulateWithdrawalSettlement(
+		ctx, owner.Provisioning.User().ID(), failedUsage.ID, false,
+	); err != nil {
+		t.Fatalf("fail withdrawal within pact: %v", err)
+	}
+	if _, err := operations.Transfer(
+		ctx, "pact-after-reversal:"+runID, owner.Provisioning.User().ID(),
+		partner.Provisioning.User().Email(), 2_000, "USD",
+	); err != nil {
+		t.Fatalf("transfer after usage reversal: %v", err)
+	}
+
 	largeStake, _ := pact.NewMoney(15_000, "USD")
 	insufficientTerms, _ := pact.NewTerms(
 		"Too large", "Verify atomic failure", limit, largeStake,
