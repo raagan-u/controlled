@@ -76,6 +76,7 @@ func TestPostgresPactStakeLifecycle(t *testing.T) {
 		ids, clock, walletops.NewPostgresRepository(pool, ledger.NewPostgresBook(pool)),
 		custody.NewFake(ids), walletops.AllowAllPolicy{},
 	).EnableAccountability(accountabilityService)
+	accountabilityService.EnableExecutor(operations)
 	funding, err := operations.CreateFunding(ctx, "pact-fund:"+runID, owner.Provisioning.User().ID(), 10_000, "USD")
 	if err != nil {
 		t.Fatalf("create funding: %v", err)
@@ -184,6 +185,26 @@ func TestPostgresPactStakeLifecycle(t *testing.T) {
 	if deniedRequest.Status != "DENIED" || deniedRequest.AssignedPartnerID != "" {
 		t.Fatalf("denied accountability request = %+v", deniedRequest)
 	}
+	timeoutAttempt, err := operations.TransferWithReason(
+		ctx, "pact-timeout-transfer:"+runID, owner.Provisioning.User().ID(),
+		partner.Provisioning.User().Email(), 2_001, "USD", "Timeout test",
+	)
+	if err != nil || timeoutAttempt.Request == nil {
+		t.Fatalf("create timeout request: attempt=%+v err=%v", timeoutAttempt, err)
+	}
+	requestRepository := accountability.NewPostgresRepository(pool)
+	maintenanceResult, err := requestRepository.MaintainRequests(ctx, timeoutAttempt.Request.CreatedAt.Add(7*time.Hour))
+	if err != nil || maintenanceResult.TimedOut < 1 {
+		t.Fatalf("timeout request maintenance = %+v err=%v", maintenanceResult, err)
+	}
+	maintenanceResult, err = requestRepository.MaintainRequests(ctx, timeoutAttempt.Request.CreatedAt.Add(25*time.Hour))
+	if err != nil || maintenanceResult.Expired < 1 {
+		t.Fatalf("expire request maintenance = %+v err=%v", maintenanceResult, err)
+	}
+	expiredRequest, err := accountabilityService.Request(ctx, owner.Provisioning.User().ID(), timeoutAttempt.Request.ID)
+	if err != nil || expiredRequest.Status != "EXPIRED" {
+		t.Fatalf("expired accountability request = %+v err=%v", expiredRequest, err)
+	}
 	failedUsage, err := operations.CreateWithdrawal(
 		ctx, "pact-failed-withdrawal:"+runID, owner.Provisioning.User().ID(),
 		"paypal@example.test", 2_000, "USD",
@@ -201,6 +222,86 @@ func TestPostgresPactStakeLifecycle(t *testing.T) {
 		partner.Provisioning.User().Email(), 2_000, "USD",
 	); err != nil {
 		t.Fatalf("transfer after usage reversal: %v", err)
+	}
+	emergencyAttempt, err := operations.TransferWithReason(
+		ctx, "pact-emergency:"+runID, owner.Provisioning.User().ID(),
+		partner.Provisioning.User().Email(), 1, "USD", "Emergency test",
+	)
+	if err != nil || emergencyAttempt.Request == nil {
+		t.Fatalf("create emergency request: attempt=%+v err=%v", emergencyAttempt, err)
+	}
+	emergencyRequest, err := accountabilityService.Decide(
+		ctx, partner.Provisioning.User().ID(), emergencyAttempt.Request.ID, true, "EMERGENCY",
+	)
+	if err != nil {
+		t.Fatalf("approve emergency: %v", err)
+	}
+	if emergencyRequest.ExecutedOperationID == "" {
+		t.Fatalf("emergency request was not executed: %+v", emergencyRequest)
+	}
+	active, err = pactService.Pact(ctx, active.OwnerID(), active.ID())
+	if err != nil || active.Status() != pact.StatusActive || active.EmergencyCount() != 1 {
+		t.Fatalf("pact after emergency = %+v err=%v", active, err)
+	}
+	breakAttempt, err := operations.TransferWithReason(
+		ctx, "pact-conscious-break:"+runID, owner.Provisioning.User().ID(),
+		partner.Provisioning.User().Email(), 1, "USD", "Conscious break test",
+	)
+	if err != nil || breakAttempt.Request == nil {
+		t.Fatalf("create conscious break request: attempt=%+v err=%v", breakAttempt, err)
+	}
+	breakRequest, err := accountabilityService.Decide(
+		ctx, partner.Provisioning.User().ID(), breakAttempt.Request.ID, true, "CONSCIOUS_BREAK",
+	)
+	if err != nil {
+		t.Fatalf("approve conscious break: %v", err)
+	}
+	if breakRequest.ExecutedOperationID == "" {
+		t.Fatalf("conscious break request was not executed: %+v", breakRequest)
+	}
+	active, err = pactService.Pact(ctx, active.OwnerID(), active.ID())
+	if err != nil || active.Status() != pact.StatusResolved || active.Outcome() != pact.OutcomeBroken {
+		t.Fatalf("pact after conscious break = %+v err=%v", active, err)
+	}
+	brokenWallet, err := walletStore.WalletByUser(ctx, owner.Provisioning.User().ID())
+	if err != nil {
+		t.Fatalf("read wallet after conscious break: %v", err)
+	}
+	if brokenWallet.Balances().Staked.AmountMinor() != 0 || brokenWallet.Balances().CommitmentReserve.AmountMinor() != 2_500 {
+		t.Fatalf("balances after conscious break = %+v", brokenWallet.Balances())
+	}
+	lifecycleStart := now.Add(2 * time.Hour)
+	lifecycleEnd := now.Add(3 * time.Hour)
+	lifecycleStake, _ := pact.NewMoney(1_000, "USD")
+	lifecycleTerms, _ := pact.NewTerms(
+		"Lifecycle pact", "Verify automatic transitions", limit, lifecycleStake,
+		lifecycleStart, lifecycleEnd, pact.CircleID(circle.ID()), pact.BreakConsequenceCommitmentReserve,
+	)
+	lifecyclePact, _, err := pactService.CreateDraft(ctx, "pact-lifecycle:"+runID, draft.OwnerID(), lifecycleTerms)
+	if err != nil {
+		t.Fatalf("create lifecycle pact: %v", err)
+	}
+	if _, err := pactService.Confirm(ctx, lifecyclePact.OwnerID(), lifecyclePact.ID()); err != nil {
+		t.Fatalf("confirm lifecycle pact: %v", err)
+	}
+	lifecyclePact, _, err = pactService.ReserveStake(ctx, "pact-lifecycle-stake:"+runID, lifecyclePact.OwnerID(), lifecyclePact.ID())
+	if err != nil || lifecyclePact.Status() != pact.StatusScheduled {
+		t.Fatalf("reserve lifecycle pact: pact=%+v err=%v", lifecyclePact, err)
+	}
+	maintenanceClock := &integrationClock{now: lifecycleStart.Add(time.Minute)}
+	lifecycleService := pact.NewService(ids, maintenanceClock, pact.NewPostgresRepository(pool))
+	result, err := lifecycleService.RunMaintenance(ctx)
+	if err != nil || result.Started != 1 {
+		t.Fatalf("start pact maintenance = %+v err=%v", result, err)
+	}
+	maintenanceClock.now = lifecycleEnd.Add(time.Minute)
+	result, err = lifecycleService.RunMaintenance(ctx)
+	if err != nil || result.Completed != 1 {
+		t.Fatalf("complete pact maintenance = %+v err=%v", result, err)
+	}
+	lifecyclePact, err = pactService.Pact(ctx, lifecyclePact.OwnerID(), lifecyclePact.ID())
+	if err != nil || lifecyclePact.Status() != pact.StatusResolved || lifecyclePact.Outcome() != pact.OutcomeKept {
+		t.Fatalf("completed lifecycle pact = %+v err=%v", lifecyclePact, err)
 	}
 
 	largeStake, _ := pact.NewMoney(15_000, "USD")
@@ -227,6 +328,10 @@ func TestPostgresPactStakeLifecycle(t *testing.T) {
 		t.Fatalf("failed reservation changed pact: status=%s reservation=%s", stored.Status(), stored.StakeReservationID())
 	}
 }
+
+type integrationClock struct{ now time.Time }
+
+func (c *integrationClock) Now() time.Time { return c.now }
 
 func assertPactWalletBalances(
 	t *testing.T,

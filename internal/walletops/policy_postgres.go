@@ -43,13 +43,13 @@ func ensureAvailableBalance(
 	return nil
 }
 
-func enforcePactPolicy(
+func evaluatePactPolicy(
 	ctx context.Context,
 	tx pgx.Tx,
 	ownerID string,
 	amount money.Money,
 	at time.Time,
-) ([]string, error) {
+) ([]string, []PactBlock, error) {
 	rows, err := tx.Query(ctx, `
 		SELECT pact.id::text,
 		       pact.spending_limit_minor,
@@ -67,7 +67,7 @@ func enforcePactPolicy(
 		 FOR UPDATE OF pact
 	`, ownerID, at)
 	if err != nil {
-		return nil, fmt.Errorf("lock active pacts: %w", err)
+		return nil, nil, fmt.Errorf("lock active pacts: %w", err)
 	}
 	defer rows.Close()
 
@@ -77,7 +77,7 @@ func enforcePactPolicy(
 		var pactID string
 		var limit, used int64
 		if err := rows.Scan(&pactID, &limit, &used); err != nil {
-			return nil, fmt.Errorf("scan active pact: %w", err)
+			return nil, nil, fmt.Errorf("scan active pact: %w", err)
 		}
 		pactIDs = append(pactIDs, pactID)
 		proposed := used + amount.AmountMinor()
@@ -89,12 +89,9 @@ func enforcePactPolicy(
 		}
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate active pacts: %w", err)
+		return nil, nil, fmt.Errorf("iterate active pacts: %w", err)
 	}
-	if len(blocks) > 0 {
-		return nil, &PolicyBlockedError{Blocks: blocks}
-	}
-	return pactIDs, nil
+	return pactIDs, blocks, nil
 }
 
 func recordPactUsage(

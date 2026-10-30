@@ -6,8 +6,11 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/raagan-u/controlled/internal/custody"
 	"github.com/raagan-u/controlled/internal/identity"
+	"github.com/raagan-u/controlled/internal/ledger"
 	"github.com/raagan-u/controlled/internal/platform/httpapi"
+	"github.com/raagan-u/controlled/internal/walletops"
 )
 
 type Commander interface {
@@ -302,21 +305,22 @@ type requestPactAPIResponse struct {
 }
 
 type requestAPIResponse struct {
-	ID                string                   `json:"id"`
-	IntentID          string                   `json:"intentId"`
-	OwnerID           string                   `json:"ownerId"`
-	OperationType     string                   `json:"operationType"`
-	Destination       string                   `json:"destination"`
-	AmountMinor       int64                    `json:"amountMinor"`
-	Currency          string                   `json:"currency"`
-	Reason            string                   `json:"reason"`
-	Status            string                   `json:"status"`
-	Classification    string                   `json:"classification,omitempty"`
-	AssignedPartnerID string                   `json:"assignedPartnerId,omitempty"`
-	Pacts             []requestPactAPIResponse `json:"blockingPacts"`
-	CreatedAt         time.Time                `json:"createdAt"`
-	ExpiresAt         time.Time                `json:"expiresAt"`
-	ResolvedAt        *time.Time               `json:"resolvedAt,omitempty"`
+	ID                  string                   `json:"id"`
+	IntentID            string                   `json:"intentId"`
+	ExecutedOperationID string                   `json:"executedOperationId,omitempty"`
+	OwnerID             string                   `json:"ownerId"`
+	OperationType       string                   `json:"operationType"`
+	Destination         string                   `json:"destination"`
+	AmountMinor         int64                    `json:"amountMinor"`
+	Currency            string                   `json:"currency"`
+	Reason              string                   `json:"reason"`
+	Status              string                   `json:"status"`
+	Classification      string                   `json:"classification,omitempty"`
+	AssignedPartnerID   string                   `json:"assignedPartnerId,omitempty"`
+	Pacts               []requestPactAPIResponse `json:"blockingPacts"`
+	CreatedAt           time.Time                `json:"createdAt"`
+	ExpiresAt           time.Time                `json:"expiresAt"`
+	ResolvedAt          *time.Time               `json:"resolvedAt,omitempty"`
 }
 
 func requestResponse(item Request) struct {
@@ -330,7 +334,7 @@ func requestResponse(item Request) struct {
 		}
 	}
 	result := requestAPIResponse{
-		ID: item.ID, IntentID: string(item.IntentID), OwnerID: string(item.OwnerID),
+		ID: item.ID, IntentID: string(item.IntentID), ExecutedOperationID: string(item.ExecutedOperationID), OwnerID: string(item.OwnerID),
 		OperationType: string(item.OperationType), Destination: item.Destination,
 		AmountMinor: item.AmountMinor, Currency: item.Currency, Reason: item.Reason,
 		Status: item.Status, Classification: item.Classification,
@@ -397,6 +401,12 @@ func writeError(response http.ResponseWriter, err error) {
 		httpapi.WriteError(response, http.StatusForbidden, "not_current_reviewer", "Only the currently assigned partner can decide this request.")
 	case errors.Is(err, ErrRequestFinal):
 		httpapi.WriteError(response, http.StatusConflict, "accountability_request_final", "This accountability request is already resolved.")
+	case errors.Is(err, ledger.ErrInsufficientBalance):
+		httpapi.WriteError(response, http.StatusConflict, "insufficient_balance", "The wallet no longer has enough available balance for the approved transaction.")
+	case errors.Is(err, walletops.ErrPolicyDenied):
+		httpapi.WriteError(response, http.StatusConflict, "approval_stale", "The approved transaction no longer satisfies the current pact state.")
+	case errors.Is(err, custody.ErrUnavailable):
+		httpapi.WriteError(response, http.StatusBadGateway, "custody_unavailable", "The custody provider is unavailable.")
 	default:
 		httpapi.WriteError(response, http.StatusInternalServerError, "internal_error", "Controlled could not manage accountability relationships.")
 	}

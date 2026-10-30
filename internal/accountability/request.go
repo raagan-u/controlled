@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/raagan-u/controlled/internal/identity"
+	"github.com/raagan-u/controlled/internal/money"
 	"github.com/raagan-u/controlled/internal/walletops"
 )
 
@@ -23,22 +24,24 @@ type RequestPact struct {
 }
 
 type Request struct {
-	ID                string
-	IntentID          walletops.OperationID
-	OwnerID           identity.UserID
-	OperationType     walletops.DebitKind
-	Destination       string
-	AmountMinor       int64
-	Currency          string
-	Reason            string
-	Status            string
-	Classification    string
-	AssignedPartnerID identity.UserID
-	Pacts             []RequestPact
-	CreatedAt         time.Time
-	ExpiresAt         time.Time
-	ResolvedAt        time.Time
-	Duplicate         bool
+	ID                  string
+	IntentID            walletops.OperationID
+	OwnerID             identity.UserID
+	OperationType       walletops.DebitKind
+	IdempotencyKey      string
+	Destination         string
+	AmountMinor         int64
+	Currency            string
+	Reason              string
+	Status              string
+	Classification      string
+	AssignedPartnerID   identity.UserID
+	Pacts               []RequestPact
+	CreatedAt           time.Time
+	ExpiresAt           time.Time
+	ResolvedAt          time.Time
+	ExecutedOperationID walletops.OperationID
+	Duplicate           bool
 }
 
 type RequestRepository interface {
@@ -50,6 +53,31 @@ type RequestRepository interface {
 type DecisionRepository interface {
 	DecideRequest(context.Context, identity.UserID, string, bool, string, string, time.Time) error
 	CancelRequest(context.Context, identity.UserID, string, time.Time) error
+}
+
+type ExecutionRepository interface {
+	MarkIntentExecuted(context.Context, string, walletops.OperationID, time.Time) error
+	MarkIntentFailed(context.Context, string, time.Time) error
+}
+
+type MaintenanceResult struct {
+	TimedOut int
+	Expired  int
+}
+
+type MaintenanceRepository interface {
+	MaintainRequests(context.Context, time.Time) (MaintenanceResult, error)
+}
+
+func (s *Service) RunMaintenance(ctx context.Context) (MaintenanceResult, error) {
+	if err := s.ready(); err != nil {
+		return MaintenanceResult{}, err
+	}
+	repository, ok := s.repository.(MaintenanceRepository)
+	if !ok {
+		return MaintenanceResult{}, ErrUnavailable
+	}
+	return repository.MaintainRequests(ctx, s.clock.Now().UTC())
 }
 
 func (s *Service) RequestDebit(ctx context.Context, debit walletops.PendingDebit) (walletops.ReviewRequest, error) {
@@ -129,6 +157,37 @@ func (s *Service) Decide(
 	if err := repository.DecideRequest(
 		ctx, actorID, requestID, approve, classification, nextAssignmentID, s.clock.Now().UTC(),
 	); err != nil {
+		return Request{}, err
+	}
+	item, err := s.Request(ctx, actorID, requestID)
+	if err != nil || !approve {
+		return item, err
+	}
+	if s.executor == nil {
+		return Request{}, ErrUnavailable
+	}
+	pactIDs := make([]string, len(item.Pacts))
+	for index, pact := range item.Pacts {
+		pactIDs[index] = pact.PactID
+	}
+	amount, err := money.New(item.AmountMinor, item.Currency)
+	if err != nil {
+		return Request{}, err
+	}
+	executedID, executionErr := s.executor.ExecuteApproved(ctx, walletops.ApprovedDebit{
+		RequestID: item.ID, IntentID: item.IntentID, IdempotencyKey: item.IdempotencyKey,
+		OwnerID: item.OwnerID, Kind: item.OperationType, Destination: item.Destination,
+		Amount: amount, Classification: item.Classification, PactIDs: pactIDs,
+	})
+	executionRepository, ok := s.repository.(ExecutionRepository)
+	if !ok {
+		return Request{}, ErrUnavailable
+	}
+	if executionErr != nil {
+		_ = executionRepository.MarkIntentFailed(ctx, item.ID, s.clock.Now().UTC())
+		return Request{}, executionErr
+	}
+	if err := executionRepository.MarkIntentExecuted(ctx, item.ID, executedID, s.clock.Now().UTC()); err != nil {
 		return Request{}, err
 	}
 	return s.Request(ctx, actorID, requestID)

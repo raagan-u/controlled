@@ -24,6 +24,48 @@ type Repository interface {
 	Cancel(context.Context, UserID, PactID, string, time.Time) (*Pact, bool, error)
 }
 
+type MaintenanceResult struct {
+	Started   int
+	Completed int
+}
+
+type LifecycleRepository interface {
+	StartDue(context.Context, time.Time) (int, error)
+	DueForCompletion(context.Context, time.Time) ([]PactID, error)
+	CompleteDue(context.Context, PactID, string, time.Time) error
+}
+
+func (s *Service) RunMaintenance(ctx context.Context) (MaintenanceResult, error) {
+	if err := s.ready(); err != nil {
+		return MaintenanceResult{}, err
+	}
+	repository, ok := s.repository.(LifecycleRepository)
+	if !ok {
+		return MaintenanceResult{}, ErrUnavailable
+	}
+	now := s.clock.Now().UTC()
+	started, err := repository.StartDue(ctx, now)
+	if err != nil {
+		return MaintenanceResult{}, err
+	}
+	due, err := repository.DueForCompletion(ctx, now)
+	if err != nil {
+		return MaintenanceResult{}, err
+	}
+	result := MaintenanceResult{Started: started}
+	for _, pactID := range due {
+		journalID, err := s.ids.NewID()
+		if err != nil {
+			return result, err
+		}
+		if err := repository.CompleteDue(ctx, pactID, journalID, now); err != nil {
+			return result, err
+		}
+		result.Completed++
+	}
+	return result, nil
+}
+
 func (s *Service) ReserveStake(
 	ctx context.Context,
 	idempotencyKey string,

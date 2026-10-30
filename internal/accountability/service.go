@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/raagan-u/controlled/internal/identity"
+	"github.com/raagan-u/controlled/internal/walletops"
 )
 
 type IDGenerator interface {
@@ -52,10 +53,18 @@ type Service struct {
 	ids        IDGenerator
 	clock      Clock
 	repository Repository
+	executor   walletops.ApprovedExecutor
 }
 
 func NewService(ids IDGenerator, clock Clock, repository Repository) *Service {
 	return &Service{ids: ids, clock: clock, repository: repository}
+}
+
+func (s *Service) EnableExecutor(executor walletops.ApprovedExecutor) *Service {
+	if s != nil {
+		s.executor = executor
+	}
+	return s
 }
 
 func (s *Service) Invite(

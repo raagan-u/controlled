@@ -97,6 +97,7 @@ func run(ctx context.Context) error {
 		fakeCustody,
 		walletops.AllowAllPolicy{},
 	).EnableAccountability(accountabilityService)
+	accountabilityService.EnableExecutor(walletOperations)
 	walletOperationHandler := walletops.NewHandler(walletOperations)
 	accountabilityHandler := accountability.NewHandler(accountabilityService)
 	pactService := pact.NewService(
@@ -105,6 +106,7 @@ func run(ctx context.Context) error {
 		pact.NewPostgresRepository(database),
 	)
 	pactHandler := pact.NewHandler(pactService)
+	go runMaintenance(ctx, accountabilityService, pactService)
 
 	mux := http.NewServeMux()
 	mux.Handle("POST /v1/demo/users", wallet.NewOnboardingHandler(onboarding))
@@ -171,4 +173,30 @@ func run(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+func runMaintenance(ctx context.Context, accountabilityService *accountability.Service, pactService *pact.Service) {
+	run := func() {
+		if result, err := accountabilityService.RunMaintenance(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			slog.Error("Accountability maintenance failed", "error", err)
+		} else if result.TimedOut > 0 || result.Expired > 0 {
+			slog.Info("Accountability maintenance completed", "timedOut", result.TimedOut, "expired", result.Expired)
+		}
+		if result, err := pactService.RunMaintenance(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			slog.Error("Pact maintenance failed", "error", err)
+		} else if result.Started > 0 || result.Completed > 0 {
+			slog.Info("Pact maintenance completed", "started", result.Started, "completed", result.Completed)
+		}
+	}
+	run()
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			run()
+		}
+	}
 }

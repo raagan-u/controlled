@@ -290,7 +290,10 @@ func (r *PostgresRepository) CreateTransfer(
 	if err := ensureAvailableBalance(ctx, tx, senderAvailable, candidate.Amount); err != nil {
 		return Transfer{}, err
 	}
-	pactIDs, err := enforcePactPolicy(ctx, tx, string(candidate.SenderID), candidate.Amount, candidate.CreatedAt)
+	pactIDs, err := r.authorizePactDebit(
+		ctx, tx, candidate.SenderID, DebitInternalTransfer, candidate.RecipientEmail,
+		candidate.Amount, candidate.CreatedAt,
+	)
 	if err != nil {
 		return Transfer{}, err
 	}
@@ -392,7 +395,10 @@ func (r *PostgresRepository) ReserveWithdrawal(
 	if err := ensureAvailableBalance(ctx, tx, availableAccount, candidate.Amount); err != nil {
 		return Withdrawal{}, err
 	}
-	pactIDs, err := enforcePactPolicy(ctx, tx, string(candidate.OwnerID), candidate.Amount, candidate.CreatedAt)
+	pactIDs, err := r.authorizePactDebit(
+		ctx, tx, candidate.OwnerID, DebitWithdrawal, candidate.Destination,
+		candidate.Amount, candidate.CreatedAt,
+	)
 	if err != nil {
 		return Withdrawal{}, err
 	}

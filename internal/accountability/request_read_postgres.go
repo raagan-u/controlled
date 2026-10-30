@@ -59,14 +59,16 @@ func (r *PostgresRepository) RequestForUser(ctx context.Context, userID identity
 	}
 	var item Request
 	var operationType string
+	var executedOperationID string
 	var assignedPartner string
 	var resolvedAt pgtype.Timestamptz
 	err := r.pool.QueryRow(ctx, `
 		SELECT request.id::text, intent.id::text, request.owner_id::text,
-		       intent.operation_type, intent.destination, intent.amount_minor, intent.currency,
+		       intent.operation_type, intent.idempotency_key, intent.destination, intent.amount_minor, intent.currency,
 		       request.owner_reason, request.status, COALESCE(request.classification, ''),
 		       COALESCE(assignment.partner_id::text, ''),
-		       request.created_at, request.expires_at, request.resolved_at
+		       request.created_at, request.expires_at, request.resolved_at,
+		       COALESCE(intent.executed_operation_id::text, '')
 		  FROM accountability_requests AS request
 		  JOIN transaction_intents AS intent ON intent.id = request.intent_id
 		  LEFT JOIN accountability_assignments AS assignment
@@ -80,9 +82,9 @@ func (r *PostgresRepository) RequestForUser(ctx context.Context, userID identity
 		       )
 		   )
 	`, requestID, string(userID)).Scan(
-		&item.ID, &item.IntentID, &item.OwnerID, &operationType, &item.Destination,
+		&item.ID, &item.IntentID, &item.OwnerID, &operationType, &item.IdempotencyKey, &item.Destination,
 		&item.AmountMinor, &item.Currency, &item.Reason, &item.Status, &item.Classification,
-		&assignedPartner, &item.CreatedAt, &item.ExpiresAt, &resolvedAt,
+		&assignedPartner, &item.CreatedAt, &item.ExpiresAt, &resolvedAt, &executedOperationID,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Request{}, ErrRequestNotFound
@@ -92,6 +94,7 @@ func (r *PostgresRepository) RequestForUser(ctx context.Context, userID identity
 	}
 	item.OperationType = walletops.DebitKind(operationType)
 	item.AssignedPartnerID = identity.UserID(assignedPartner)
+	item.ExecutedOperationID = walletops.OperationID(executedOperationID)
 	if resolvedAt.Valid {
 		item.ResolvedAt = resolvedAt.Time
 	}

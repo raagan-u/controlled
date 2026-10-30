@@ -154,6 +154,22 @@ type DebitAttempt struct {
 	Request    *ReviewRequest
 }
 
+type ApprovedDebit struct {
+	RequestID      string
+	IntentID       OperationID
+	IdempotencyKey string
+	OwnerID        identity.UserID
+	Kind           DebitKind
+	Destination    string
+	Amount         money.Money
+	Classification string
+	PactIDs        []string
+}
+
+type ApprovedExecutor interface {
+	ExecuteApproved(context.Context, ApprovedDebit) (OperationID, error)
+}
+
 type Policy interface {
 	Authorize(context.Context, DebitRequest) error
 }
