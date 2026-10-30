@@ -6,7 +6,7 @@ import { colors, fonts, radii } from '@/theme';
 const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '⌫'];
 const operators = ['+', '−', '×', '÷'] as const;
 const operatorSet = new Set<string>(operators);
-type Props = { onChange: (value: string) => void; value: string };
+type Props = { onChange: (value: string) => void; onDisplayChange?: (value: string) => void; value: string };
 
 function evaluate(expression: string): number | null {
   const tokens = expression.match(/\d+(?:\.\d+)?|[+−×÷]/g);
@@ -40,7 +40,7 @@ function formatResult(result: number) {
   return result.toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1');
 }
 
-export function AmountKeypad({ onChange, value }: Props) {
+export function AmountKeypad({ onChange, onDisplayChange, value }: Props) {
   const [expression, setExpression] = useState(value);
   const [settled, setSettled] = useState(false);
   const lastEmitted = useRef(value);
@@ -53,10 +53,12 @@ export function AmountKeypad({ onChange, value }: Props) {
   }, [value]);
 
   useEffect(() => {
+    onDisplayChange?.(expression);
     const timer = setTimeout(() => {
       if (!expression) {
         lastEmitted.current = '';
         onChange('');
+        onDisplayChange?.('');
         setSettled(true);
         return;
       }
@@ -65,10 +67,11 @@ export function AmountKeypad({ onChange, value }: Props) {
       const formatted = formatResult(result);
       lastEmitted.current = formatted;
       onChange(formatted);
+      onDisplayChange?.(formatted);
       setSettled(true);
     }, 550);
     return () => clearTimeout(timer);
-  }, [expression, onChange]);
+  }, [expression, onChange, onDisplayChange]);
 
   const pressNumber = (key: string) => {
     setExpression((current) => {
@@ -103,7 +106,6 @@ export function AmountKeypad({ onChange, value }: Props) {
 
   return (
     <View>
-      <Text numberOfLines={1} style={styles.expression}>{expression || ' '}</Text>
       <View style={styles.operators}>
         {operators.map((operator) => (
           <Pressable key={operator} onPress={() => pressOperator(operator)} style={({ pressed }) => pressed && styles.operatorPressed}>
@@ -123,7 +125,6 @@ export function AmountKeypad({ onChange, value }: Props) {
 }
 
 const styles = StyleSheet.create({
-  expression: { color: colors.textMuted, fontFamily: fonts.medium, fontSize: 14, minHeight: 20, paddingHorizontal: 24, textAlign: 'right' },
   operators: { flexDirection: 'row', justifyContent: 'space-around', paddingBottom: 12, paddingHorizontal: 20 },
   math: { color: colors.textMuted, fontFamily: fonts.medium, fontSize: 27, textAlign: 'center', width: 48 },
   operatorPressed: { opacity: 0.45 },

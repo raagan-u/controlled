@@ -20,6 +20,7 @@ export default function RequestMoneyScreen() {
   const [step, setStep] = useState<Step>('recipient');
   const [recipient, setRecipient] = useState<User | null>(null);
   const [amount, setAmount] = useState('');
+  const [displayAmount, setDisplayAmount] = useState('');
   const [remark, setRemark] = useState('');
 	const [error, setError] = useState('');
 	const [submitting, setSubmitting] = useState(false);
@@ -76,7 +77,7 @@ export default function RequestMoneyScreen() {
           </Text>
         </View>
         <View style={styles.amountBlock}>
-          <MoneyAmount caption={`${recipient?.displayName} can pay or decline`} value={amount} />
+          <MoneyAmount caption={`${recipient?.displayName} can pay or decline`} value={displayAmount} />
           <TextInput
             maxLength={80}
             onChangeText={setRemark}
@@ -88,7 +89,7 @@ export default function RequestMoneyScreen() {
 		  {error ? <Text style={styles.error}>{error}</Text> : null}
           <SwipeConfirm disabled={!valid || submitting} key={`${submitting}-${error}`} label={submitting ? 'Creating request…' : 'Swipe right to request'} onConfirm={() => void requestMoney()} />
         </View>
-        <AmountKeypad onChange={setAmount} value={amount} />
+        <AmountKeypad onChange={setAmount} onDisplayChange={setDisplayAmount} value={amount} />
       </View>
     </SheetScreen>
   );
