@@ -326,6 +326,13 @@ CONTROLLED_TEST_DATABASE_URL='postgres://postgres:postgres@localhost:5432/contro
   go test -v ./...
 ```
 
+Run only the pact stake lifecycle integration test:
+
+```bash
+CONTROLLED_TEST_DATABASE_URL='postgres://postgres:postgres@localhost:5432/controlled_test?sslmode=disable' \
+  go test -v ./internal/pact -run TestPostgresPactStakeLifecycle
+```
+
 Run the race detector against the same suite:
 
 ```bash

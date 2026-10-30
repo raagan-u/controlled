@@ -121,6 +121,8 @@ Clients should branch on `error.code`, not the human-readable message.
 | `GET` | `/v1/pacts/{id}` | yes | no | `200` |
 | `PUT` | `/v1/pacts/{id}` | yes | no | `200` |
 | `POST` | `/v1/pacts/{id}/confirm` | yes | no | `200` |
+| `POST` | `/v1/pacts/{id}/stake` | yes | required | `200` |
+| `POST` | `/v1/pacts/{id}/cancel` | yes | no | `200` |
 
 ## Complete external test flow
 
@@ -492,6 +494,7 @@ Balance meanings:
 
 - `available`: spendable now
 - `pending`: reserved for an in-flight withdrawal
+- `staked`: unavailable funds reserved for active or scheduled pacts
 - `commitmentReserve`: retained after a future conscious pact break; currently always zero through public API flows
 
 ### `GET /v1/wallet/transactions`
@@ -505,6 +508,8 @@ Reference types currently include:
 - `WITHDRAWAL_RESERVATION`
 - `WITHDRAWAL_SETTLEMENT`
 - `WITHDRAWAL_RELEASE`
+- `PACT_STAKE_RESERVATION`
+- `PACT_STAKE_RELEASE`
 
 A failed withdrawal produces a release transaction that returns the pending amount to available balance.
 
@@ -638,7 +643,18 @@ Idempotency-Key: create-pact-1
 
 `PUT /v1/pacts/{id}` accepts the same body while the pact remains `DRAFT`. `GET /v1/pacts` lists owned pacts and `GET /v1/pacts/{id}` returns one owned pact.
 
-`POST /v1/pacts/{id}/confirm` makes the terms immutable and moves the pact to `AWAITING_STAKE`. Phase 3 will reserve the stake and move it to `SCHEDULED` or `ACTIVE`; confirmation alone does not yet enforce the spending limit.
+`POST /v1/pacts/{id}/confirm` makes the terms immutable and moves the pact to `AWAITING_STAKE`. Confirmation alone does not move money.
+
+Reserve the full stake atomically with:
+
+```http
+POST /v1/pacts/{id}/stake
+Idempotency-Key: reserve-pact-stake-1
+```
+
+The request moves the stake from `available` to `staked` in the same database transaction that updates the pact. It returns `SCHEDULED` when the start is in the future and `ACTIVE` when the start has arrived. Insufficient balance leaves both the wallet and pact unchanged.
+
+`POST /v1/pacts/{id}/cancel` cancels a draft, awaiting-stake pact, or scheduled pact. Cancelling a scheduled pact atomically releases its full stake back to `available`. An active pact cannot be cancelled directly.
 
 ## Error reference
 
@@ -663,6 +679,7 @@ Idempotency-Key: create-pact-1
 | `409` | `invitation_exists` | an active invitation or relationship already exists |
 | `409` | `invitation_not_resolvable` | invitation is final or caller is not its invited partner |
 | `409` | `pact_conflict` | pact idempotency or optimistic version conflict |
+| `409` | `active_pact_cannot_be_cancelled` | active pact requires the conscious-break flow |
 | `422` | `invalid_email` | login email syntax is invalid |
 | `422` | `invalid_onboarding` | onboarding email, name, or currency is invalid |
 | `422` | `invalid_wallet_operation` | amount, currency, destination, recipient, or self-transfer is invalid |
