@@ -2,7 +2,7 @@ export const colors = {
   blue: '#1754EB', navy: '#182235', blueTint: '#DCE6FD', blueSoft: '#9DB8F7', onBlueMuted: '#C9D8FD',
   white: '#FFFFFF', textMuted: '#5A6478', surface: '#F3F6FB', surfaceAlt: '#F7F8FB', key: '#EEF1F5',
   keyText: '#4A5263', segActive: '#F1F3F7', softButton: '#EEF2F7', divider: '#EEF2F7', grabber: '#D5DCE8',
-  dotted: '#9AA3B5', scrim: 'rgba(24,34,53,0.5)', green: '#36C38F', greenText: '#0E7A55',
+  dotted: '#9AA3B5', scrim: 'rgba(24,34,53,0.5)', navyText: '#FFFFFF', navyMuted: '#AEB8CC', navyMuted2: '#C9D2E3', navyDanger: '#FF9AA2', green: '#36C38F', greenText: '#0E7A55',
   greenTint: '#D7F3E8', orange: '#C46A0C', orangeText: '#8A4A06', orangeTint: '#FBEBDA', red: '#DD4A55',
   redText: '#C2323D', redTint: '#FBE1E3',
   // Compatibility aliases used by the onboarding flow.

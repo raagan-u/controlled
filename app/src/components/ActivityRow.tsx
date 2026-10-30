@@ -1,0 +1,8 @@
+import { router, type Href } from 'expo-router';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import type { Activity } from '@/data/demo';
+import { colors, fonts } from '@/theme';
+export function ActivityRow({ item }: { item: Activity }) {
+  return <Pressable onPress={() => router.push(`/transactions/${item.id}` as Href)} style={styles.row}><View style={[styles.icon, item.outgoing ? styles.out : styles.in]}><Text style={styles.iconText}>{item.outgoing ? '↗' : '↙'}</Text></View><View style={styles.copy}><Text numberOfLines={1} style={styles.label}>{item.label}</Text><Text style={styles.meta}>{item.meta}</Text></View><View style={styles.right}><Text style={styles.amount}>{item.outgoing ? '−' : '+'}${item.amount}</Text><Text style={[styles.status, item.status === 'Pending' && styles.pending]}>{item.status}</Text></View></Pressable>;
+}
+const styles = StyleSheet.create({ row: { alignItems: 'center', flexDirection: 'row', minHeight: 72, paddingVertical: 8 }, icon: { alignItems: 'center', borderRadius: 12, height: 44, justifyContent: 'center', width: 44 }, in: { backgroundColor: colors.greenTint }, out: { backgroundColor: colors.blueTint }, iconText: { color: colors.navy, fontFamily: fonts.bold, fontSize: 20 }, copy: { flex: 1, marginLeft: 12 }, label: { color: colors.navy, fontFamily: fonts.bold, fontSize: 15 }, meta: { color: colors.textMuted, fontFamily: fonts.medium, fontSize: 12, marginTop: 3 }, right: { alignItems: 'flex-end' }, amount: { color: colors.navy, fontFamily: fonts.bold, fontSize: 15 }, status: { color: colors.greenText, fontFamily: fonts.medium, fontSize: 11, marginTop: 3 }, pending: { color: colors.orangeText } });

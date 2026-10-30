@@ -1,0 +1,10 @@
+import { useLocalSearchParams } from 'expo-router';
+import { StyleSheet, Text, View } from 'react-native';
+import { SheetScreen } from '@/components/SheetScreen';
+import { activities } from '@/data/demo';
+import { colors, fonts, radii } from '@/theme';
+export default function TransactionDetailScreen() {
+  const { id } = useLocalSearchParams<{ id: string }>(); const item = activities.find((entry) => entry.id === id) ?? activities[0];
+  return <SheetScreen><View style={styles.statusIcon}><Text style={styles.check}>✓</Text></View><Text style={styles.title}>{item.status}</Text><Text style={styles.amount}>{item.outgoing ? '−' : '+'}${item.amount}</Text><Text style={styles.label}>{item.label}</Text><View style={styles.card}>{[['Status', item.status], ['Date', item.meta], ['Transaction ID', item.id], ['Method', 'ctrld balance']].map(([key, value]) => <View key={key} style={styles.row}><Text style={styles.key}>{key}</Text><Text style={styles.value}>{value}</Text></View>)}</View></SheetScreen>;
+}
+const styles = StyleSheet.create({ statusIcon: { alignItems: 'center', alignSelf: 'center', backgroundColor: colors.greenTint, borderRadius: 32, height: 64, justifyContent: 'center', marginTop: 24, width: 64 }, check: { color: colors.greenText, fontFamily: fonts.bold, fontSize: 30 }, title: { color: colors.greenText, fontFamily: fonts.bold, fontSize: 15, marginTop: 14, textAlign: 'center' }, amount: { color: colors.navy, fontFamily: fonts.bold, fontSize: 48, letterSpacing: -1.5, marginTop: 8, textAlign: 'center' }, label: { color: colors.textMuted, fontFamily: fonts.medium, fontSize: 15, marginTop: 4, textAlign: 'center' }, card: { backgroundColor: colors.surface, borderRadius: radii.lg, marginTop: 36, padding: 16 }, row: { borderBottomColor: colors.divider, borderBottomWidth: 1, flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 14 }, key: { color: colors.textMuted, fontFamily: fonts.medium, fontSize: 14 }, value: { color: colors.navy, fontFamily: fonts.bold, fontSize: 14, maxWidth: '60%', textAlign: 'right' } });

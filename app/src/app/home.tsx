@@ -1,33 +1,38 @@
-import { useLocalSearchParams } from 'expo-router';
-import { StyleSheet, Text, View } from 'react-native';
-
-import { colors, fonts } from '@/theme';
+import { router, type Href, useLocalSearchParams } from 'expo-router';
+import { useState } from 'react';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ActivityRow } from '@/components/ActivityRow';
+import { activities, contacts } from '@/data/demo';
+import { colors, fonts, radii } from '@/theme';
 
 export default function HomeScreen() {
   const { name } = useLocalSearchParams<{ name?: string | string[] }>();
-  const displayName = Array.isArray(name) ? name[0] : name;
-
-  return (
-    <View style={styles.container}>
-      <Text style={styles.greeting}>Hi, {displayName ?? ''}</Text>
+  const displayName = (Array.isArray(name) ? name[0] : name) || 'Alex';
+  const [menu, setMenu] = useState(false);
+  const insets = useSafeAreaInsets();
+  return <View style={styles.root}>
+    <View style={[styles.hero, { paddingTop: Math.max(insets.top + 10, 28) }]}>
+      <View style={styles.heroTop}><Text style={styles.brand}>ctrld</Text><Pressable accessibilityLabel="Open menu" onPress={() => setMenu(true)} style={styles.menuButton}><Text style={styles.menuIcon}>☰</Text></Pressable></View>
+      <View style={styles.balanceWrap}><Text style={styles.available}>AVAILABLE</Text><Text adjustsFontSizeToFit numberOfLines={1} style={styles.balance}>$10,100.00</Text></View>
     </View>
-  );
+    <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <View style={styles.actions}><Pressable onPress={() => router.push('/send' as Href)} style={styles.action}><Text style={styles.actionText}>Send</Text></Pressable><Pressable onPress={() => router.push('/fund' as Href)} style={styles.centerAction}><Text style={styles.centerIcon}>↕</Text></Pressable><Pressable onPress={() => router.push('/request-money' as Href)} style={styles.action}><Text style={styles.actionText}>Request</Text></Pressable></View>
+      <View style={styles.panel}>
+        <Text style={styles.kicker}>RECENTS —</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.recents}>{contacts.map((person) => <Pressable key={person.username} onPress={() => router.push(`/send?recipient=${encodeURIComponent(person.name)}` as Href)} style={styles.person}><View style={styles.avatar}><Text style={styles.avatarText}>{person.initials}</Text></View><Text numberOfLines={1} style={styles.personName}>{person.name.split(' ')[0]}</Text></Pressable>)}</ScrollView>
+        <View style={styles.sectionTitleRow}><Text style={styles.sectionTitle}>Active pacts</Text><Text style={styles.link}>See all</Text></View>
+        <View style={styles.pact}><View><Text style={styles.pactTitle}>Monthly spend</Text><Text style={styles.pactMeta}>12 days left · $620 remaining</Text></View><Text style={styles.pactAmount}>$380</Text></View>
+        <View style={styles.sectionTitleRow}><Text style={styles.sectionTitle}>Recent activity</Text><Pressable onPress={() => router.push('/activity' as Href)}><Text style={styles.link}>See all</Text></Pressable></View>
+        {activities.slice(0, 3).map((item) => <ActivityRow item={item} key={item.id} />)}
+      </View>
+    </ScrollView>
+    <Modal animationType="fade" onRequestClose={() => setMenu(false)} transparent visible={menu}><Pressable onPress={() => setMenu(false)} style={styles.scrim}><Pressable onPress={() => undefined} style={[styles.drawer, { paddingTop: Math.max(insets.top + 30, 58) }]}><Text style={styles.drawerKicker}>CONTROLLED BY YOU</Text><Text style={styles.drawerName}>{displayName}</Text><Text style={styles.drawerEmail}>alex@controlled.app</Text><View style={styles.drawerRule} />{['Home', 'Activity', 'Budgets', 'Pacts'].map((item) => <Pressable key={item} onPress={() => { setMenu(false); if (item === 'Activity') router.push('/activity' as Href); }} style={styles.drawerItem}><Text style={styles.drawerItemText}>{item}</Text><Text style={styles.chevron}>›</Text></Pressable>)}<View style={styles.drawerRule} /><Text style={styles.drawerSmall}>Settings</Text><Text style={styles.drawerSmall}>Help & support</Text><Text style={styles.signOut}>Sign out</Text></Pressable></Pressable></Modal>
+  </View>;
 }
-
 const styles = StyleSheet.create({
-  container: {
-    alignItems: 'center',
-    backgroundColor: colors.background,
-    flex: 1,
-    justifyContent: 'center',
-    paddingHorizontal: 20,
-  },
-  greeting: {
-    color: colors.ink,
-    fontFamily: fonts.black,
-    fontSize: 54,
-    letterSpacing: -3.2,
-    lineHeight: 66,
-    textAlign: 'center',
-  },
+  root: { backgroundColor: colors.blue, flex: 1 }, hero: { backgroundColor: colors.blue, height: 330, paddingHorizontal: 22 }, heroTop: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' }, brand: { color: colors.white, fontFamily: fonts.black, fontSize: 25, letterSpacing: -1.5 }, menuButton: { alignItems: 'center', height: 48, justifyContent: 'center', width: 48 }, menuIcon: { color: colors.white, fontFamily: fonts.bold, fontSize: 27 }, balanceWrap: { alignItems: 'center', flex: 1, justifyContent: 'center', paddingBottom: 32 }, available: { color: colors.onBlueMuted, fontFamily: fonts.bold, fontSize: 11, letterSpacing: 1.7 }, balance: { color: colors.white, fontFamily: fonts.bold, fontSize: 44, letterSpacing: -1.5, marginTop: 6 },
+  content: { backgroundColor: colors.white, flexGrow: 1 }, actions: { backgroundColor: colors.white, flexDirection: 'row', gap: 10, paddingHorizontal: 16, paddingVertical: 18 }, action: { alignItems: 'center', backgroundColor: colors.softButton, borderRadius: 12, flex: 1, height: 58, justifyContent: 'center' }, actionText: { color: colors.navy, fontFamily: fonts.bold, fontSize: 17 }, centerAction: { alignItems: 'center', backgroundColor: colors.navy, borderRadius: 12, height: 58, justifyContent: 'center', width: 64 }, centerIcon: { color: colors.white, fontFamily: fonts.bold, fontSize: 25 }, panel: { backgroundColor: colors.surface, borderTopLeftRadius: radii.sheet, borderTopRightRadius: radii.sheet, paddingBottom: 40, paddingHorizontal: 16, paddingTop: 24 }, kicker: { color: colors.textMuted, fontFamily: fonts.bold, fontSize: 11, letterSpacing: 1.5 }, recents: { marginHorizontal: -4, marginTop: 12 }, person: { alignItems: 'center', marginHorizontal: 4, width: 65 }, avatar: { alignItems: 'center', backgroundColor: colors.blueTint, borderRadius: 14, height: 56, justifyContent: 'center', width: 56 }, avatarText: { color: colors.blue, fontFamily: fonts.bold, fontSize: 15 }, personName: { color: colors.navy, fontFamily: fonts.medium, fontSize: 12, marginTop: 6 },
+  sectionTitleRow: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', marginTop: 28 }, sectionTitle: { color: colors.navy, fontFamily: fonts.bold, fontSize: 21 }, link: { color: colors.blue, fontFamily: fonts.bold, fontSize: 13 }, pact: { alignItems: 'center', backgroundColor: colors.white, borderRadius: radii.lg, flexDirection: 'row', justifyContent: 'space-between', marginTop: 12, padding: 16 }, pactTitle: { color: colors.navy, fontFamily: fonts.bold, fontSize: 15 }, pactMeta: { color: colors.textMuted, fontFamily: fonts.medium, fontSize: 12, marginTop: 5 }, pactAmount: { color: colors.blue, fontFamily: fonts.bold, fontSize: 18 },
+  scrim: { backgroundColor: colors.scrim, flex: 1 }, drawer: { backgroundColor: colors.navy, flex: 1, paddingHorizontal: 28, width: '83%' }, drawerKicker: { color: colors.blueSoft, fontFamily: fonts.bold, fontSize: 10, letterSpacing: 1.7 }, drawerName: { color: colors.white, fontFamily: fonts.bold, fontSize: 28, marginTop: 10 }, drawerEmail: { color: colors.navyMuted, fontFamily: fonts.medium, fontSize: 14, marginTop: 3 }, drawerRule: { backgroundColor: '#2B3850', height: 1, marginVertical: 26 }, drawerItem: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 11 }, drawerItemText: { color: colors.white, fontFamily: fonts.bold, fontSize: 24 }, chevron: { color: colors.blueSoft, fontFamily: fonts.medium, fontSize: 30 }, drawerSmall: { color: colors.navyMuted2, fontFamily: fonts.bold, fontSize: 16, paddingVertical: 9 }, signOut: { color: colors.navyDanger, fontFamily: fonts.bold, fontSize: 16, marginTop: 18 },
 });
