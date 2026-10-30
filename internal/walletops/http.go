@@ -17,6 +17,7 @@ type Commander interface {
 	ConfirmFunding(context.Context, identity.UserID, OperationID) (FundingIntent, error)
 	Transfer(context.Context, string, identity.UserID, string, int64, string) (Transfer, error)
 	CreateWithdrawal(context.Context, string, identity.UserID, string, int64, string) (Withdrawal, error)
+	ReconcileWithdrawal(context.Context, identity.UserID, OperationID) (Withdrawal, error)
 	SimulateWithdrawalSettlement(context.Context, identity.UserID, OperationID, bool) (Withdrawal, error)
 }
 
@@ -217,6 +218,22 @@ func (h *Handler) SettleWithdrawal(response http.ResponseWriter, request *http.R
 	}
 	withdrawal, err := h.commands.SimulateWithdrawalSettlement(
 		request.Context(), user.ID(), OperationID(request.PathValue("id")), *input.Succeeded,
+	)
+	if err != nil {
+		writeOperationError(response, err)
+		return
+	}
+	httpapi.WriteJSON(response, http.StatusOK, withdrawalResponse(withdrawal))
+}
+
+func (h *Handler) ReconcileWithdrawal(response http.ResponseWriter, request *http.Request) {
+	user, ok := identity.CurrentUser(request.Context())
+	if !ok {
+		writeAuthenticationRequired(response)
+		return
+	}
+	withdrawal, err := h.commands.ReconcileWithdrawal(
+		request.Context(), user.ID(), OperationID(request.PathValue("id")),
 	)
 	if err != nil {
 		writeOperationError(response, err)

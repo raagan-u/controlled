@@ -333,7 +333,7 @@ func (s *Service) ReconcileWithdrawal(
 		return Withdrawal{}, err
 	}
 	if payout.Status == custody.PayoutPending {
-		return Withdrawal{}, ErrInvalidState
+		return withdrawal, nil
 	}
 	generated, err := generateIDs(s.ids, 2)
 	if err != nil {
