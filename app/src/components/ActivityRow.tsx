@@ -1,6 +1,6 @@
 import { router, type Href } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import type { Activity } from '@/data/demo';
+import type { Activity } from '@/data/activity';
 import { colors, fonts } from '@/theme';
 export function ActivityRow({ card = false, detailed = false, item, last = false }: { card?: boolean; detailed?: boolean; item: Activity; last?: boolean }) {
   const incoming = !item.outgoing && !item.requested && item.status !== 'Failed';

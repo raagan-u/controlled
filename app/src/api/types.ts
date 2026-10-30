@@ -7,6 +7,38 @@ export type Wallet = {
 };
 export type LedgerEntry = { accountId: string; accountKind: string; amount: Money; side: 'CREDIT' | 'DEBIT' };
 export type Transaction = { description: string; entries: LedgerEntry[]; id: string; occurredAt: string; postedAt: string; reference: { id: string; type: string }; reversed: boolean };
-export type FundingIntent = { amount: Money; id: string; status: 'AWAITING_CONFIRMATION' | 'COMPLETED' | 'FAILED' };
-export type Withdrawal = { amount: Money; id: string; status: 'PENDING' | 'COMPLETED' | 'FAILED' };
-export type Transfer = { amount: Money; duplicate?: boolean; id: string; status?: 'COMPLETED' | 'PENDING_APPROVAL' };
+export type FundingIntent = {
+  amount: Money;
+  approvalURL?: string;
+  completedAt?: string;
+  duplicate?: boolean;
+  id: string;
+  ledgerTransactionId?: string;
+  status: 'CREATED' | 'AWAITING_CONFIRMATION' | 'COMPLETED' | 'FAILED';
+};
+export type Withdrawal = {
+  amount: Money;
+  completedAt?: string;
+  destination: string;
+  duplicate?: boolean;
+  id: string;
+  settlementTransactionId?: string;
+  status: 'RESERVED' | 'PENDING' | 'COMPLETED' | 'FAILED';
+};
+export type Transfer = {
+  amount: Money;
+  duplicate?: boolean;
+  id: string;
+  ledgerTransactionId: string;
+  recipientEmail: string;
+  recipientId: string;
+};
+export type AccountabilityRequest = {
+  assignedPartnerId: string;
+  createdAt: string;
+  duplicate: boolean;
+  expiresAt: string;
+  id: string;
+  intentId: string;
+  status: string;
+};

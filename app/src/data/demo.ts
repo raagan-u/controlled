@@ -1,4 +1,6 @@
-export type Activity = { amount: string; id: string; label: string; meta: string; outgoing?: boolean; requested?: boolean; section: 'Today' | 'Yesterday' | 'Oct 27'; status: 'Completed' | 'Pending' | 'Failed' };
+import type { Activity } from './activity';
+
+export type { Activity } from './activity';
 export const activities: Activity[] = [
   { amount: '24.00', id: 'txn-001', label: 'Riya Shah', meta: 'Sent · Dinner split', outgoing: true, section: 'Today', status: 'Completed' },
   { amount: '200.00', id: 'txn-002', label: 'Withdraw to PayPal', meta: 'Pending', outgoing: true, section: 'Today', status: 'Pending' },
