@@ -22,10 +22,15 @@ function sectionFor(value: string) {
   return date.toLocaleDateString('en-US', { day: 'numeric', month: 'short' });
 }
 
-function presentation(referenceType: string, outgoing: boolean, reversed: boolean) {
+function presentation(transaction: Transaction, outgoing: boolean) {
+  const referenceType = transaction.reference.type;
+  const reversed = transaction.reversed;
   if (reversed || referenceType === 'WITHDRAWAL_RELEASE') return { label: 'Withdraw to PayPal', status: 'Failed' as const };
   if (referenceType === 'FUNDING') return { label: 'Added from PayPal', status: 'Completed' as const };
-  if (referenceType === 'INTERNAL_TRANSFER') return { label: 'Internal transfer', status: 'Completed' as const };
+  if (referenceType === 'INTERNAL_TRANSFER') {
+    const counterparty = outgoing ? transaction.transferDetails?.recipient : transaction.transferDetails?.sender;
+    return { label: counterparty ? `Payment ${outgoing ? 'to' : 'from'} ${counterparty.displayName}` : 'Internal transfer', status: 'Completed' as const };
+  }
   if (referenceType === 'WITHDRAWAL_RESERVATION') return { label: 'Withdraw to PayPal', status: 'Pending' as const };
   if (referenceType === 'WITHDRAWAL_SETTLEMENT') return { label: 'Withdraw to PayPal', status: 'Completed' as const };
   return { label: outgoing ? 'Money sent' : 'Money received', status: 'Completed' as const };
@@ -38,7 +43,7 @@ export function transactionToActivity(transaction: Transaction, wallet: Wallet):
   ) ?? transaction.entries[0];
   const outgoing = ownEntry?.side === 'DEBIT';
   const amountMinor = ownEntry?.amount.amountMinor ?? 0;
-  const view = presentation(transaction.reference.type, outgoing, transaction.reversed);
+  const view = presentation(transaction, outgoing);
   const time = new Date(transaction.occurredAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
   const direction = transaction.reference.type === 'INTERNAL_TRANSFER' ? (outgoing ? 'Sent' : 'Received') : view.status;
   return {
