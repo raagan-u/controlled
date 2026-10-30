@@ -4,7 +4,7 @@ import { ActivityIndicator, Modal, PanResponder, Pressable, StyleSheet, Text, Vi
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ActivityRow } from '@/components/ActivityRow';
 import { formatUSD, signOut } from '@/api/wallet';
-import { transactionToActivity } from '@/data/activity';
+import { transactionToActivity, visibleTransactions } from '@/data/activity';
 import { useWalletOverview } from '@/hooks/useWalletOverview';
 import { colors, fonts, radii } from '@/theme';
 
@@ -13,7 +13,7 @@ export default function HomeScreen() {
   const { data, error, loading, refresh } = useWalletOverview();
   const displayName = data?.user.displayName || (Array.isArray(name) ? name[0] : name) || 'Alex';
   const balance = data ? formatUSD(data.wallet.balances.available.amountMinor) : '—';
-  const activities = useMemo(() => data ? data.transactions.map((item) => transactionToActivity(item, data.wallet)) : [], [data]);
+  const activities = useMemo(() => data ? visibleTransactions(data.transactions).map((item) => transactionToActivity(item, data.wallet)) : [], [data]);
   const recentUsers = useMemo(() => {
     if (!data) return [];
     const seen = new Set<string>();

@@ -12,6 +12,20 @@ export type Activity = {
   status: 'Completed' | 'Pending' | 'Failed';
 };
 
+const withdrawalTerminalTypes = new Set(['WITHDRAWAL_SETTLEMENT', 'WITHDRAWAL_RELEASE']);
+
+export function visibleTransactions(transactions: Transaction[]) {
+  const terminalWithdrawalIDs = new Set(
+    transactions
+      .filter((transaction) => withdrawalTerminalTypes.has(transaction.reference.type))
+      .map((transaction) => transaction.reference.id),
+  );
+  return transactions.filter((transaction) =>
+    transaction.reference.type !== 'WITHDRAWAL_RESERVATION'
+    || !terminalWithdrawalIDs.has(transaction.reference.id),
+  );
+}
+
 function sectionFor(value: string) {
   const date = new Date(value);
   const today = new Date();

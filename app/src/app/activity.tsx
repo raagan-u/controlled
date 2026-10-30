@@ -2,13 +2,13 @@ import { useMemo } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { ActivityRow } from '@/components/ActivityRow';
 import { SheetScreen } from '@/components/SheetScreen';
-import { transactionToActivity } from '@/data/activity';
+import { transactionToActivity, visibleTransactions } from '@/data/activity';
 import { useWalletOverview } from '@/hooks/useWalletOverview';
 import { colors, fonts } from '@/theme';
 
 export default function ActivityScreen() {
   const { data, error, loading, refresh } = useWalletOverview();
-  const activities = useMemo(() => data ? data.transactions.map((item) => transactionToActivity(item, data.wallet)) : [], [data]);
+  const activities = useMemo(() => data ? visibleTransactions(data.transactions).map((item) => transactionToActivity(item, data.wallet)) : [], [data]);
   const sections = [...new Set(activities.map((item) => item.section))];
 
   return <SheetScreen><ScrollView contentContainerStyle={styles.list} refreshControl={<RefreshControl colors={[colors.blue]} onRefresh={() => void refresh()} refreshing={loading} tintColor={colors.blue} />} showsVerticalScrollIndicator={false}>
