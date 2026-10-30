@@ -47,13 +47,11 @@ function formatResult(result: number) {
 
 export function AmountKeypad({ onCalculationChange, onChange, onDisplayChange, value }: Props) {
   const [expression, setExpression] = useState(value);
-  const [settled, setSettled] = useState(false);
   const lastEmitted = useRef(value);
 
   useEffect(() => {
     if (value !== lastEmitted.current) {
       setExpression(value);
-      setSettled(false);
     }
   }, [value]);
 
@@ -70,7 +68,6 @@ export function AmountKeypad({ onCalculationChange, onChange, onDisplayChange, v
         lastEmitted.current = '';
         onChange('');
         onDisplayChange?.('');
-        setSettled(true);
         return;
       }
       const result = evaluate(expression);
@@ -83,37 +80,33 @@ export function AmountKeypad({ onCalculationChange, onChange, onDisplayChange, v
       lastEmitted.current = formatted;
       onChange(formatted);
       onDisplayChange?.(formatted);
-      setSettled(true);
     }, 550);
     return () => clearTimeout(timer);
   }, [expression, onCalculationChange, onChange, onDisplayChange]);
 
   const pressNumber = (key: string) => {
     setExpression((current) => {
-      const base = settled ? '' : current;
+      const base = current;
       const currentNumber = base.split(/[+−×÷]/).at(-1) ?? '';
       if (key === '.' && currentNumber.includes('.')) return current;
       if (key !== '.' && (currentNumber.split('.')[1]?.length ?? 0) >= 2) return current;
       const next = `${base}${key === '.' && base === '' ? '0.' : key}`;
       return next.length <= 18 ? next : current;
     });
-    setSettled(false);
   };
 
   const pressOperator = (operator: string) => {
     setExpression((current) => {
-      const resultBase = settled ? lastEmitted.current : current;
+      const resultBase = current;
       if (!resultBase) return current;
       if (operatorSet.has(resultBase.at(-1) ?? '')) return `${resultBase.slice(0, -1)}${operator}`;
       return `${resultBase}${operator}`;
     });
-    setSettled(false);
   };
 
   const press = (key: string) => {
     if (key === '⌫') {
       setExpression((current) => current.slice(0, -1));
-      setSettled(false);
       return;
     }
     pressNumber(key);
