@@ -115,7 +115,8 @@ This is the hackathon backend, not a production deployment:
 
 - custody and payout behavior is provided by an in-memory fake provider;
 - funding confirmation and withdrawal settlement use `/v1/demo/*` endpoints;
-- the debit policy currently allows valid wallet transfers and withdrawals; pact enforcement is not connected yet;
+- outgoing transfers and withdrawals are atomically enforced against every active pact;
+- accountability assignment and pact lifecycle maintenance runs at startup and once per minute;
 - the API is HTTP-only when run locally; and
 - there is no frontend service in this repository yet.
 
@@ -356,6 +357,13 @@ The expected versions are:
 1. `000001_wallet_ledger.up.sql`
 2. `000002_sessions.up.sql`
 3. `000003_wallet_operations.up.sql`
+4. `000004_google_identities.up.sql`
+5. `000005_password_credentials.up.sql`
+6. `000006_accountability_relationships.up.sql`
+7. `000007_pacts.up.sql`
+8. `000008_pact_stakes.up.sql`
+9. `000009_pact_usage.up.sql`
+10. `000010_accountability_requests.up.sql`
 
 Applied migration files must not be edited. The API stores their checksums and refuses to start if an applied migration changes.
 

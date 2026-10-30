@@ -15,9 +15,9 @@ The current API is a hackathon prototype:
 - `/v1/demo/*` endpoints replace real identity verification and PayPal callbacks;
 - funding and payout operations use an in-memory fake custody provider;
 - internal Controlled wallet-to-wallet transfers use the real PostgreSQL ledger;
-- accountability invitations, ordered circles, and pact drafts use PostgreSQL;
+- accountability invitations, ordered circles, pacts, transaction intents, and review decisions use PostgreSQL;
 - funding and withdrawal ledger postings are real within the local database, but no real money moves; and
-- pact policy enforcement is not connected yet, so valid debits are currently allowed when funds are sufficient.
+- every outgoing transfer and withdrawal is atomically checked against all active overlapping pacts.
 
 See [SERVICE_SETUP.md](./SERVICE_SETUP.md) before running the flow.
 
@@ -116,6 +116,11 @@ Clients should branch on `error.code`, not the human-readable message.
 | `POST` | `/v1/accountability/invitations/{id}/decline` | yes | no | `200` |
 | `POST` | `/v1/accountability/circles` | yes | required | `201`, or `200` replay |
 | `GET` | `/v1/accountability/circles` | yes | no | `200` |
+| `GET` | `/v1/accountability/requests` | yes | no | `200` |
+| `GET` | `/v1/accountability/requests/{id}` | yes | no | `200` |
+| `POST` | `/v1/accountability/requests/{id}/approve` | yes | no | `200` |
+| `POST` | `/v1/accountability/requests/{id}/deny` | yes | no | `200` |
+| `POST` | `/v1/accountability/requests/{id}/cancel` | yes | no | `200` |
 | `POST` | `/v1/pacts` | yes | required | `201`, or `200` replay |
 | `GET` | `/v1/pacts` | yes | no | `200` |
 | `GET` | `/v1/pacts/{id}` | yes | no | `200` |
@@ -544,11 +549,14 @@ Atomically moves available balance from the authenticated user's wallet to anoth
 {
   "recipientEmail": "recipient@example.test",
   "amountMinor": 3000,
-  "currency": "USD"
+  "currency": "USD",
+  "reason": "Required only when requesting an over-limit exception"
 }
 ```
 
 The recipient must already exist, must not be the sender, and must have a wallet in the same currency. Insufficient available balance returns `409 insufficient_balance` without creating a transfer.
+
+When active pacts permit the debit, `reason` may be omitted and the transfer completes normally. When one or more pacts block it, a non-empty `reason` creates one exact accountability request and returns `202 Accepted`; no wallet funds or pact capacity are reserved while review is pending. Omitting the reason on a blocked debit returns `409 policy_denied`.
 
 ### `POST /v1/wallet/withdrawals`
 
@@ -558,11 +566,14 @@ Reserves available balance and creates a fake pending payout.
 {
   "destination": "paypal-recipient@example.test",
   "amountMinor": 2000,
-  "currency": "USD"
+  "currency": "USD",
+  "reason": "Required only when requesting an over-limit exception"
 }
 ```
 
 `destination` is currently an opaque, non-empty string. The route returns `202 Accepted` with status `PENDING`. A production implementation must validate a real PayPal destination.
+
+The same pact and accountability behavior as internal transfers applies. A successful reservation consumes every applicable pact; a failed payout releases both the wallet reservation and its pact usage.
 
 ### `POST /v1/demo/withdrawals/{id}/settle`
 
@@ -618,6 +629,25 @@ Idempotency-Key: create-circle-1
 
 Every partner must have accepted an invitation from that owner. Circles are immutable; create a new circle to use a different order or membership. `GET /v1/accountability/circles` lists the authenticated owner's circles.
 
+### Accountability requests
+
+`GET /v1/accountability/requests` lists requests owned by or reviewable by the authenticated user. `GET /v1/accountability/requests/{id}` includes the exact transaction, owner reason, current assignee, expiry, and a snapshot of every blocking pact's limit, used amount, proposed amount, and overage.
+
+Only the current assigned partner may decide a pending request. Deny with `POST /v1/accountability/requests/{id}/deny`. A denial immediately assigns the next ordered eligible partner. If every reviewer denies, the request and transaction intent are cancelled. A non-response advances after six hours; the complete request expires after 24 hours. The owner may cancel a pending request with `POST /v1/accountability/requests/{id}/cancel`.
+
+Approve and classify with:
+
+```http
+POST /v1/accountability/requests/{id}/approve
+Content-Type: application/json
+```
+
+```json
+{"classification":"EMERGENCY"}
+```
+
+The other allowed classification is `CONSCIOUS_BREAK`. Approval immediately rechecks balance and every current pact, then executes only the saved transaction. An emergency records one exception and leaves the pact and stake active. A conscious break resolves each blocking pact as `BROKEN` and atomically moves its complete stake to Commitment Reserve before executing the debit.
+
 ### Pact drafts
 
 Create a USD pact draft:
@@ -656,6 +686,8 @@ The request moves the stake from `available` to `staked` in the same database tr
 
 `POST /v1/pacts/{id}/cancel` cancels a draft, awaiting-stake pact, or scheduled pact. Cancelling a scheduled pact atomically releases its full stake back to `available`. An active pact cannot be cancelled directly.
 
+The API process runs lifecycle maintenance once at startup and once per minute. Scheduled pacts become active at their start time. At their end time, pending requests involving the pact are cancelled, the outcome becomes `KEPT` or `KEPT_WITH_EXCEPTIONS`, and the complete stake is released to available balance in the same database transaction.
+
 ## Error reference
 
 | HTTP status | Code | Meaning |
@@ -672,7 +704,9 @@ The request moves the stake from `available` to `staked` in the same database tr
 | `409` | `user_exists` | an account already exists for the onboarding email |
 | `409` | `idempotency_conflict` | the key was previously used with different input |
 | `409` | `insufficient_balance` | available wallet balance cannot cover the debit |
-| `409` | `policy_denied` | pact policy rejected the debit; reserved for the policy integration |
+| `409` | `policy_denied` | active pact policy blocked a debit and no review request was created |
+| `409` | `approval_stale` | an approved transaction no longer matches the current pact state |
+| `409` | `accountability_request_final` | the request was already decided, cancelled, or expired |
 | `409` | `invalid_operation_state` | operation cannot make the requested state transition |
 | `409` | `accountability_not_ready` | selected circle is missing, not owned, or has no eligible partners |
 | `409` | `partner_not_accepted` | at least one requested circle partner has not accepted |
@@ -684,6 +718,9 @@ The request moves the stake from `available` to `staked` in the same database tr
 | `422` | `invalid_onboarding` | onboarding email, name, or currency is invalid |
 | `422` | `invalid_wallet_operation` | amount, currency, destination, recipient, or self-transfer is invalid |
 | `422` | `invalid_accountability_relationship` | invalid owner, partner, circle name, or duplicate membership |
+| `422` | `accountability_reason_required` | an over-limit request has no owner reason |
+| `422` | `invalid_accountability_decision` | approval classification is not `EMERGENCY` or `CONSCIOUS_BREAK` |
+| `403` | `not_current_reviewer` | caller is not the request's current assigned partner |
 | `422` | `invalid_pact_terms` | invalid money, period, goal, intent, circle, or break consequence |
 | `502` | `custody_unavailable` | custody provider is unavailable |
 | `503` | `not_ready` | readiness check cannot reach PostgreSQL |
