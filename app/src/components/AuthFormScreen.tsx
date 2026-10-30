@@ -15,7 +15,8 @@ import { PrimaryButton } from '@/components/PrimaryButton';
 import { colors, fonts } from '@/theme';
 
 type Field = {
-  autoComplete: 'email' | 'password' | 'new-password';
+	  autoCapitalize?: 'none' | 'words';
+	  autoComplete: 'email' | 'name' | 'password' | 'new-password';
   keyboardType?: 'email-address';
   label: string;
   name: string;
@@ -88,7 +89,7 @@ export function AuthFormScreen({
               return (
                 <View key={field.name} style={styles.field}>
                   <TextInput
-                    autoCapitalize="none"
+                    autoCapitalize={field.autoCapitalize ?? 'none'}
                     autoComplete={field.autoComplete}
                     autoCorrect={false}
                     keyboardType={field.keyboardType}

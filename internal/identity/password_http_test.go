@@ -21,7 +21,7 @@ func TestPasswordRegistrationHandlerReturnsSession(t *testing.T) {
 	request := httptest.NewRequest(
 		http.MethodPost,
 		"/v1/auth/password/register",
-		strings.NewReader(`{"email":"founder@example.com","password":"password"}`),
+		strings.NewReader(`{"email":"founder@example.com","password":"password","displayName":"Founder"}`),
 	)
 	response := httptest.NewRecorder()
 	handler.Register(response, request)
@@ -62,7 +62,7 @@ type passwordAuthenticator struct {
 	err     error
 }
 
-func (a passwordAuthenticator) Register(context.Context, string, string) (identity.StartedSession, error) {
+func (a passwordAuthenticator) Register(context.Context, string, string, string) (identity.StartedSession, error) {
 	return a.started, a.err
 }
 
