@@ -1,0 +1,19 @@
+package accountability
+
+import "errors"
+
+var (
+	ErrInvalidInvitationID = errors.New("accountability invitation ID is required")
+	ErrInvalidCircleID     = errors.New("accountability circle ID is required")
+	ErrInvalidOwnerID      = errors.New("accountability owner ID is required")
+	ErrInvalidPartnerID    = errors.New("accountability partner ID is required")
+	ErrInvalidTimestamp    = errors.New("accountability timestamp is required")
+	ErrSelfPartner         = errors.New("a user cannot be their own accountability partner")
+	ErrInvalidStatus       = errors.New("accountability status is invalid")
+	ErrInvitationFinal     = errors.New("accountability invitation is already resolved")
+	ErrWrongInvitee        = errors.New("only the invited partner can resolve the invitation")
+	ErrMissingCircleName   = errors.New("accountability circle name is required")
+	ErrMissingPartners     = errors.New("accountability circle requires at least one partner")
+	ErrDuplicatePartner    = errors.New("accountability circle partners must be distinct")
+	ErrPartnerNotAccepted  = errors.New("accountability circle partner has not accepted an invitation")
+)
