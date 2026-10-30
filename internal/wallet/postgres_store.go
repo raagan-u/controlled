@@ -242,6 +242,17 @@ func (s *PostgresProvisioningStore) TransactionsByUser(
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate wallet transactions: %w", err)
 	}
+	rows.Close()
+	for index := range transactions {
+		if transactions[index].Reference.Type != "INTERNAL_TRANSFER" {
+			continue
+		}
+		transfer, err := s.transferDetails(ctx, transactions[index].Reference.ID)
+		if err != nil {
+			return nil, err
+		}
+		transactions[index].Transfer = &transfer
+	}
 	return transactions, nil
 }
 
