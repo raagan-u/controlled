@@ -15,6 +15,7 @@ The current API is a hackathon prototype:
 - `/v1/demo/*` endpoints replace real identity verification and PayPal callbacks;
 - funding and payout operations use an in-memory fake custody provider;
 - internal Controlled wallet-to-wallet transfers use the real PostgreSQL ledger;
+- accountability invitations, ordered circles, and pact drafts use PostgreSQL;
 - funding and withdrawal ledger postings are real within the local database, but no real money moves; and
 - pact policy enforcement is not connected yet, so valid debits are currently allowed when funds are sufficient.
 
@@ -69,6 +70,9 @@ The following create endpoints require a non-empty `Idempotency-Key` header:
 - funding intent creation
 - internal transfer creation
 - withdrawal creation
+- accountability invitation creation
+- accountability circle creation
+- pact draft creation
 
 Use a new opaque key for each intended operation. Keys for wallet operations are scoped to the acting user and operation type. Repeating a request with the same key and the same semantic input returns the original resource with `duplicate: true`. Reusing the key with different input returns `409 idempotency_conflict`.
 
@@ -106,6 +110,17 @@ Clients should branch on `error.code`, not the human-readable message.
 | `POST` | `/v1/wallet/internal-transfers` | yes | required | `201`, or `200` replay |
 | `POST` | `/v1/wallet/withdrawals` | yes | required | `202` |
 | `POST` | `/v1/demo/withdrawals/{id}/settle` | yes | no | `200` |
+| `POST` | `/v1/accountability/invitations` | yes | required | `201`, or `200` replay |
+| `GET` | `/v1/accountability/invitations` | yes | no | `200` |
+| `POST` | `/v1/accountability/invitations/{id}/accept` | yes | no | `200` |
+| `POST` | `/v1/accountability/invitations/{id}/decline` | yes | no | `200` |
+| `POST` | `/v1/accountability/circles` | yes | required | `201`, or `200` replay |
+| `GET` | `/v1/accountability/circles` | yes | no | `200` |
+| `POST` | `/v1/pacts` | yes | required | `201`, or `200` replay |
+| `GET` | `/v1/pacts` | yes | no | `200` |
+| `GET` | `/v1/pacts/{id}` | yes | no | `200` |
+| `PUT` | `/v1/pacts/{id}` | yes | no | `200` |
+| `POST` | `/v1/pacts/{id}/confirm` | yes | no | `200` |
 
 ## Complete external test flow
 
@@ -562,6 +577,69 @@ Failed payout:
 
 Success removes the pending liability and sets `COMPLETED`. Failure releases the amount back to available balance and sets `FAILED`.
 
+### Accountability relationships
+
+Invite an existing Controlled user:
+
+```http
+POST /v1/accountability/invitations
+Idempotency-Key: invite-bob-1
+```
+
+```json
+{"partnerEmail": "bob@example.test"}
+```
+
+The invited user discovers the invitation through `GET /v1/accountability/invitations` and responds with either:
+
+```text
+POST /v1/accountability/invitations/{id}/accept
+POST /v1/accountability/invitations/{id}/decline
+```
+
+After acceptance, the owner creates an explicitly ordered circle:
+
+```http
+POST /v1/accountability/circles
+Idempotency-Key: create-circle-1
+```
+
+```json
+{
+  "name": "Close friends",
+  "partnerIds": ["first-partner-uuid", "second-partner-uuid"]
+}
+```
+
+Every partner must have accepted an invitation from that owner. Circles are immutable; create a new circle to use a different order or membership. `GET /v1/accountability/circles` lists the authenticated owner's circles.
+
+### Pact drafts
+
+Create a USD pact draft:
+
+```http
+POST /v1/pacts
+Idempotency-Key: create-pact-1
+```
+
+```json
+{
+  "goal": "Keep enough money for rent",
+  "intent": "Reduce discretionary spending this month",
+  "spendingLimitMinor": 20000,
+  "stakeMinor": 5000,
+  "currency": "USD",
+  "startsAt": "2026-11-01T00:00:00+05:30",
+  "endsAt": "2026-12-01T00:00:00+05:30",
+  "accountabilityCircleId": "circle-uuid",
+  "breakConsequence": "COMMITMENT_RESERVE"
+}
+```
+
+`PUT /v1/pacts/{id}` accepts the same body while the pact remains `DRAFT`. `GET /v1/pacts` lists owned pacts and `GET /v1/pacts/{id}` returns one owned pact.
+
+`POST /v1/pacts/{id}/confirm` makes the terms immutable and moves the pact to `AWAITING_STAKE`. Phase 3 will reserve the stake and move it to `SCHEDULED` or `ACTIVE`; confirmation alone does not yet enforce the spending limit.
+
 ## Error reference
 
 | HTTP status | Code | Meaning |
@@ -573,14 +651,23 @@ Success removes the pending liability and sets `COMPLETED`. Failure releases the
 | `401` | `invalid_session` | session is invalid, expired, or revoked |
 | `404` | `wallet_not_found` | authenticated user has no provisioned wallet |
 | `404` | `wallet_operation_not_found` | recipient or user-owned operation does not exist |
+| `404` | `accountability_not_found` | partner or invitation does not exist |
+| `404` | `pact_not_found` | user-owned pact does not exist |
 | `409` | `user_exists` | an account already exists for the onboarding email |
 | `409` | `idempotency_conflict` | the key was previously used with different input |
 | `409` | `insufficient_balance` | available wallet balance cannot cover the debit |
 | `409` | `policy_denied` | pact policy rejected the debit; reserved for the policy integration |
 | `409` | `invalid_operation_state` | operation cannot make the requested state transition |
+| `409` | `accountability_not_ready` | selected circle is missing, not owned, or has no eligible partners |
+| `409` | `partner_not_accepted` | at least one requested circle partner has not accepted |
+| `409` | `invitation_exists` | an active invitation or relationship already exists |
+| `409` | `invitation_not_resolvable` | invitation is final or caller is not its invited partner |
+| `409` | `pact_conflict` | pact idempotency or optimistic version conflict |
 | `422` | `invalid_email` | login email syntax is invalid |
 | `422` | `invalid_onboarding` | onboarding email, name, or currency is invalid |
 | `422` | `invalid_wallet_operation` | amount, currency, destination, recipient, or self-transfer is invalid |
+| `422` | `invalid_accountability_relationship` | invalid owner, partner, circle name, or duplicate membership |
+| `422` | `invalid_pact_terms` | invalid money, period, goal, intent, circle, or break consequence |
 | `502` | `custody_unavailable` | custody provider is unavailable |
 | `503` | `not_ready` | readiness check cannot reach PostgreSQL |
 | `500` | `internal_error` | unexpected server or persistence failure |
