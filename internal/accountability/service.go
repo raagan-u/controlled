@@ -22,8 +22,30 @@ type Repository interface {
 	CreateInvitation(context.Context, string, Invitation) (Invitation, bool, error)
 	InvitationByID(context.Context, InvitationID) (Invitation, error)
 	SaveInvitation(context.Context, Invitation) error
+	InvitationsForUser(context.Context, identity.UserID) ([]Invitation, error)
 	AcceptedPartners(context.Context, identity.UserID, []identity.UserID) (map[identity.UserID]bool, error)
 	CreateCircle(context.Context, string, Circle) (Circle, bool, error)
+	CirclesForOwner(context.Context, identity.UserID) ([]Circle, error)
+}
+
+func (s *Service) Invitations(ctx context.Context, userID identity.UserID) ([]Invitation, error) {
+	if err := s.ready(); err != nil {
+		return nil, err
+	}
+	if userID == "" {
+		return nil, ErrInvalidPartnerID
+	}
+	return s.repository.InvitationsForUser(ctx, userID)
+}
+
+func (s *Service) Circles(ctx context.Context, ownerID identity.UserID) ([]Circle, error) {
+	if err := s.ready(); err != nil {
+		return nil, err
+	}
+	if ownerID == "" {
+		return nil, ErrInvalidOwnerID
+	}
+	return s.repository.CirclesForOwner(ctx, ownerID)
 }
 
 type Service struct {

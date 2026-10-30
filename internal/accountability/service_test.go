@@ -55,6 +55,14 @@ func (r *memoryRepository) SaveInvitation(_ context.Context, invitation accounta
 	return nil
 }
 
+func (r *memoryRepository) InvitationsForUser(_ context.Context, _ identity.UserID) ([]accountability.Invitation, error) {
+	result := make([]accountability.Invitation, 0, len(r.invitations))
+	for _, invitation := range r.invitations {
+		result = append(result, invitation)
+	}
+	return result, nil
+}
+
 func (r *memoryRepository) AcceptedPartners(_ context.Context, _ identity.UserID, partners []identity.UserID) (map[identity.UserID]bool, error) {
 	result := make(map[identity.UserID]bool, len(partners))
 	for _, partnerID := range partners {
@@ -66,6 +74,13 @@ func (r *memoryRepository) AcceptedPartners(_ context.Context, _ identity.UserID
 func (r *memoryRepository) CreateCircle(_ context.Context, _ string, circle accountability.Circle) (accountability.Circle, bool, error) {
 	r.circle = circle
 	return circle, false, nil
+}
+
+func (r *memoryRepository) CirclesForOwner(_ context.Context, _ identity.UserID) ([]accountability.Circle, error) {
+	if r.circle.ID() == "" {
+		return nil, nil
+	}
+	return []accountability.Circle{r.circle}, nil
 }
 
 func TestServiceInvitesRegisteredPartner(t *testing.T) {

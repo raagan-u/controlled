@@ -14,6 +14,46 @@ type Commander interface {
 	Invite(context.Context, string, identity.UserID, string) (Invitation, bool, error)
 	Respond(context.Context, identity.UserID, InvitationID, bool) (Invitation, error)
 	CreateCircle(context.Context, string, identity.UserID, string, []identity.UserID) (Circle, bool, error)
+	Invitations(context.Context, identity.UserID) ([]Invitation, error)
+	Circles(context.Context, identity.UserID) ([]Circle, error)
+}
+
+func (h *Handler) Invitations(response http.ResponseWriter, request *http.Request) {
+	user, ok := currentUser(response, request)
+	if !ok {
+		return
+	}
+	invitations, err := h.commands.Invitations(request.Context(), user.ID())
+	if err != nil {
+		writeError(response, err)
+		return
+	}
+	items := make([]invitationAPIResponse, len(invitations))
+	for index, invitation := range invitations {
+		items[index] = invitationEnvelope(invitation, false).Invitation
+	}
+	httpapi.WriteJSON(response, http.StatusOK, struct {
+		Invitations []invitationAPIResponse `json:"invitations"`
+	}{Invitations: items})
+}
+
+func (h *Handler) Circles(response http.ResponseWriter, request *http.Request) {
+	user, ok := currentUser(response, request)
+	if !ok {
+		return
+	}
+	circles, err := h.commands.Circles(request.Context(), user.ID())
+	if err != nil {
+		writeError(response, err)
+		return
+	}
+	items := make([]circleAPIResponse, len(circles))
+	for index, circle := range circles {
+		items[index] = circleEnvelope(circle, false).Circle
+	}
+	httpapi.WriteJSON(response, http.StatusOK, struct {
+		Circles []circleAPIResponse `json:"circles"`
+	}{Circles: items})
 }
 
 type Handler struct {

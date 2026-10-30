@@ -24,21 +24,26 @@ func TestAccountabilityHandlers(t *testing.T) {
 	mux.Handle("POST /v1/accountability/invitations/{id}/accept", identity.RequireSession(sessions, http.HandlerFunc(handler.Accept)))
 	mux.Handle("POST /v1/accountability/invitations/{id}/decline", identity.RequireSession(sessions, http.HandlerFunc(handler.Decline)))
 	mux.Handle("POST /v1/accountability/circles", identity.RequireSession(sessions, http.HandlerFunc(handler.CreateCircle)))
+	mux.Handle("GET /v1/accountability/invitations", identity.RequireSession(sessions, http.HandlerFunc(handler.Invitations)))
+	mux.Handle("GET /v1/accountability/circles", identity.RequireSession(sessions, http.HandlerFunc(handler.Circles)))
 
 	tests := []struct {
-		name string
-		path string
-		body string
-		want int
+		name   string
+		method string
+		path   string
+		body   string
+		want   int
 	}{
-		{name: "invite", path: "/v1/accountability/invitations", body: `{"partnerEmail":"partner@example.com"}`, want: http.StatusCreated},
-		{name: "accept", path: "/v1/accountability/invitations/invite/accept", body: `{}`, want: http.StatusOK},
-		{name: "decline", path: "/v1/accountability/invitations/invite/decline", body: `{}`, want: http.StatusOK},
-		{name: "circle", path: "/v1/accountability/circles", body: `{"name":"Friends","partnerIds":["partner"]}`, want: http.StatusCreated},
+		{name: "invite", method: http.MethodPost, path: "/v1/accountability/invitations", body: `{"partnerEmail":"partner@example.com"}`, want: http.StatusCreated},
+		{name: "accept", method: http.MethodPost, path: "/v1/accountability/invitations/invite/accept", body: `{}`, want: http.StatusOK},
+		{name: "decline", method: http.MethodPost, path: "/v1/accountability/invitations/invite/decline", body: `{}`, want: http.StatusOK},
+		{name: "circle", method: http.MethodPost, path: "/v1/accountability/circles", body: `{"name":"Friends","partnerIds":["partner"]}`, want: http.StatusCreated},
+		{name: "list invitations", method: http.MethodGet, path: "/v1/accountability/invitations", want: http.StatusOK},
+		{name: "list circles", method: http.MethodGet, path: "/v1/accountability/circles", want: http.StatusOK},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			request := httptest.NewRequest(http.MethodPost, test.path, strings.NewReader(test.body))
+			request := httptest.NewRequest(test.method, test.path, strings.NewReader(test.body))
 			request.Header.Set("Authorization", "Bearer token")
 			request.Header.Set("Idempotency-Key", test.name)
 			response := httptest.NewRecorder()
@@ -48,6 +53,16 @@ func TestAccountabilityHandlers(t *testing.T) {
 			}
 		})
 	}
+}
+
+func (s stubAccountabilityCommands) Invitations(context.Context, identity.UserID) ([]accountability.Invitation, error) {
+	invitation, err := accountability.NewInvitation("invite", "owner", "partner", s.now)
+	return []accountability.Invitation{invitation}, err
+}
+
+func (s stubAccountabilityCommands) Circles(context.Context, identity.UserID) ([]accountability.Circle, error) {
+	circle, err := accountability.NewCircle("circle", "owner", "Friends", []identity.UserID{"partner"}, s.now)
+	return []accountability.Circle{circle}, err
 }
 
 type stubAccountabilityCommands struct{ now time.Time }

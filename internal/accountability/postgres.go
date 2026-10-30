@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -128,6 +129,35 @@ func (r *PostgresRepository) SaveInvitation(ctx context.Context, invitation Invi
 	return ErrInvitationFinal
 }
 
+func (r *PostgresRepository) InvitationsForUser(ctx context.Context, userID identity.UserID) ([]Invitation, error) {
+	if r == nil || r.pool == nil {
+		return nil, ErrUnavailable
+	}
+	parsedUserID, err := accountabilityUUID(string(userID))
+	if err != nil {
+		return nil, err
+	}
+	rows, err := r.pool.Query(ctx, `
+		SELECT id::text, owner_id::text, partner_id::text, status, created_at, resolved_at
+		  FROM accountability_invitations
+		 WHERE owner_id = $1 OR partner_id = $1
+		 ORDER BY created_at DESC, id
+	`, parsedUserID)
+	if err != nil {
+		return nil, fmt.Errorf("list accountability invitations: %w", err)
+	}
+	defer rows.Close()
+	var invitations []Invitation
+	for rows.Next() {
+		invitation, err := scanInvitation(rows)
+		if err != nil {
+			return nil, err
+		}
+		invitations = append(invitations, invitation)
+	}
+	return invitations, rows.Err()
+}
+
 func (r *PostgresRepository) AcceptedPartners(
 	ctx context.Context,
 	ownerID identity.UserID,
@@ -224,6 +254,77 @@ func (r *PostgresRepository) CreateCircle(
 		return Circle{}, false, fmt.Errorf("commit accountability circle: %w", err)
 	}
 	return circle, false, nil
+}
+
+func (r *PostgresRepository) CirclesForOwner(ctx context.Context, owner identity.UserID) ([]Circle, error) {
+	if r == nil || r.pool == nil {
+		return nil, ErrUnavailable
+	}
+	ownerID, err := accountabilityUUID(string(owner))
+	if err != nil {
+		return nil, err
+	}
+	rows, err := r.pool.Query(ctx, `
+		SELECT id::text, name, created_at
+		  FROM accountability_circles
+		 WHERE owner_id = $1
+		 ORDER BY created_at DESC, id
+	`, ownerID)
+	if err != nil {
+		return nil, fmt.Errorf("list accountability circles: %w", err)
+	}
+	type circleHeader struct {
+		id        string
+		name      string
+		createdAt time.Time
+	}
+	var headers []circleHeader
+	for rows.Next() {
+		var header circleHeader
+		if err := rows.Scan(&header.id, &header.name, &header.createdAt); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		headers = append(headers, header)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	rows.Close()
+
+	circles := make([]Circle, 0, len(headers))
+	for _, header := range headers {
+		memberRows, err := r.pool.Query(ctx, `
+			SELECT partner_id::text
+			  FROM accountability_circle_members
+			 WHERE circle_id = $1
+			 ORDER BY position
+		`, header.id)
+		if err != nil {
+			return nil, err
+		}
+		var partners []identity.UserID
+		for memberRows.Next() {
+			var partnerID string
+			if err := memberRows.Scan(&partnerID); err != nil {
+				memberRows.Close()
+				return nil, err
+			}
+			partners = append(partners, identity.UserID(partnerID))
+		}
+		if err := memberRows.Err(); err != nil {
+			memberRows.Close()
+			return nil, err
+		}
+		memberRows.Close()
+		circle, err := NewCircle(CircleID(header.id), owner, header.name, partners, header.createdAt)
+		if err != nil {
+			return nil, err
+		}
+		circles = append(circles, circle)
+	}
+	return circles, nil
 }
 
 func circleByKey(ctx context.Context, transaction pgx.Tx, ownerID pgtype.UUID, key string) (Circle, error) {
