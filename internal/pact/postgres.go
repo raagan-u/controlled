@@ -4,18 +4,213 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/raagan-u/controlled/internal/ledger"
 )
 
 type PostgresRepository struct {
-	pool *pgxpool.Pool
+	pool   *pgxpool.Pool
+	ledger *ledger.PostgresBook
 }
 
 func NewPostgresRepository(pool *pgxpool.Pool) *PostgresRepository {
-	return &PostgresRepository{pool: pool}
+	return &PostgresRepository{pool: pool, ledger: ledger.NewPostgresBook(pool)}
+}
+
+func (r *PostgresRepository) ReserveStake(
+	ctx context.Context,
+	owner UserID,
+	id PactID,
+	journalID string,
+	vaultCandidateID string,
+	idempotencyKey string,
+	now time.Time,
+) (*Pact, bool, error) {
+	if r == nil || r.pool == nil || r.ledger == nil {
+		return nil, false, ErrUnavailable
+	}
+	ownerID, err := pactUUID(string(owner))
+	if err != nil {
+		return nil, false, err
+	}
+	pactID, err := pactUUID(string(id))
+	if err != nil {
+		return nil, false, err
+	}
+	transaction, err := r.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
+	if err != nil {
+		return nil, false, fmt.Errorf("begin stake reservation: %w", err)
+	}
+	defer func() { _ = transaction.Rollback(context.Background()) }()
+	if _, err := transaction.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", "pact-stake:"+string(owner)+":"+string(id)); err != nil {
+		return nil, false, fmt.Errorf("lock pact stake: %w", err)
+	}
+	current, err := scanPact(transaction.QueryRow(ctx, pactSelect+` WHERE id = $1 AND owner_id = $2 FOR UPDATE`, pactID, ownerID))
+	if err != nil {
+		return nil, false, err
+	}
+	if current.Status() == StatusScheduled || current.Status() == StatusActive {
+		return current, true, nil
+	}
+	if current.Status() != StatusAwaitingStake {
+		return nil, false, ErrInvalidTransition
+	}
+	availableAccount, vaultAccount, err := stakeAccounts(
+		ctx, transaction, ownerID, current.Terms().Stake().Currency(), vaultCandidateID, now,
+	)
+	if err != nil {
+		return nil, false, err
+	}
+	debit, err := ledger.NewEntry(availableAccount, ledger.SideDebit, current.Terms().Stake())
+	if err != nil {
+		return nil, false, err
+	}
+	credit, err := ledger.NewEntry(vaultAccount, ledger.SideCredit, current.Terms().Stake())
+	if err != nil {
+		return nil, false, err
+	}
+	journal, err := ledger.NewJournal(
+		ledger.JournalID(journalID),
+		"pact-stake:"+string(owner)+":"+idempotencyKey,
+		ledger.Reference{Type: "PACT_STAKE_RESERVATION", ID: string(id)},
+		"Reserve pact stake",
+		now,
+		[]ledger.Entry{debit, credit},
+	)
+	if err != nil {
+		return nil, false, err
+	}
+	posted, err := r.ledger.PostInTx(ctx, transaction, journal)
+	if errors.Is(err, ledger.ErrIdempotencyConflict) {
+		return nil, false, ErrIdempotencyConflict
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	expectedVersion := current.Version()
+	if err := current.RecordStakeReserved(StakeReservation{ID: string(posted.JournalID), Amount: current.Terms().Stake()}, now); err != nil {
+		return nil, false, err
+	}
+	if err := updatePactLifecycle(ctx, transaction, current, ownerID, pactID, expectedVersion, now); err != nil {
+		return nil, false, err
+	}
+	reservationID, err := pactUUID(string(posted.JournalID))
+	if err != nil {
+		return nil, false, err
+	}
+	_, err = transaction.Exec(ctx, `
+		INSERT INTO stake_allocations (
+			pact_id, owner_id, amount_minor, currency, status,
+			reservation_transaction_id, created_at
+		) VALUES ($1, $2, $3, $4, 'ACTIVE', $5, $6)
+	`, pactID, ownerID, current.Terms().Stake().AmountMinor(), current.Terms().Stake().Currency(), reservationID, now)
+	if err != nil {
+		return nil, false, fmt.Errorf("create stake allocation: %w", err)
+	}
+	if err := transaction.Commit(ctx); err != nil {
+		return nil, false, fmt.Errorf("commit stake reservation: %w", err)
+	}
+	current.ClearEvents()
+	return current, posted.Duplicate, nil
+}
+
+func (r *PostgresRepository) Cancel(
+	ctx context.Context,
+	owner UserID,
+	id PactID,
+	journalID string,
+	now time.Time,
+) (*Pact, bool, error) {
+	if r == nil || r.pool == nil || r.ledger == nil {
+		return nil, false, ErrUnavailable
+	}
+	ownerID, err := pactUUID(string(owner))
+	if err != nil {
+		return nil, false, err
+	}
+	pactID, err := pactUUID(string(id))
+	if err != nil {
+		return nil, false, err
+	}
+	transaction, err := r.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
+	if err != nil {
+		return nil, false, fmt.Errorf("begin pact cancellation: %w", err)
+	}
+	defer func() { _ = transaction.Rollback(context.Background()) }()
+	current, err := scanPact(transaction.QueryRow(ctx, pactSelect+` WHERE id = $1 AND owner_id = $2 FOR UPDATE`, pactID, ownerID))
+	if err != nil {
+		return nil, false, err
+	}
+	if current.Status() == StatusCancelled {
+		return current, true, nil
+	}
+	expectedVersion := current.Version()
+	if err := current.Cancel(now); err != nil {
+		return nil, false, err
+	}
+	events := current.Events()
+	if len(events) == 0 {
+		return nil, false, ErrInvalidTransition
+	}
+	if events[len(events)-1].StakeDisposition == StakeDispositionRelease {
+		var amountMinor int64
+		var currency string
+		err := transaction.QueryRow(ctx, `
+			SELECT amount_minor, currency
+			  FROM stake_allocations
+			 WHERE pact_id = $1 AND owner_id = $2 AND status = 'ACTIVE'
+			 FOR UPDATE
+		`, pactID, ownerID).Scan(&amountMinor, &currency)
+		if err != nil {
+			return nil, false, fmt.Errorf("read stake allocation for release: %w", err)
+		}
+		amount, err := NewMoney(amountMinor, currency)
+		if err != nil {
+			return nil, false, err
+		}
+		availableAccount, vaultAccount, err := existingStakeAccounts(ctx, transaction, ownerID, currency)
+		if err != nil {
+			return nil, false, err
+		}
+		debit, _ := ledger.NewEntry(vaultAccount, ledger.SideDebit, amount)
+		credit, _ := ledger.NewEntry(availableAccount, ledger.SideCredit, amount)
+		journal, err := ledger.NewJournal(
+			ledger.JournalID(journalID), "pact-stake-release:"+string(id),
+			ledger.Reference{Type: "PACT_STAKE_RELEASE", ID: string(id)},
+			"Release cancelled pact stake", now, []ledger.Entry{debit, credit},
+		)
+		if err != nil {
+			return nil, false, err
+		}
+		posted, err := r.ledger.PostInTx(ctx, transaction, journal)
+		if err != nil {
+			return nil, false, err
+		}
+		resolutionID, err := pactUUID(string(posted.JournalID))
+		if err != nil {
+			return nil, false, err
+		}
+		_, err = transaction.Exec(ctx, `
+			UPDATE stake_allocations
+			   SET status = 'RELEASED', resolution_transaction_id = $2, resolved_at = $3
+			 WHERE pact_id = $1 AND status = 'ACTIVE'
+		`, pactID, resolutionID, now)
+		if err != nil {
+			return nil, false, fmt.Errorf("release stake allocation: %w", err)
+		}
+	}
+	if err := updatePactLifecycle(ctx, transaction, current, ownerID, pactID, expectedVersion, now); err != nil {
+		return nil, false, err
+	}
+	if err := transaction.Commit(ctx); err != nil {
+		return nil, false, fmt.Errorf("commit pact cancellation: %w", err)
+	}
+	current.ClearEvents()
+	return current, false, nil
 }
 
 func (r *PostgresRepository) Create(
@@ -190,6 +385,116 @@ func (r *PostgresRepository) CircleFacts(
 	return ConfirmationFacts{
 		PartnerCount: partnerCount, DistinctPartnerCount: distinctPartnerCount, OwnerIsPartner: ownerIsPartner,
 	}, nil
+}
+
+func stakeAccounts(
+	ctx context.Context,
+	transaction pgx.Tx,
+	ownerID pgtype.UUID,
+	currency string,
+	vaultCandidateID string,
+	now time.Time,
+) (ledger.AccountID, ledger.AccountID, error) {
+	available, _, err := existingStakeAccounts(ctx, transaction, ownerID, currency)
+	if err != nil && !errors.Is(err, ledger.ErrAccountNotFound) {
+		return "", "", err
+	}
+	if available == "" {
+		return "", "", ledger.ErrAccountNotFound
+	}
+	candidateID, err := pactUUID(vaultCandidateID)
+	if err != nil {
+		return "", "", err
+	}
+	if _, err := transaction.Exec(ctx, `
+		INSERT INTO ledger_accounts (id, kind, normal_side, currency, created_at)
+		VALUES ($1, 'STAKE_VAULT', 'CREDIT', $2, $3)
+		ON CONFLICT DO NOTHING
+	`, candidateID, currency, now); err != nil {
+		return "", "", fmt.Errorf("ensure stake vault account: %w", err)
+	}
+	var vault string
+	if err := transaction.QueryRow(ctx, `
+		SELECT id::text
+		  FROM ledger_accounts
+		 WHERE wallet_id IS NULL AND kind = 'STAKE_VAULT' AND currency = $1
+	`, currency).Scan(&vault); err != nil {
+		return "", "", fmt.Errorf("read stake vault account: %w", err)
+	}
+	return available, ledger.AccountID(vault), nil
+}
+
+func existingStakeAccounts(
+	ctx context.Context,
+	transaction pgx.Tx,
+	ownerID pgtype.UUID,
+	currency string,
+) (ledger.AccountID, ledger.AccountID, error) {
+	var available string
+	err := transaction.QueryRow(ctx, `
+		SELECT account.id::text
+		  FROM wallets AS wallet
+		  JOIN ledger_accounts AS account ON account.wallet_id = wallet.id
+		 WHERE wallet.owner_id = $1
+		   AND wallet.currency = $2
+		   AND account.kind = 'AVAILABLE'
+	`, ownerID, currency).Scan(&available)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", "", ledger.ErrAccountNotFound
+	}
+	if err != nil {
+		return "", "", fmt.Errorf("read available account for stake: %w", err)
+	}
+	var vault string
+	err = transaction.QueryRow(ctx, `
+		SELECT id::text
+		  FROM ledger_accounts
+		 WHERE wallet_id IS NULL AND kind = 'STAKE_VAULT' AND currency = $1
+	`, currency).Scan(&vault)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ledger.AccountID(available), "", ledger.ErrAccountNotFound
+	}
+	if err != nil {
+		return "", "", fmt.Errorf("read stake vault account: %w", err)
+	}
+	return ledger.AccountID(available), ledger.AccountID(vault), nil
+}
+
+func updatePactLifecycle(
+	ctx context.Context,
+	transaction pgx.Tx,
+	value *Pact,
+	ownerID pgtype.UUID,
+	pactID pgtype.UUID,
+	expectedVersion uint64,
+	now time.Time,
+) error {
+	var reservationID any
+	if value.StakeReservationID() != "" {
+		parsed, err := pactUUID(value.StakeReservationID())
+		if err != nil {
+			return err
+		}
+		reservationID = parsed
+	}
+	result, err := transaction.Exec(ctx, `
+		UPDATE pacts
+		   SET status = $4,
+		       outcome = $5,
+		       stake_reservation_id = $6,
+		       emergency_count = $7,
+		       version = $8,
+		       updated_at = $9
+		 WHERE id = $1 AND owner_id = $2 AND version = $3
+	`, pactID, ownerID, expectedVersion, value.Status(), value.Outcome(), reservationID,
+		value.EmergencyCount(), value.Version(), now)
+	if err != nil {
+		return fmt.Errorf("update pact lifecycle: %w", err)
+	}
+	if result.RowsAffected() == 0 {
+		return ErrVersionConflict
+	}
+	return nil
 }
 
 func (r *PostgresRepository) byKey(ctx context.Context, ownerID pgtype.UUID, key string) (*Pact, error) {

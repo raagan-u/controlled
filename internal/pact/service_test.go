@@ -35,6 +35,17 @@ func (r *pactRepository) ForOwner(_ context.Context, _ pact.UserID) ([]*pact.Pac
 func (r *pactRepository) CircleFacts(_ context.Context, _ pact.UserID, _ pact.CircleID) (pact.ConfirmationFacts, error) {
 	return pact.ConfirmationFacts{PartnerCount: 2, DistinctPartnerCount: 2}, nil
 }
+func (r *pactRepository) ReserveStake(_ context.Context, _ pact.UserID, _ pact.PactID, journalID, _ string, _ string, now time.Time) (*pact.Pact, bool, error) {
+	err := r.stored.RecordStakeReserved(pact.StakeReservation{ID: journalID, Amount: r.stored.Terms().Stake()}, now)
+	return r.stored, false, err
+}
+func (r *pactRepository) Cancel(_ context.Context, _ pact.UserID, _ pact.PactID, _ string, now time.Time) (*pact.Pact, bool, error) {
+	if r.stored.Status() == pact.StatusCancelled {
+		return r.stored, true, nil
+	}
+	err := r.stored.Cancel(now)
+	return r.stored, false, err
+}
 
 func TestPactServiceDraftUpdateAndConfirmation(t *testing.T) {
 	now := time.Date(2026, time.October, 30, 12, 0, 0, 0, time.UTC)
@@ -69,6 +80,41 @@ func TestPactServiceDraftUpdateAndConfirmation(t *testing.T) {
 	if _, err := service.Confirm(t.Context(), "owner", draft.ID()); err != nil {
 		t.Fatalf("repeat confirmation should be idempotent: %v", err)
 	}
+}
+
+func TestPactServiceReservesStakeAndCancelsScheduledPact(t *testing.T) {
+	now := time.Date(2026, time.October, 30, 12, 0, 0, 0, time.UTC)
+	repository := &pactRepository{}
+	service := pact.NewService(&sequencePactIDs{values: []string{"pact-1", "journal", "vault", "release"}}, pactClock{now}, repository)
+	draft, _, err := service.CreateDraft(t.Context(), "create", "owner", serviceTerms(t, now.Add(time.Hour), now.Add(24*time.Hour)))
+	if err != nil {
+		t.Fatalf("create draft: %v", err)
+	}
+	if _, err := service.Confirm(t.Context(), "owner", draft.ID()); err != nil {
+		t.Fatalf("confirm: %v", err)
+	}
+	reserved, duplicate, err := service.ReserveStake(t.Context(), "stake-key", "owner", draft.ID())
+	if err != nil {
+		t.Fatalf("reserve stake: %v", err)
+	}
+	if duplicate || reserved.Status() != pact.StatusScheduled {
+		t.Fatalf("status = %s, duplicate = %v", reserved.Status(), duplicate)
+	}
+	cancelled, duplicate, err := service.Cancel(t.Context(), "owner", draft.ID())
+	if err != nil {
+		t.Fatalf("cancel: %v", err)
+	}
+	if duplicate || cancelled.Status() != pact.StatusCancelled {
+		t.Fatalf("status = %s, duplicate = %v", cancelled.Status(), duplicate)
+	}
+}
+
+type sequencePactIDs struct{ values []string }
+
+func (g *sequencePactIDs) NewID() (string, error) {
+	value := g.values[0]
+	g.values = g.values[1:]
+	return value, nil
 }
 
 func serviceTerms(t *testing.T, start, end time.Time) pact.Terms {

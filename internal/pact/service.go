@@ -20,6 +20,45 @@ type Repository interface {
 	ByID(context.Context, UserID, PactID) (*Pact, error)
 	ForOwner(context.Context, UserID) ([]*Pact, error)
 	CircleFacts(context.Context, UserID, CircleID) (ConfirmationFacts, error)
+	ReserveStake(context.Context, UserID, PactID, string, string, string, time.Time) (*Pact, bool, error)
+	Cancel(context.Context, UserID, PactID, string, time.Time) (*Pact, bool, error)
+}
+
+func (s *Service) ReserveStake(
+	ctx context.Context,
+	idempotencyKey string,
+	ownerID UserID,
+	id PactID,
+) (*Pact, bool, error) {
+	if err := s.ready(); err != nil {
+		return nil, false, err
+	}
+	key := strings.TrimSpace(idempotencyKey)
+	if key == "" {
+		return nil, false, ErrIdempotencyKey
+	}
+	journalID, err := s.ids.NewID()
+	if err != nil {
+		return nil, false, err
+	}
+	vaultCandidateID, err := s.ids.NewID()
+	if err != nil {
+		return nil, false, err
+	}
+	return s.repository.ReserveStake(
+		ctx, ownerID, id, journalID, vaultCandidateID, key, s.clock.Now(),
+	)
+}
+
+func (s *Service) Cancel(ctx context.Context, ownerID UserID, id PactID) (*Pact, bool, error) {
+	if err := s.ready(); err != nil {
+		return nil, false, err
+	}
+	journalID, err := s.ids.NewID()
+	if err != nil {
+		return nil, false, err
+	}
+	return s.repository.Cancel(ctx, ownerID, id, journalID, s.clock.Now())
 }
 
 type Service struct {
