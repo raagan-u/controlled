@@ -11,6 +11,7 @@ var (
 	ErrSelfPartner         = errors.New("a user cannot be their own accountability partner")
 	ErrInvalidStatus       = errors.New("accountability status is invalid")
 	ErrInvitationFinal     = errors.New("accountability invitation is already resolved")
+	ErrInvitationExists    = errors.New("an active accountability invitation or relationship already exists")
 	ErrWrongInvitee        = errors.New("only the invited partner can resolve the invitation")
 	ErrMissingCircleName   = errors.New("accountability circle name is required")
 	ErrMissingPartners     = errors.New("accountability circle requires at least one partner")
@@ -21,4 +22,5 @@ var (
 	ErrIdempotencyKey      = errors.New("accountability idempotency key is required")
 	ErrIdempotencyConflict = errors.New("accountability idempotency key was reused with different input")
 	ErrUnavailable         = errors.New("accountability dependencies are unavailable")
+	ErrPersistenceID       = errors.New("accountability persistence requires UUID identifiers")
 )
