@@ -15,6 +15,7 @@ import (
 	"github.com/raagan-u/controlled/internal/identity"
 	"github.com/raagan-u/controlled/internal/ledger"
 	"github.com/raagan-u/controlled/internal/pact"
+	"github.com/raagan-u/controlled/internal/paymentrequest"
 	"github.com/raagan-u/controlled/internal/platform"
 	"github.com/raagan-u/controlled/internal/platform/config"
 	"github.com/raagan-u/controlled/internal/platform/httpapi"
@@ -107,6 +108,7 @@ func run(ctx context.Context) error {
 		pact.NewPostgresRepository(database),
 	)
 	pactHandler := pact.NewHandler(pactService)
+	paymentRequestHandler := paymentrequest.NewHandler(paymentrequest.NewService(platform.NewUUIDGenerator(), platform.SystemClock{}, paymentrequest.NewPostgresRepository(database)))
 	go runMaintenance(ctx, accountabilityService, pactService)
 
 	mux := http.NewServeMux()
@@ -124,6 +126,7 @@ func run(ctx context.Context) error {
 	mux.Handle("POST /v1/wallet/funding-intents", identity.RequireSession(sessions, http.HandlerFunc(walletOperationHandler.CreateFunding)))
 	mux.Handle("POST /v1/demo/funding-intents/{id}/confirm", identity.RequireSession(sessions, http.HandlerFunc(walletOperationHandler.ConfirmFunding)))
 	mux.Handle("POST /v1/wallet/internal-transfers", identity.RequireSession(sessions, http.HandlerFunc(walletOperationHandler.CreateTransfer)))
+	mux.Handle("POST /v1/wallet/payment-requests", identity.RequireSession(sessions, http.HandlerFunc(paymentRequestHandler.Create)))
 	mux.Handle("POST /v1/wallet/withdrawals", identity.RequireSession(sessions, http.HandlerFunc(walletOperationHandler.CreateWithdrawal)))
 	mux.Handle("POST /v1/demo/withdrawals/{id}/settle", identity.RequireSession(sessions, http.HandlerFunc(walletOperationHandler.SettleWithdrawal)))
 	mux.Handle("POST /v1/accountability/invitations", identity.RequireSession(sessions, http.HandlerFunc(accountabilityHandler.Invite)))

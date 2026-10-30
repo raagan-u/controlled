@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { StyleSheet, Text, TextInput, View } from 'react-native';
 
 import type { User } from '@/api/types';
-import { toMinorUnits } from '@/api/wallet';
+import { apiErrorMessage, createPaymentRequest, toMinorUnits } from '@/api/wallet';
 import { ActionButton } from '@/components/ActionButton';
 import { AmountKeypad } from '@/components/AmountKeypad';
 import { MoneyAmount } from '@/components/MoneyAmount';
@@ -21,7 +21,23 @@ export default function RequestMoneyScreen() {
   const [recipient, setRecipient] = useState<User | null>(null);
   const [amount, setAmount] = useState('');
   const [remark, setRemark] = useState('');
+	const [error, setError] = useState('');
+	const [submitting, setSubmitting] = useState(false);
   const valid = recipient !== null && toMinorUnits(amount) > 0;
+
+	const requestMoney = async () => {
+		if (!recipient || !valid || submitting) return;
+		setSubmitting(true);
+		setError('');
+		try {
+			await createPaymentRequest(recipient.id, toMinorUnits(amount), remark.trim() || undefined);
+			setStep('pending');
+		} catch (cause) {
+			setError(apiErrorMessage(cause));
+		} finally {
+			setSubmitting(false);
+		}
+	};
 
   if (step === 'pending') {
     return (
@@ -69,7 +85,8 @@ export default function RequestMoneyScreen() {
             style={styles.remark}
             value={remark}
           />
-          <SwipeConfirm disabled={!valid} label="Swipe right to request" onConfirm={() => setStep('pending')} />
+		  {error ? <Text style={styles.error}>{error}</Text> : null}
+          <SwipeConfirm disabled={!valid || submitting} key={`${submitting}-${error}`} label={submitting ? 'Creating request…' : 'Swipe right to request'} onConfirm={() => void requestMoney()} />
         </View>
         <AmountKeypad onChange={setAmount} value={amount} />
       </View>
@@ -85,4 +102,5 @@ const styles = StyleSheet.create({
   remark: { backgroundColor: colors.surface, borderRadius: radii.md, color: colors.navy, fontFamily: fonts.medium, fontSize: 14, height: 48, marginHorizontal: 36, marginTop: 10, paddingHorizontal: 15, textAlign: 'center' },
   pendingTag: { backgroundColor: colors.orangeTint, borderRadius: 6, marginTop: 22, paddingHorizontal: 12, paddingVertical: 7 },
   pendingText: { color: colors.orangeText, fontFamily: fonts.bold, fontSize: 10, letterSpacing: 1.2 },
+	error: { color: colors.redText, fontFamily: fonts.medium, fontSize: 12, marginHorizontal: 24, marginTop: 10, textAlign: 'center' },
 });

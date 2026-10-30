@@ -33,6 +33,16 @@ export type Transfer = {
   recipientEmail: string;
   recipientId: string;
 };
+export type PaymentRequest = {
+  amountMinor: number;
+  createdAt: string;
+  currency: 'USD';
+  duplicate: boolean;
+  id: string;
+  note: string;
+  recipientId: string;
+  status: 'PENDING' | 'PAID' | 'DECLINED' | 'CANCELLED';
+};
 export type AccountabilityRequest = {
   assignedPartnerId: string;
   createdAt: string;
