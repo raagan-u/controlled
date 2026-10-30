@@ -6,7 +6,12 @@ import { colors, fonts, radii } from '@/theme';
 const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '⌫'];
 const operators = ['+', '−', '×', '÷'] as const;
 const operatorSet = new Set<string>(operators);
-type Props = { onChange: (value: string) => void; onDisplayChange?: (value: string) => void; value: string };
+type Props = {
+  onCalculationChange?: (value: string | null) => void;
+  onChange: (value: string) => void;
+  onDisplayChange?: (value: string) => void;
+  value: string;
+};
 
 function evaluate(expression: string): number | null {
   const tokens = expression.match(/\d+(?:\.\d+)?|[+−×÷]/g);
@@ -40,7 +45,7 @@ function formatResult(result: number) {
   return result.toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1');
 }
 
-export function AmountKeypad({ onChange, onDisplayChange, value }: Props) {
+export function AmountKeypad({ onCalculationChange, onChange, onDisplayChange, value }: Props) {
   const [expression, setExpression] = useState(value);
   const [settled, setSettled] = useState(false);
   const lastEmitted = useRef(value);
@@ -54,6 +59,12 @@ export function AmountKeypad({ onChange, onDisplayChange, value }: Props) {
 
   useEffect(() => {
     onDisplayChange?.(expression);
+    onCalculationChange?.(null);
+    const isCalculation = operatorSet.has(expression.match(/[+−×÷]/)?.[0] ?? '');
+    if (isCalculation) {
+      lastEmitted.current = '';
+      onChange('');
+    }
     const timer = setTimeout(() => {
       if (!expression) {
         lastEmitted.current = '';
@@ -65,13 +76,17 @@ export function AmountKeypad({ onChange, onDisplayChange, value }: Props) {
       const result = evaluate(expression);
       if (result === null) return;
       const formatted = formatResult(result);
+      if (isCalculation) {
+        onCalculationChange?.(formatted);
+        return;
+      }
       lastEmitted.current = formatted;
       onChange(formatted);
       onDisplayChange?.(formatted);
       setSettled(true);
     }, 550);
     return () => clearTimeout(timer);
-  }, [expression, onChange, onDisplayChange]);
+  }, [expression, onCalculationChange, onChange, onDisplayChange]);
 
   const pressNumber = (key: string) => {
     setExpression((current) => {
