@@ -38,6 +38,7 @@ func (s Snapshot) Balances() BalanceSet { return s.balances }
 type Reader interface {
 	WalletByUser(context.Context, identity.UserID) (Snapshot, error)
 	TransactionsByUser(context.Context, identity.UserID, int) ([]Transaction, error)
+	TransactionByUser(context.Context, identity.UserID, ledger.JournalID) (Transaction, error)
 }
 
 type TransactionEntry struct {

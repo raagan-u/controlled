@@ -245,6 +245,80 @@ func (s *PostgresProvisioningStore) TransactionsByUser(
 	return transactions, nil
 }
 
+func (s *PostgresProvisioningStore) TransactionByUser(
+	ctx context.Context,
+	userID identity.UserID,
+	transactionID ledger.JournalID,
+) (Transaction, error) {
+	if s == nil || s.pool == nil {
+		return Transaction{}, ErrStoreUnavailable
+	}
+	parsedUserID, err := walletUUID(string(userID))
+	if err != nil {
+		return Transaction{}, err
+	}
+	parsedTransactionID, err := walletUUID(string(transactionID))
+	if err != nil {
+		return Transaction{}, ErrTransactionNotFound
+	}
+	rows, err := s.pool.Query(ctx, `
+		WITH wallet_accounts AS (
+			SELECT account.id, account.kind
+			  FROM wallets AS wallet
+			  JOIN ledger_accounts AS account ON account.wallet_id = wallet.id
+			 WHERE wallet.owner_id = $1
+		)
+		SELECT transaction.id::text, transaction.reference_type, transaction.reference_id,
+		       transaction.description, transaction.occurred_at, transaction.posted_at,
+		       EXISTS (SELECT 1 FROM ledger_transactions AS reversal WHERE reversal.reverses_transaction_id = transaction.id),
+		       entry.account_id::text, wallet_accounts.kind, entry.side, entry.amount_minor, entry.currency
+		  FROM ledger_transactions AS transaction
+		  JOIN ledger_entries AS entry ON entry.transaction_id = transaction.id
+		  JOIN wallet_accounts ON wallet_accounts.id = entry.account_id
+		 WHERE transaction.id = $2
+		 ORDER BY entry.line_number
+	`, parsedUserID, parsedTransactionID)
+	if err != nil {
+		return Transaction{}, fmt.Errorf("read wallet transaction: %w", err)
+	}
+	defer rows.Close()
+	var result Transaction
+	for rows.Next() {
+		var id, accountID, currency string
+		var reference ledger.Reference
+		var occurredAt, postedAt pgtype.Timestamptz
+		var accountKind ledger.AccountKind
+		var side ledger.Side
+		var amountMinor int64
+		if err := rows.Scan(
+			&id, &reference.Type, &reference.ID, &result.Description, &occurredAt, &postedAt,
+			&result.Reversed, &accountID, &accountKind, &side, &amountMinor, &currency,
+		); err != nil {
+			return Transaction{}, fmt.Errorf("scan wallet transaction: %w", err)
+		}
+		if result.ID == "" {
+			result.ID = ledger.JournalID(id)
+			result.Reference = reference
+			result.OccurredAt = occurredAt.Time.UTC()
+			result.PostedAt = postedAt.Time.UTC()
+		}
+		amount, err := money.New(amountMinor, currency)
+		if err != nil {
+			return Transaction{}, err
+		}
+		result.Entries = append(result.Entries, TransactionEntry{
+			AccountID: ledger.AccountID(accountID), AccountKind: accountKind, Side: side, Amount: amount,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return Transaction{}, fmt.Errorf("iterate wallet transaction: %w", err)
+	}
+	if result.ID == "" {
+		return Transaction{}, ErrTransactionNotFound
+	}
+	return result, nil
+}
+
 func NewPostgresProvisioningStore(pool *pgxpool.Pool) *PostgresProvisioningStore {
 	return &PostgresProvisioningStore{pool: pool}
 }

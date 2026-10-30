@@ -118,6 +118,7 @@ func run(ctx context.Context) error {
 	mux.Handle("GET /v1/users/current", identity.RequireSession(sessions, http.HandlerFunc(identity.CurrentUserHandler)))
 	mux.Handle("GET /v1/wallet", identity.RequireSession(sessions, http.HandlerFunc(walletReadHandler.Wallet)))
 	mux.Handle("GET /v1/wallet/transactions", identity.RequireSession(sessions, http.HandlerFunc(walletReadHandler.Transactions)))
+	mux.Handle("GET /v1/wallet/transactions/{id}", identity.RequireSession(sessions, http.HandlerFunc(walletReadHandler.Transaction)))
 	mux.Handle("POST /v1/wallet/funding-intents", identity.RequireSession(sessions, http.HandlerFunc(walletOperationHandler.CreateFunding)))
 	mux.Handle("POST /v1/demo/funding-intents/{id}/confirm", identity.RequireSession(sessions, http.HandlerFunc(walletOperationHandler.ConfirmFunding)))
 	mux.Handle("POST /v1/wallet/internal-transfers", identity.RequireSession(sessions, http.HandlerFunc(walletOperationHandler.CreateTransfer)))

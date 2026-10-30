@@ -105,6 +105,7 @@ Clients should branch on `error.code`, not the human-readable message.
 | `GET` | `/v1/users/current` | yes | no | `200` |
 | `GET` | `/v1/wallet` | yes | no | `200` |
 | `GET` | `/v1/wallet/transactions` | yes | no | `200` |
+| `GET` | `/v1/wallet/transactions/{id}` | yes | no | `200` |
 | `POST` | `/v1/wallet/funding-intents` | yes | required | `201`, or `200` replay |
 | `POST` | `/v1/demo/funding-intents/{id}/confirm` | yes | no | `200` |
 | `POST` | `/v1/wallet/internal-transfers` | yes | required | `201`, or `200` replay |
@@ -517,6 +518,10 @@ Reference types currently include:
 - `PACT_STAKE_RELEASE`
 
 A failed withdrawal produces a release transaction that returns the pending amount to available balance.
+
+### `GET /v1/wallet/transactions/{id}`
+
+Returns one transaction in the same shape as a list item. The transaction must contain an entry belonging to the authenticated user's wallet; other users' transactions return `404 transaction_not_found`.
 
 ### `POST /v1/wallet/funding-intents`
 

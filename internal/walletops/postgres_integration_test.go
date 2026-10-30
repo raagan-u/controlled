@@ -2,6 +2,7 @@ package walletops_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"testing"
@@ -144,6 +145,13 @@ func TestPostgresWalletOperationsLifecycle(t *testing.T) {
 	}
 	if len(senderTransactions) != 4 {
 		t.Fatalf("sender transaction count = %d, want 4", len(senderTransactions))
+	}
+	detail, err := store.TransactionByUser(ctx, sender.Provisioning.User().ID(), transfer.LedgerTransactionID)
+	if err != nil || detail.ID != transfer.LedgerTransactionID || len(detail.Entries) != 1 {
+		t.Fatalf("sender transaction detail = %+v err=%v", detail, err)
+	}
+	if _, err := store.TransactionByUser(ctx, recipient.Provisioning.User().ID(), funding.LedgerTransactionID); !errors.Is(err, wallet.ErrTransactionNotFound) {
+		t.Fatalf("cross-wallet transaction detail error = %v", err)
 	}
 }
 

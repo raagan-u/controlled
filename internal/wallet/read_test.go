@@ -126,13 +126,50 @@ func TestWalletTransactionsHandler(t *testing.T) {
 	}
 }
 
+func TestWalletTransactionHandler(t *testing.T) {
+	t.Parallel()
+	user, err := identity.NewUser("user-1", "founder@example.com", "Raagan", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	amount, _ := money.New(900, "USD")
+	reader := stubWalletReader{transaction: wallet.Transaction{
+		ID: "journal-1", Reference: ledger.Reference{Type: "INTERNAL_TRANSFER", ID: "transfer-1"},
+		Description: "Controlled internal transfer", OccurredAt: time.Now(), PostedAt: time.Now(),
+		Entries: []wallet.TransactionEntry{{AccountID: "available-1", AccountKind: ledger.AccountKindAvailable, Side: ledger.SideDebit, Amount: amount}},
+	}}
+	handler := wallet.NewReadHandler(reader)
+	protected := identity.RequireSession(walletSessionManager{user: user}, http.HandlerFunc(handler.Transaction))
+	request := httptest.NewRequest(http.MethodGet, "/v1/wallet/transactions/journal-1", nil)
+	request.SetPathValue("id", "journal-1")
+	request.Header.Set("Authorization", "Bearer test-token")
+	response := httptest.NewRecorder()
+	protected.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+	}
+	var payload struct {
+		Transaction struct {
+			ID string `json:"id"`
+		} `json:"transaction"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil || payload.Transaction.ID != "journal-1" {
+		t.Fatalf("response = %s, err = %v", response.Body.String(), err)
+	}
+}
+
 type stubWalletReader struct {
 	snapshot     wallet.Snapshot
 	transactions []wallet.Transaction
+	transaction  wallet.Transaction
 }
 
 func (s stubWalletReader) TransactionsByUser(context.Context, identity.UserID, int) ([]wallet.Transaction, error) {
 	return s.transactions, nil
+}
+
+func (s stubWalletReader) TransactionByUser(context.Context, identity.UserID, ledger.JournalID) (wallet.Transaction, error) {
+	return s.transaction, nil
 }
 
 func (s stubWalletReader) WalletByUser(context.Context, identity.UserID) (wallet.Snapshot, error) {

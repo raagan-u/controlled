@@ -12,6 +12,7 @@ var (
 	ErrWalletExists          = errors.New("a wallet for this user already exists")
 	ErrProvisioningExists    = errors.New("provisioning IDs already exist")
 	ErrProvisioningNotFound  = errors.New("wallet provisioning was not found")
+	ErrTransactionNotFound   = errors.New("wallet transaction was not found")
 	ErrPersistenceID         = errors.New("wallet persistence requires UUID identifiers")
 	ErrStoreUnavailable      = errors.New("wallet store is unavailable")
 )

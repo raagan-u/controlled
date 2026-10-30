@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/raagan-u/controlled/internal/identity"
+	"github.com/raagan-u/controlled/internal/ledger"
 	"github.com/raagan-u/controlled/internal/platform/httpapi"
 )
 
@@ -49,34 +50,50 @@ func (h *ReadHandler) Transactions(response http.ResponseWriter, request *http.R
 
 	items := make([]transactionAPIResponse, 0, len(transactions))
 	for _, transaction := range transactions {
-		item := transactionAPIResponse{
-			ID: string(transaction.ID),
-			Reference: transactionReferenceAPIResponse{
-				Type: transaction.Reference.Type,
-				ID:   transaction.Reference.ID,
-			},
-			Description: transaction.Description,
-			OccurredAt:  transaction.OccurredAt,
-			PostedAt:    transaction.PostedAt,
-			Reversed:    transaction.Reversed,
-			Entries:     make([]transactionEntryAPIResponse, 0, len(transaction.Entries)),
-		}
-		for _, entry := range transaction.Entries {
-			item.Entries = append(item.Entries, transactionEntryAPIResponse{
-				AccountID:   string(entry.AccountID),
-				AccountKind: string(entry.AccountKind),
-				Side:        string(entry.Side),
-				Amount: moneyResponse{
-					AmountMinor: entry.Amount.AmountMinor(),
-					Currency:    entry.Amount.Currency(),
-				},
-			})
-		}
-		items = append(items, item)
+		items = append(items, transactionResponse(transaction))
 	}
 	httpapi.WriteJSON(response, http.StatusOK, struct {
 		Transactions []transactionAPIResponse `json:"transactions"`
 	}{Transactions: items})
+}
+
+func (h *ReadHandler) Transaction(response http.ResponseWriter, request *http.Request) {
+	user, ok := identity.CurrentUser(request.Context())
+	if !ok {
+		httpapi.WriteError(response, http.StatusUnauthorized, "authentication_required", "A valid Controlled session is required.")
+		return
+	}
+	transaction, err := h.reader.TransactionByUser(
+		request.Context(), user.ID(), ledger.JournalID(request.PathValue("id")),
+	)
+	if errors.Is(err, ErrTransactionNotFound) {
+		httpapi.WriteError(response, http.StatusNotFound, "transaction_not_found", "The wallet transaction was not found.")
+		return
+	}
+	if err != nil {
+		httpapi.WriteError(response, http.StatusInternalServerError, "internal_error", "Controlled could not read the wallet transaction.")
+		return
+	}
+	httpapi.WriteJSON(response, http.StatusOK, struct {
+		Transaction transactionAPIResponse `json:"transaction"`
+	}{Transaction: transactionResponse(transaction)})
+}
+
+func transactionResponse(transaction Transaction) transactionAPIResponse {
+	item := transactionAPIResponse{
+		ID:          string(transaction.ID),
+		Reference:   transactionReferenceAPIResponse{Type: transaction.Reference.Type, ID: transaction.Reference.ID},
+		Description: transaction.Description, OccurredAt: transaction.OccurredAt,
+		PostedAt: transaction.PostedAt, Reversed: transaction.Reversed,
+		Entries: make([]transactionEntryAPIResponse, 0, len(transaction.Entries)),
+	}
+	for _, entry := range transaction.Entries {
+		item.Entries = append(item.Entries, transactionEntryAPIResponse{
+			AccountID: string(entry.AccountID), AccountKind: string(entry.AccountKind), Side: string(entry.Side),
+			Amount: moneyResponse{AmountMinor: entry.Amount.AmountMinor(), Currency: entry.Amount.Currency()},
+		})
+	}
+	return item
 }
 
 type transactionAPIResponse struct {
