@@ -43,6 +43,7 @@ func (s *PostgresProvisioningStore) WalletByUser(
 	var reserveID string
 	var availableMinor int64
 	var pendingMinor int64
+	var stakedMinor int64
 	var reserveMinor int64
 	err = s.pool.QueryRow(ctx, `
 		SELECT wallet.id::text,
@@ -103,9 +104,21 @@ func (s *PostgresProvisioningStore) WalletByUser(
 	if err != nil {
 		return Snapshot{}, err
 	}
+	if err := s.pool.QueryRow(ctx, `
+		SELECT COALESCE(sum(amount_minor), 0)::bigint
+		  FROM stake_allocations
+		 WHERE owner_id = $1 AND status = 'ACTIVE'
+	`, parsedUserID).Scan(&stakedMinor); err != nil {
+		return Snapshot{}, fmt.Errorf("read staked balance: %w", err)
+	}
+	staked, err := money.New(stakedMinor, currency)
+	if err != nil {
+		return Snapshot{}, err
+	}
 	return NewSnapshot(wallet, BalanceSet{
 		Available:         available,
 		Pending:           pending,
+		Staked:            staked,
 		CommitmentReserve: reserve,
 	})
 }

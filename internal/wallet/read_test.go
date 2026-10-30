@@ -34,7 +34,7 @@ func TestWalletReadHandlerReturnsAuthenticatedWallet(t *testing.T) {
 		t.Fatalf("money.New() error = %v", err)
 	}
 	snapshot, err := wallet.NewSnapshot(walletValue, wallet.BalanceSet{
-		Available: zero, Pending: zero, CommitmentReserve: zero,
+		Available: zero, Pending: zero, Staked: zero, CommitmentReserve: zero,
 	})
 	if err != nil {
 		t.Fatalf("NewSnapshot() error = %v", err)

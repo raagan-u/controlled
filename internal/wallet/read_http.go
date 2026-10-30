@@ -113,6 +113,7 @@ type walletAPIResponse struct {
 	Balances struct {
 		Available         moneyResponse `json:"available"`
 		Pending           moneyResponse `json:"pending"`
+		Staked            moneyResponse `json:"staked"`
 		CommitmentReserve moneyResponse `json:"commitmentReserve"`
 	} `json:"balances"`
 	CreatedAt time.Time `json:"createdAt"`
@@ -140,6 +141,10 @@ func walletReadResponse(snapshot Snapshot) struct {
 	response.Wallet.Balances.Pending = moneyResponse{
 		AmountMinor: balances.Pending.AmountMinor(),
 		Currency:    balances.Pending.Currency(),
+	}
+	response.Wallet.Balances.Staked = moneyResponse{
+		AmountMinor: balances.Staked.AmountMinor(),
+		Currency:    balances.Staked.Currency(),
 	}
 	response.Wallet.Balances.CommitmentReserve = moneyResponse{
 		AmountMinor: balances.CommitmentReserve.AmountMinor(),

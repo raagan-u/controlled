@@ -12,6 +12,7 @@ import (
 type BalanceSet struct {
 	Available         money.Money
 	Pending           money.Money
+	Staked            money.Money
 	CommitmentReserve money.Money
 }
 
@@ -24,6 +25,7 @@ func NewSnapshot(wallet Wallet, balances BalanceSet) (Snapshot, error) {
 	if wallet.ID() == "" ||
 		balances.Available.Currency() != wallet.Currency() ||
 		balances.Pending.Currency() != wallet.Currency() ||
+		balances.Staked.Currency() != wallet.Currency() ||
 		balances.CommitmentReserve.Currency() != wallet.Currency() {
 		return Snapshot{}, ErrInvalidWallet
 	}
