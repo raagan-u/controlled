@@ -1,1 +1,0 @@
-- Home Recents cards are still not displaying wallet users even after transfer details were added to the transaction-list response. Investigate the live API response and client refresh later.
