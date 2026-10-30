@@ -20,6 +20,11 @@ type Commander interface {
 	SimulateWithdrawalSettlement(context.Context, identity.UserID, OperationID, bool) (Withdrawal, error)
 }
 
+type accountableCommander interface {
+	TransferWithReason(context.Context, string, identity.UserID, string, int64, string, string) (DebitAttempt, error)
+	CreateWithdrawalWithReason(context.Context, string, identity.UserID, string, int64, string, string) (DebitAttempt, error)
+}
+
 type Handler struct {
 	commands Commander
 }
@@ -79,17 +84,37 @@ func (h *Handler) CreateTransfer(response http.ResponseWriter, request *http.Req
 		RecipientEmail string `json:"recipientEmail"`
 		AmountMinor    int64  `json:"amountMinor"`
 		Currency       string `json:"currency"`
+		Reason         string `json:"reason"`
 	}
 	if err := httpapi.ReadJSON(response, request, &input, httpapi.DefaultMaxBodyBytes); err != nil {
 		httpapi.WriteError(response, http.StatusBadRequest, "invalid_request", "Request body must contain a recipient and amount.")
 		return
 	}
-	transfer, err := h.commands.Transfer(
-		request.Context(), request.Header.Get("Idempotency-Key"), user.ID(),
-		input.RecipientEmail, input.AmountMinor, input.Currency,
-	)
+	var transfer Transfer
+	var review *ReviewRequest
+	var err error
+	if commands, ok := h.commands.(accountableCommander); ok {
+		attempt, attemptErr := commands.TransferWithReason(
+			request.Context(), request.Header.Get("Idempotency-Key"), user.ID(),
+			input.RecipientEmail, input.AmountMinor, input.Currency, input.Reason,
+		)
+		err = attemptErr
+		if attempt.Transfer != nil {
+			transfer = *attempt.Transfer
+		}
+		review = attempt.Request
+	} else {
+		transfer, err = h.commands.Transfer(
+			request.Context(), request.Header.Get("Idempotency-Key"), user.ID(),
+			input.RecipientEmail, input.AmountMinor, input.Currency,
+		)
+	}
 	if err != nil {
 		writeOperationError(response, err)
+		return
+	}
+	if review != nil {
+		httpapi.WriteJSON(response, http.StatusAccepted, reviewRequestResponse(*review))
 		return
 	}
 	status := http.StatusCreated
@@ -109,20 +134,72 @@ func (h *Handler) CreateWithdrawal(response http.ResponseWriter, request *http.R
 		Destination string `json:"destination"`
 		AmountMinor int64  `json:"amountMinor"`
 		Currency    string `json:"currency"`
+		Reason      string `json:"reason"`
 	}
 	if err := httpapi.ReadJSON(response, request, &input, httpapi.DefaultMaxBodyBytes); err != nil {
 		httpapi.WriteError(response, http.StatusBadRequest, "invalid_request", "Request body must contain a destination and amount.")
 		return
 	}
-	withdrawal, err := h.commands.CreateWithdrawal(
-		request.Context(), request.Header.Get("Idempotency-Key"), user.ID(),
-		input.Destination, input.AmountMinor, input.Currency,
-	)
+	var withdrawal Withdrawal
+	var review *ReviewRequest
+	var err error
+	if commands, ok := h.commands.(accountableCommander); ok {
+		attempt, attemptErr := commands.CreateWithdrawalWithReason(
+			request.Context(), request.Header.Get("Idempotency-Key"), user.ID(),
+			input.Destination, input.AmountMinor, input.Currency, input.Reason,
+		)
+		err = attemptErr
+		if attempt.Withdrawal != nil {
+			withdrawal = *attempt.Withdrawal
+		}
+		review = attempt.Request
+	} else {
+		withdrawal, err = h.commands.CreateWithdrawal(
+			request.Context(), request.Header.Get("Idempotency-Key"), user.ID(),
+			input.Destination, input.AmountMinor, input.Currency,
+		)
+	}
 	if err != nil {
 		writeOperationError(response, err)
 		return
 	}
+	if review != nil {
+		httpapi.WriteJSON(response, http.StatusAccepted, reviewRequestResponse(*review))
+		return
+	}
 	httpapi.WriteJSON(response, http.StatusAccepted, withdrawalResponse(withdrawal))
+}
+
+func reviewRequestResponse(review ReviewRequest) struct {
+	AccountabilityRequest struct {
+		ID                string    `json:"id"`
+		IntentID          string    `json:"intentId"`
+		Status            string    `json:"status"`
+		AssignedPartnerID string    `json:"assignedPartnerId"`
+		CreatedAt         time.Time `json:"createdAt"`
+		ExpiresAt         time.Time `json:"expiresAt"`
+		Duplicate         bool      `json:"duplicate"`
+	} `json:"accountabilityRequest"`
+} {
+	var response struct {
+		AccountabilityRequest struct {
+			ID                string    `json:"id"`
+			IntentID          string    `json:"intentId"`
+			Status            string    `json:"status"`
+			AssignedPartnerID string    `json:"assignedPartnerId"`
+			CreatedAt         time.Time `json:"createdAt"`
+			ExpiresAt         time.Time `json:"expiresAt"`
+			Duplicate         bool      `json:"duplicate"`
+		} `json:"accountabilityRequest"`
+	}
+	response.AccountabilityRequest.ID = review.ID
+	response.AccountabilityRequest.IntentID = string(review.IntentID)
+	response.AccountabilityRequest.Status = review.Status
+	response.AccountabilityRequest.AssignedPartnerID = string(review.AssignedPartnerID)
+	response.AccountabilityRequest.CreatedAt = review.CreatedAt
+	response.AccountabilityRequest.ExpiresAt = review.ExpiresAt
+	response.AccountabilityRequest.Duplicate = review.Duplicate
+	return response
 }
 
 func (h *Handler) SettleWithdrawal(response http.ResponseWriter, request *http.Request) {

@@ -85,19 +85,19 @@ func run(ctx context.Context) error {
 	passwordAuthenticationHandler := identity.NewPasswordAuthenticationHandler(passwordAuthentication)
 	walletReadHandler := wallet.NewReadHandler(store)
 	fakeCustody := custody.NewFake(platform.NewUUIDGenerator())
+	accountabilityService := accountability.NewService(
+		platform.NewUUIDGenerator(),
+		platform.SystemClock{},
+		accountability.NewPostgresRepository(database),
+	)
 	walletOperations := walletops.NewService(
 		platform.NewUUIDGenerator(),
 		platform.SystemClock{},
 		walletops.NewPostgresRepository(database, ledger.NewPostgresBook(database)),
 		fakeCustody,
 		walletops.AllowAllPolicy{},
-	)
+	).EnableAccountability(accountabilityService)
 	walletOperationHandler := walletops.NewHandler(walletOperations)
-	accountabilityService := accountability.NewService(
-		platform.NewUUIDGenerator(),
-		platform.SystemClock{},
-		accountability.NewPostgresRepository(database),
-	)
 	accountabilityHandler := accountability.NewHandler(accountabilityService)
 	pactService := pact.NewService(
 		platform.NewUUIDGenerator(),
@@ -127,6 +127,11 @@ func run(ctx context.Context) error {
 	mux.Handle("POST /v1/accountability/invitations/{id}/decline", identity.RequireSession(sessions, http.HandlerFunc(accountabilityHandler.Decline)))
 	mux.Handle("POST /v1/accountability/circles", identity.RequireSession(sessions, http.HandlerFunc(accountabilityHandler.CreateCircle)))
 	mux.Handle("GET /v1/accountability/circles", identity.RequireSession(sessions, http.HandlerFunc(accountabilityHandler.Circles)))
+	mux.Handle("GET /v1/accountability/requests", identity.RequireSession(sessions, http.HandlerFunc(accountabilityHandler.Requests)))
+	mux.Handle("GET /v1/accountability/requests/{id}", identity.RequireSession(sessions, http.HandlerFunc(accountabilityHandler.Request)))
+	mux.Handle("POST /v1/accountability/requests/{id}/approve", identity.RequireSession(sessions, http.HandlerFunc(accountabilityHandler.ApproveRequest)))
+	mux.Handle("POST /v1/accountability/requests/{id}/deny", identity.RequireSession(sessions, http.HandlerFunc(accountabilityHandler.DenyRequest)))
+	mux.Handle("POST /v1/accountability/requests/{id}/cancel", identity.RequireSession(sessions, http.HandlerFunc(accountabilityHandler.CancelRequest)))
 	mux.Handle("POST /v1/pacts", identity.RequireSession(sessions, http.HandlerFunc(pactHandler.CreateDraft)))
 	mux.Handle("GET /v1/pacts", identity.RequireSession(sessions, http.HandlerFunc(pactHandler.Pacts)))
 	mux.Handle("GET /v1/pacts/{id}", identity.RequireSession(sessions, http.HandlerFunc(pactHandler.Pact)))

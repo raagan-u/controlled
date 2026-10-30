@@ -18,6 +18,120 @@ type Commander interface {
 	Circles(context.Context, identity.UserID) ([]Circle, error)
 }
 
+type requestCommander interface {
+	Requests(context.Context, identity.UserID) ([]Request, error)
+	Request(context.Context, identity.UserID, string) (Request, error)
+	Decide(context.Context, identity.UserID, string, bool, string) (Request, error)
+	CancelRequest(context.Context, identity.UserID, string) (Request, error)
+}
+
+func (h *Handler) Requests(response http.ResponseWriter, request *http.Request) {
+	user, ok := currentUser(response, request)
+	if !ok {
+		return
+	}
+	commands, ok := h.commands.(requestCommander)
+	if !ok {
+		writeError(response, ErrUnavailable)
+		return
+	}
+	items, err := commands.Requests(request.Context(), user.ID())
+	if err != nil {
+		writeError(response, err)
+		return
+	}
+	output := make([]requestAPIResponse, len(items))
+	for index, item := range items {
+		output[index] = requestResponse(item).AccountabilityRequest
+	}
+	httpapi.WriteJSON(response, http.StatusOK, struct {
+		Requests []requestAPIResponse `json:"accountabilityRequests"`
+	}{Requests: output})
+}
+
+func (h *Handler) Request(response http.ResponseWriter, request *http.Request) {
+	user, ok := currentUser(response, request)
+	if !ok {
+		return
+	}
+	commands, ok := h.commands.(requestCommander)
+	if !ok {
+		writeError(response, ErrUnavailable)
+		return
+	}
+	item, err := commands.Request(request.Context(), user.ID(), request.PathValue("id"))
+	if err != nil {
+		writeError(response, err)
+		return
+	}
+	httpapi.WriteJSON(response, http.StatusOK, requestResponse(item))
+}
+
+func (h *Handler) ApproveRequest(response http.ResponseWriter, request *http.Request) {
+	user, ok := currentUser(response, request)
+	if !ok {
+		return
+	}
+	var input struct {
+		Classification string `json:"classification"`
+	}
+	if err := httpapi.ReadJSON(response, request, &input, httpapi.DefaultMaxBodyBytes); err != nil {
+		httpapi.WriteError(response, http.StatusBadRequest, "invalid_request", "Request body must contain an approval classification.")
+		return
+	}
+	commands, ok := h.commands.(requestCommander)
+	if !ok {
+		writeError(response, ErrUnavailable)
+		return
+	}
+	item, err := commands.Decide(request.Context(), user.ID(), request.PathValue("id"), true, input.Classification)
+	if err != nil {
+		writeError(response, err)
+		return
+	}
+	httpapi.WriteJSON(response, http.StatusOK, requestResponse(item))
+}
+
+func (h *Handler) DenyRequest(response http.ResponseWriter, request *http.Request) {
+	h.decideWithoutBody(response, request, false)
+}
+
+func (h *Handler) CancelRequest(response http.ResponseWriter, request *http.Request) {
+	user, ok := currentUser(response, request)
+	if !ok {
+		return
+	}
+	commands, ok := h.commands.(requestCommander)
+	if !ok {
+		writeError(response, ErrUnavailable)
+		return
+	}
+	item, err := commands.CancelRequest(request.Context(), user.ID(), request.PathValue("id"))
+	if err != nil {
+		writeError(response, err)
+		return
+	}
+	httpapi.WriteJSON(response, http.StatusOK, requestResponse(item))
+}
+
+func (h *Handler) decideWithoutBody(response http.ResponseWriter, request *http.Request, approve bool) {
+	user, ok := currentUser(response, request)
+	if !ok {
+		return
+	}
+	commands, ok := h.commands.(requestCommander)
+	if !ok {
+		writeError(response, ErrUnavailable)
+		return
+	}
+	item, err := commands.Decide(request.Context(), user.ID(), request.PathValue("id"), approve, "")
+	if err != nil {
+		writeError(response, err)
+		return
+	}
+	httpapi.WriteJSON(response, http.StatusOK, requestResponse(item))
+}
+
 func (h *Handler) Invitations(response http.ResponseWriter, request *http.Request) {
 	user, ok := currentUser(response, request)
 	if !ok {
@@ -179,6 +293,59 @@ type circleAPIResponse struct {
 	Duplicate  bool      `json:"duplicate"`
 }
 
+type requestPactAPIResponse struct {
+	PactID        string `json:"pactId"`
+	LimitMinor    int64  `json:"limitMinor"`
+	UsedMinor     int64  `json:"usedMinor"`
+	ProposedMinor int64  `json:"proposedMinor"`
+	OverageMinor  int64  `json:"overageMinor"`
+}
+
+type requestAPIResponse struct {
+	ID                string                   `json:"id"`
+	IntentID          string                   `json:"intentId"`
+	OwnerID           string                   `json:"ownerId"`
+	OperationType     string                   `json:"operationType"`
+	Destination       string                   `json:"destination"`
+	AmountMinor       int64                    `json:"amountMinor"`
+	Currency          string                   `json:"currency"`
+	Reason            string                   `json:"reason"`
+	Status            string                   `json:"status"`
+	Classification    string                   `json:"classification,omitempty"`
+	AssignedPartnerID string                   `json:"assignedPartnerId,omitempty"`
+	Pacts             []requestPactAPIResponse `json:"blockingPacts"`
+	CreatedAt         time.Time                `json:"createdAt"`
+	ExpiresAt         time.Time                `json:"expiresAt"`
+	ResolvedAt        *time.Time               `json:"resolvedAt,omitempty"`
+}
+
+func requestResponse(item Request) struct {
+	AccountabilityRequest requestAPIResponse `json:"accountabilityRequest"`
+} {
+	pacts := make([]requestPactAPIResponse, len(item.Pacts))
+	for index, pact := range item.Pacts {
+		pacts[index] = requestPactAPIResponse{
+			PactID: pact.PactID, LimitMinor: pact.LimitMinor, UsedMinor: pact.UsedMinor,
+			ProposedMinor: pact.ProposedMinor, OverageMinor: pact.OverageMinor,
+		}
+	}
+	result := requestAPIResponse{
+		ID: item.ID, IntentID: string(item.IntentID), OwnerID: string(item.OwnerID),
+		OperationType: string(item.OperationType), Destination: item.Destination,
+		AmountMinor: item.AmountMinor, Currency: item.Currency, Reason: item.Reason,
+		Status: item.Status, Classification: item.Classification,
+		AssignedPartnerID: string(item.AssignedPartnerID), Pacts: pacts,
+		CreatedAt: item.CreatedAt, ExpiresAt: item.ExpiresAt,
+	}
+	if !item.ResolvedAt.IsZero() {
+		resolvedAt := item.ResolvedAt
+		result.ResolvedAt = &resolvedAt
+	}
+	return struct {
+		AccountabilityRequest requestAPIResponse `json:"accountabilityRequest"`
+	}{AccountabilityRequest: result}
+}
+
 func circleEnvelope(circle Circle, duplicate bool) struct {
 	Circle circleAPIResponse `json:"circle"`
 } {
@@ -220,6 +387,16 @@ func writeError(response http.ResponseWriter, err error) {
 		httpapi.WriteError(response, http.StatusConflict, "invitation_not_resolvable", "This user cannot resolve the invitation in its current state.")
 	case errors.Is(err, ErrIdempotencyConflict):
 		httpapi.WriteError(response, http.StatusConflict, "idempotency_conflict", "This Idempotency-Key was already used with different input.")
+	case errors.Is(err, ErrRequestNotFound):
+		httpapi.WriteError(response, http.StatusNotFound, "accountability_request_not_found", "The accountability request was not found.")
+	case errors.Is(err, ErrMissingReason):
+		httpapi.WriteError(response, http.StatusUnprocessableEntity, "accountability_reason_required", "A reason is required for an accountability request.")
+	case errors.Is(err, ErrInvalidDecision):
+		httpapi.WriteError(response, http.StatusUnprocessableEntity, "invalid_accountability_decision", "Approval must be classified as EMERGENCY or CONSCIOUS_BREAK.")
+	case errors.Is(err, ErrWrongReviewer):
+		httpapi.WriteError(response, http.StatusForbidden, "not_current_reviewer", "Only the currently assigned partner can decide this request.")
+	case errors.Is(err, ErrRequestFinal):
+		httpapi.WriteError(response, http.StatusConflict, "accountability_request_final", "This accountability request is already resolved.")
 	default:
 		httpapi.WriteError(response, http.StatusInternalServerError, "internal_error", "Controlled could not manage accountability relationships.")
 	}

@@ -75,7 +75,7 @@ func TestPostgresPactStakeLifecycle(t *testing.T) {
 	operations := walletops.NewService(
 		ids, clock, walletops.NewPostgresRepository(pool, ledger.NewPostgresBook(pool)),
 		custody.NewFake(ids), walletops.AllowAllPolicy{},
-	)
+	).EnableAccountability(accountabilityService)
 	funding, err := operations.CreateFunding(ctx, "pact-fund:"+runID, owner.Provisioning.User().ID(), 10_000, "USD")
 	if err != nil {
 		t.Fatalf("create funding: %v", err)
@@ -157,6 +157,32 @@ func TestPostgresPactStakeLifecycle(t *testing.T) {
 		if !errors.As(err, &blocked) || len(blocked.Blocks) != 1 || blocked.Blocks[0].OverageMinor != 1 {
 			t.Fatalf("policy block facts = %#v", blocked)
 		}
+	}
+	attempt, err := operations.TransferWithReason(
+		ctx, "pact-reviewed-transfer:"+runID, owner.Provisioning.User().ID(),
+		partner.Provisioning.User().Email(), 2_001, "USD", "Unexpected essential expense",
+	)
+	if err != nil || attempt.Request == nil {
+		t.Fatalf("create accountability request: attempt=%+v err=%v", attempt, err)
+	}
+	storedRequest, err := accountabilityService.Request(
+		ctx, owner.Provisioning.User().ID(), attempt.Request.ID,
+	)
+	if err != nil {
+		t.Fatalf("read accountability request: %v", err)
+	}
+	if storedRequest.Status != "ASSIGNED" || storedRequest.AssignedPartnerID != partner.Provisioning.User().ID() ||
+		len(storedRequest.Pacts) != 1 || storedRequest.Pacts[0].OverageMinor != 1 {
+		t.Fatalf("accountability request = %+v", storedRequest)
+	}
+	deniedRequest, err := accountabilityService.Decide(
+		ctx, partner.Provisioning.User().ID(), storedRequest.ID, false, "",
+	)
+	if err != nil {
+		t.Fatalf("deny accountability request: %v", err)
+	}
+	if deniedRequest.Status != "DENIED" || deniedRequest.AssignedPartnerID != "" {
+		t.Fatalf("denied accountability request = %+v", deniedRequest)
 	}
 	failedUsage, err := operations.CreateWithdrawal(
 		ctx, "pact-failed-withdrawal:"+runID, owner.Provisioning.User().ID(),

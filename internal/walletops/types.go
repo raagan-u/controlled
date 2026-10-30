@@ -122,6 +122,38 @@ type PolicyBlockedError struct {
 func (e *PolicyBlockedError) Error() string { return ErrPolicyDenied.Error() }
 func (e *PolicyBlockedError) Unwrap() error { return ErrPolicyDenied }
 
+type PendingDebit struct {
+	IntentID       OperationID
+	IdempotencyKey string
+	OwnerID        identity.UserID
+	Kind           DebitKind
+	Destination    string
+	Amount         money.Money
+	Reason         string
+	Blocks         []PactBlock
+	CreatedAt      time.Time
+}
+
+type ReviewRequest struct {
+	ID                string
+	IntentID          OperationID
+	Status            string
+	AssignedPartnerID identity.UserID
+	CreatedAt         time.Time
+	ExpiresAt         time.Time
+	Duplicate         bool
+}
+
+type RequestCoordinator interface {
+	RequestDebit(context.Context, PendingDebit) (ReviewRequest, error)
+}
+
+type DebitAttempt struct {
+	Transfer   *Transfer
+	Withdrawal *Withdrawal
+	Request    *ReviewRequest
+}
+
 type Policy interface {
 	Authorize(context.Context, DebitRequest) error
 }

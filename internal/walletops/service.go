@@ -2,6 +2,7 @@ package walletops
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 
@@ -32,11 +33,19 @@ type Repository interface {
 }
 
 type Service struct {
-	ids     IDGenerator
-	clock   Clock
-	repo    Repository
-	custody custody.Provider
-	policy  Policy
+	ids      IDGenerator
+	clock    Clock
+	repo     Repository
+	custody  custody.Provider
+	policy   Policy
+	requests RequestCoordinator
+}
+
+func (s *Service) EnableAccountability(requests RequestCoordinator) *Service {
+	if s != nil {
+		s.requests = requests
+	}
+	return s
 }
 
 func NewService(
@@ -146,33 +155,69 @@ func (s *Service) Transfer(
 	amountMinor int64,
 	currency string,
 ) (Transfer, error) {
-	if err := s.available(); err != nil {
+	attempt, err := s.TransferWithReason(ctx, key, senderID, recipientEmail, amountMinor, currency, "")
+	if err != nil {
 		return Transfer{}, err
+	}
+	if attempt.Transfer == nil {
+		return Transfer{}, ErrPolicyDenied
+	}
+	return *attempt.Transfer, nil
+}
+
+func (s *Service) TransferWithReason(
+	ctx context.Context,
+	key string,
+	senderID identity.UserID,
+	recipientEmail string,
+	amountMinor int64,
+	currency string,
+	reason string,
+) (DebitAttempt, error) {
+	if err := s.available(); err != nil {
+		return DebitAttempt{}, err
 	}
 	key, err := normalizeKey(key)
 	if err != nil {
-		return Transfer{}, err
+		return DebitAttempt{}, err
 	}
 	recipientEmail = normalizedEmail(recipientEmail)
 	amount, err := money.New(amountMinor, strings.ToUpper(strings.TrimSpace(currency)))
 	if err != nil || !amount.Positive() || senderID == "" || recipientEmail == "" {
-		return Transfer{}, ErrInvalidOperation
+		return DebitAttempt{}, ErrInvalidOperation
 	}
 	if err := s.policy.Authorize(ctx, DebitRequest{
 		OwnerID: senderID, Kind: DebitInternalTransfer,
 		ReferenceKey: "internal-transfer:" + string(senderID) + ":" + key,
 		Amount:       amount,
 	}); err != nil {
-		return Transfer{}, err
+		return DebitAttempt{}, err
 	}
 	generated, err := generateIDs(s.ids, 2)
 	if err != nil {
-		return Transfer{}, err
+		return DebitAttempt{}, err
 	}
-	return s.repo.CreateTransfer(ctx, key, Transfer{
+	now := s.clock.Now().UTC()
+	transfer, err := s.repo.CreateTransfer(ctx, key, Transfer{
 		ID: OperationID(generated[0]), SenderID: senderID,
-		RecipientEmail: recipientEmail, Amount: amount, CreatedAt: s.clock.Now().UTC(),
+		RecipientEmail: recipientEmail, Amount: amount, CreatedAt: now,
 	}, ledger.JournalID(generated[1]))
+	if err == nil {
+		return DebitAttempt{Transfer: &transfer}, nil
+	}
+	var blocked *PolicyBlockedError
+	if !errors.As(err, &blocked) || strings.TrimSpace(reason) == "" || s.requests == nil {
+		return DebitAttempt{}, err
+	}
+	request, requestErr := s.requests.RequestDebit(ctx, PendingDebit{
+		IntentID: OperationID(generated[0]), IdempotencyKey: key, OwnerID: senderID,
+		Kind: DebitInternalTransfer, Destination: recipientEmail, Amount: amount,
+		Reason: reason, Blocks: blocked.Blocks, CreatedAt: now,
+	})
+	if requestErr != nil {
+		return DebitAttempt{}, requestErr
+	}
+	return DebitAttempt{Request: &request}, nil
 }
 
 func (s *Service) CreateWithdrawal(
@@ -183,28 +228,47 @@ func (s *Service) CreateWithdrawal(
 	amountMinor int64,
 	currency string,
 ) (Withdrawal, error) {
-	if err := s.available(); err != nil {
+	attempt, err := s.CreateWithdrawalWithReason(ctx, key, ownerID, destination, amountMinor, currency, "")
+	if err != nil {
 		return Withdrawal{}, err
+	}
+	if attempt.Withdrawal == nil {
+		return Withdrawal{}, ErrPolicyDenied
+	}
+	return *attempt.Withdrawal, nil
+}
+
+func (s *Service) CreateWithdrawalWithReason(
+	ctx context.Context,
+	key string,
+	ownerID identity.UserID,
+	destination string,
+	amountMinor int64,
+	currency string,
+	reason string,
+) (DebitAttempt, error) {
+	if err := s.available(); err != nil {
+		return DebitAttempt{}, err
 	}
 	key, err := normalizeKey(key)
 	if err != nil {
-		return Withdrawal{}, err
+		return DebitAttempt{}, err
 	}
 	destination = strings.TrimSpace(destination)
 	amount, err := money.New(amountMinor, strings.ToUpper(strings.TrimSpace(currency)))
 	if err != nil || !amount.Positive() || ownerID == "" || destination == "" {
-		return Withdrawal{}, ErrInvalidOperation
+		return DebitAttempt{}, ErrInvalidOperation
 	}
 	if err := s.policy.Authorize(ctx, DebitRequest{
 		OwnerID: ownerID, Kind: DebitWithdrawal,
 		ReferenceKey: "withdrawal:" + string(ownerID) + ":" + key,
 		Amount:       amount,
 	}); err != nil {
-		return Withdrawal{}, err
+		return DebitAttempt{}, err
 	}
 	generated, err := generateIDs(s.ids, 2)
 	if err != nil {
-		return Withdrawal{}, err
+		return DebitAttempt{}, err
 	}
 	now := s.clock.Now().UTC()
 	withdrawal, err := s.repo.ReserveWithdrawal(ctx, key, Withdrawal{
@@ -212,10 +276,22 @@ func (s *Service) CreateWithdrawal(
 		Amount: amount, Status: WithdrawalReserved, CreatedAt: now, UpdatedAt: now,
 	}, ledger.JournalID(generated[1]))
 	if err != nil {
-		return Withdrawal{}, err
+		var blocked *PolicyBlockedError
+		if !errors.As(err, &blocked) || strings.TrimSpace(reason) == "" || s.requests == nil {
+			return DebitAttempt{}, err
+		}
+		request, requestErr := s.requests.RequestDebit(ctx, PendingDebit{
+			IntentID: OperationID(generated[0]), IdempotencyKey: key, OwnerID: ownerID,
+			Kind: DebitWithdrawal, Destination: destination, Amount: amount,
+			Reason: reason, Blocks: blocked.Blocks, CreatedAt: now,
+		})
+		if requestErr != nil {
+			return DebitAttempt{}, requestErr
+		}
+		return DebitAttempt{Request: &request}, nil
 	}
 	if withdrawal.Status != WithdrawalReserved {
-		return withdrawal, nil
+		return DebitAttempt{Withdrawal: &withdrawal}, nil
 	}
 	payout, err := s.custody.CreatePayout(ctx, custody.CreatePayout{
 		IdempotencyKey: "withdrawal:" + string(withdrawal.ID),
@@ -223,14 +299,14 @@ func (s *Service) CreateWithdrawal(
 		Destination:    withdrawal.Destination,
 	})
 	if err != nil {
-		return Withdrawal{}, err
+		return DebitAttempt{}, err
 	}
 	attached, err := s.repo.AttachPayout(ctx, ownerID, withdrawal.ID, payout, s.clock.Now().UTC())
 	if err != nil {
-		return Withdrawal{}, err
+		return DebitAttempt{}, err
 	}
 	attached.Duplicate = withdrawal.Duplicate
-	return attached, nil
+	return DebitAttempt{Withdrawal: &attached}, nil
 }
 
 func (s *Service) ReconcileWithdrawal(
