@@ -108,8 +108,9 @@ func run(ctx context.Context) error {
 		pact.NewPostgresRepository(database),
 	)
 	pactHandler := pact.NewHandler(pactService)
-	paymentRequestHandler := paymentrequest.NewHandler(paymentrequest.NewService(platform.NewUUIDGenerator(), platform.SystemClock{}, paymentrequest.NewPostgresRepository(database)))
-	go runMaintenance(ctx, accountabilityService, pactService)
+	paymentRequestService := paymentrequest.NewService(platform.NewUUIDGenerator(), platform.SystemClock{}, paymentrequest.NewPostgresRepository(database), walletOperations)
+	paymentRequestHandler := paymentrequest.NewHandler(paymentRequestService)
+	go runMaintenance(ctx, accountabilityService, pactService, paymentRequestService)
 
 	mux := http.NewServeMux()
 	mux.Handle("POST /v1/demo/users", wallet.NewOnboardingHandler(onboarding))
@@ -127,6 +128,11 @@ func run(ctx context.Context) error {
 	mux.Handle("POST /v1/demo/funding-intents/{id}/confirm", identity.RequireSession(sessions, http.HandlerFunc(walletOperationHandler.ConfirmFunding)))
 	mux.Handle("POST /v1/wallet/internal-transfers", identity.RequireSession(sessions, http.HandlerFunc(walletOperationHandler.CreateTransfer)))
 	mux.Handle("POST /v1/wallet/payment-requests", identity.RequireSession(sessions, http.HandlerFunc(paymentRequestHandler.Create)))
+	mux.Handle("GET /v1/wallet/payment-requests", identity.RequireSession(sessions, http.HandlerFunc(paymentRequestHandler.List)))
+	mux.Handle("GET /v1/wallet/payment-requests/{id}", identity.RequireSession(sessions, http.HandlerFunc(paymentRequestHandler.Detail)))
+	mux.Handle("POST /v1/wallet/payment-requests/{id}/pay", identity.RequireSession(sessions, http.HandlerFunc(paymentRequestHandler.Pay)))
+	mux.Handle("POST /v1/wallet/payment-requests/{id}/decline", identity.RequireSession(sessions, http.HandlerFunc(paymentRequestHandler.Decline)))
+	mux.Handle("POST /v1/wallet/payment-requests/{id}/cancel", identity.RequireSession(sessions, http.HandlerFunc(paymentRequestHandler.Cancel)))
 	mux.Handle("POST /v1/wallet/withdrawals", identity.RequireSession(sessions, http.HandlerFunc(walletOperationHandler.CreateWithdrawal)))
 	mux.Handle("POST /v1/demo/withdrawals/{id}/settle", identity.RequireSession(sessions, http.HandlerFunc(walletOperationHandler.SettleWithdrawal)))
 	mux.Handle("POST /v1/accountability/invitations", identity.RequireSession(sessions, http.HandlerFunc(accountabilityHandler.Invite)))
@@ -181,7 +187,7 @@ func run(ctx context.Context) error {
 	return nil
 }
 
-func runMaintenance(ctx context.Context, accountabilityService *accountability.Service, pactService *pact.Service) {
+func runMaintenance(ctx context.Context, accountabilityService *accountability.Service, pactService *pact.Service, paymentRequests *paymentrequest.Service) {
 	run := func() {
 		if result, err := accountabilityService.RunMaintenance(ctx); err != nil && !errors.Is(err, context.Canceled) {
 			slog.Error("Accountability maintenance failed", "error", err)
@@ -192,6 +198,9 @@ func runMaintenance(ctx context.Context, accountabilityService *accountability.S
 			slog.Error("Pact maintenance failed", "error", err)
 		} else if result.Started > 0 || result.Completed > 0 {
 			slog.Info("Pact maintenance completed", "started", result.Started, "completed", result.Completed)
+		}
+		if err := paymentRequests.Maintain(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			slog.Error("Payment request maintenance failed", "error", err)
 		}
 	}
 	run()
