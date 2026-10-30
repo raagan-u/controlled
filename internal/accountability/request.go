@@ -61,12 +61,17 @@ type ExecutionRepository interface {
 }
 
 type MaintenanceResult struct {
-	TimedOut int
-	Expired  int
+	TimedOut  int
+	Expired   int
+	Recovered int
 }
 
 type MaintenanceRepository interface {
 	MaintainRequests(context.Context, time.Time) (MaintenanceResult, error)
+}
+
+type ExecutionRecoveryRepository interface {
+	ApprovedDebits(context.Context) ([]walletops.ApprovedDebit, error)
 }
 
 func (s *Service) RunMaintenance(ctx context.Context) (MaintenanceResult, error) {
@@ -77,7 +82,36 @@ func (s *Service) RunMaintenance(ctx context.Context) (MaintenanceResult, error)
 	if !ok {
 		return MaintenanceResult{}, ErrUnavailable
 	}
-	return repository.MaintainRequests(ctx, s.clock.Now().UTC())
+	result, err := repository.MaintainRequests(ctx, s.clock.Now().UTC())
+	if err != nil || s.executor == nil {
+		return result, err
+	}
+	recovery, ok := s.repository.(ExecutionRecoveryRepository)
+	if !ok {
+		return result, ErrUnavailable
+	}
+	approved, err := recovery.ApprovedDebits(ctx)
+	if err != nil {
+		return result, err
+	}
+	executionRepository, ok := s.repository.(ExecutionRepository)
+	if !ok {
+		return result, ErrUnavailable
+	}
+	for _, debit := range approved {
+		executedID, executeErr := s.executor.ExecuteApproved(ctx, debit)
+		if executeErr != nil {
+			if markErr := executionRepository.MarkIntentFailed(ctx, debit.RequestID, s.clock.Now().UTC()); markErr != nil {
+				return result, markErr
+			}
+			continue
+		}
+		if err := executionRepository.MarkIntentExecuted(ctx, debit.RequestID, executedID, s.clock.Now().UTC()); err != nil {
+			return result, err
+		}
+		result.Recovered++
+	}
+	return result, nil
 }
 
 func (s *Service) RequestDebit(ctx context.Context, debit walletops.PendingDebit) (walletops.ReviewRequest, error) {

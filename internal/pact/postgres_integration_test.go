@@ -230,11 +230,22 @@ func TestPostgresPactStakeLifecycle(t *testing.T) {
 	if err != nil || emergencyAttempt.Request == nil {
 		t.Fatalf("create emergency request: attempt=%+v err=%v", emergencyAttempt, err)
 	}
-	emergencyRequest, err := accountabilityService.Decide(
+	decisionOnlyService := accountability.NewService(ids, clock, accountability.NewPostgresRepository(pool))
+	_, err = decisionOnlyService.Decide(
 		ctx, partner.Provisioning.User().ID(), emergencyAttempt.Request.ID, true, "EMERGENCY",
 	)
+	if !errors.Is(err, accountability.ErrUnavailable) {
+		t.Fatalf("interrupted emergency approval error = %v", err)
+	}
+	recoveryResult, err := accountabilityService.RunMaintenance(ctx)
+	if err != nil || recoveryResult.Recovered < 1 {
+		t.Fatalf("recover emergency approval = %+v err=%v", recoveryResult, err)
+	}
+	emergencyRequest, err := accountabilityService.Request(
+		ctx, owner.Provisioning.User().ID(), emergencyAttempt.Request.ID,
+	)
 	if err != nil {
-		t.Fatalf("approve emergency: %v", err)
+		t.Fatalf("read recovered emergency request: %v", err)
 	}
 	if emergencyRequest.ExecutedOperationID == "" {
 		t.Fatalf("emergency request was not executed: %+v", emergencyRequest)

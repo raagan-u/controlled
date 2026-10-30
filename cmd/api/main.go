@@ -179,8 +179,8 @@ func runMaintenance(ctx context.Context, accountabilityService *accountability.S
 	run := func() {
 		if result, err := accountabilityService.RunMaintenance(ctx); err != nil && !errors.Is(err, context.Canceled) {
 			slog.Error("Accountability maintenance failed", "error", err)
-		} else if result.TimedOut > 0 || result.Expired > 0 {
-			slog.Info("Accountability maintenance completed", "timedOut", result.TimedOut, "expired", result.Expired)
+		} else if result.TimedOut > 0 || result.Expired > 0 || result.Recovered > 0 {
+			slog.Info("Accountability maintenance completed", "timedOut", result.TimedOut, "expired", result.Expired, "recovered", result.Recovered)
 		}
 		if result, err := pactService.RunMaintenance(ctx); err != nil && !errors.Is(err, context.Canceled) {
 			slog.Error("Pact maintenance failed", "error", err)
