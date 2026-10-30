@@ -1,5 +1,5 @@
 export type Money = { amountMinor: number; currency: 'USD' };
-export type User = { createdAt: string; displayName: string; email: string; id: string };
+export type User = { createdAt: string; ctrldId: string; displayName: string; email: string; id: string };
 export type Wallet = {
   accounts: { available: string; commitmentReserve: string; pending: string; staked?: string };
   balances: { available: Money; commitmentReserve: Money; pending: Money; staked?: Money };

@@ -13,10 +13,12 @@ import { colors, fonts, radii } from '@/theme';
 
 type Step = 'recipient' | 'amount' | 'success' | 'review';
 const validEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+const validCtrldID = (value: string) => /^ctrld\d{5}$/.test(value.trim().toLowerCase());
+const validRecipient = (value: string) => validEmail(value) || validCtrldID(value);
 
 export default function SendScreen() {
   const params = useLocalSearchParams<{ recipient?: string }>();
-  const preset = typeof params.recipient === 'string' && validEmail(params.recipient) ? params.recipient.trim().toLowerCase() : '';
+  const preset = typeof params.recipient === 'string' && validRecipient(params.recipient) ? params.recipient.trim().toLowerCase() : '';
   const [step, setStep] = useState<Step>(preset ? 'amount' : 'recipient');
   const [recipient, setRecipient] = useState(preset);
   const [search, setSearch] = useState(preset);
@@ -27,7 +29,7 @@ export default function SendScreen() {
   const [submitting, setSubmitting] = useState(false);
   const amountMinor = toMinorUnits(amount);
   const over = available !== null && amountMinor > available;
-  const valid = amountMinor > 0 && !over && validEmail(recipient);
+  const valid = amountMinor > 0 && !over && validRecipient(recipient);
 
   useEffect(() => { void getWallet().then(({ wallet }) => setAvailable(wallet.balances.available.amountMinor)).catch((cause) => setError(apiErrorMessage(cause))); }, []);
 
@@ -43,7 +45,7 @@ export default function SendScreen() {
 
   if (step === 'success') return <SheetScreen footer={<Text onPress={() => router.replace('/home')} style={styles.done}>Done</Text>}><ResultState amount={amount} detail={`Sent to ${recipient}${remark ? ` · ${remark}` : ''}`} title="Money sent" /></SheetScreen>;
   if (step === 'review') return <SheetScreen footer={<Text onPress={() => router.replace('/home')} style={styles.done}>Back home</Text>}><ResultState amount={amount} detail="This transfer needs approval from your accountability circle. We’ll update Activity after a decision." title="Approval requested" tone="pending" /></SheetScreen>;
-  if (step === 'recipient') return <SheetScreen><TransferTabs active="Send" /><TextInput autoCapitalize="none" autoCorrect={false} keyboardType="email-address" onChangeText={setSearch} placeholder="Registered email" placeholderTextColor={colors.textMuted} style={styles.search} value={search} /><Text style={styles.kicker}>RECIPIENT —</Text>{validEmail(search) ? <ContactRow initials="@" name={search.trim().toLowerCase()} onPress={() => { setRecipient(search.trim().toLowerCase()); setError(''); setStep('amount'); }} username="Continue with this email" /> : <Text style={styles.helper}>Enter the email address they use for ctrld.</Text>}{error ? <Text style={styles.error}>{error}</Text> : null}</SheetScreen>;
+  if (step === 'recipient') return <SheetScreen><TransferTabs active="Send" /><TextInput autoCapitalize="none" autoCorrect={false} onChangeText={setSearch} placeholder="ctrld ID or registered email" placeholderTextColor={colors.textMuted} style={styles.search} value={search} /><Text style={styles.kicker}>RECIPIENT —</Text>{validRecipient(search) ? <ContactRow initials="@" name={search.trim().toLowerCase()} onPress={() => { setRecipient(search.trim().toLowerCase()); setError(''); setStep('amount'); }} username="Continue with this recipient" /> : <Text style={styles.helper}>Enter an ID like ctrld48217, or their registered email.</Text>}{error ? <Text style={styles.error}>{error}</Text> : null}</SheetScreen>;
   return <SheetScreen><View style={styles.entry}><View><TransferTabs active="Send" /><Text style={styles.payee}>paying to <Text onPress={() => setStep('recipient')} style={styles.payeeStrong}>{recipient}⌄</Text></Text></View><View style={styles.amountBlock}><MoneyAmount caption={`Available $${available === null ? '—' : formatUSD(available)}`} tone={over ? 'danger' : 'default'} value={amount} /><TextInput maxLength={80} onChangeText={setRemark} placeholder="Add a remark" placeholderTextColor={colors.textMuted} style={styles.remark} value={remark} />{over ? <Text style={styles.error}>More than your available balance.</Text> : error ? <Text style={styles.error}>{error}</Text> : null}<SwipeConfirm disabled={!valid || submitting} key={`${submitting}-${error}`} label={submitting ? 'Sending…' : undefined} onConfirm={() => void send()} /></View><AmountKeypad onChange={setAmount} value={amount} /></View></SheetScreen>;
 }
 
