@@ -9,6 +9,6 @@ export const activities: Activity[] = [
   { amount: '100.00', id: 'txn-007', label: 'Added from PayPal', meta: 'Failed', section: 'Oct 27', status: 'Failed' },
 ];
 export const contacts = [
-  { initials: 'MK', name: 'Maya Kapoor', username: '@maya' }, { initials: 'NO', name: 'Noah Oliveira', username: '@noah' },
-  { initials: 'AR', name: 'Ari Rao', username: '@ari' }, { initials: 'SL', name: 'Sam Lee', username: '@sam' },
+  { initials: 'RS', name: 'Riya Shah', username: '@riya' }, { initials: 'AM', name: 'Arjun Mehta', username: '@arjun' },
+  { initials: 'MI', name: 'Meera Iyer', username: '@meera' }, { initials: 'KR', name: 'Kabir Rao', username: '@kabir' },
 ];
