@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -30,6 +31,49 @@ func (s *PostgresSessionStore) UserByEmail(ctx context.Context, email string) (U
 		  FROM users
 		 WHERE email = $1
 	`, email))
+}
+
+func (s *PostgresSessionStore) Recipients(
+	ctx context.Context,
+	currentUserID UserID,
+	query string,
+	limit int,
+) ([]User, error) {
+	if s == nil || s.pool == nil {
+		return nil, ErrSessionStore
+	}
+	if limit < 1 || limit > 50 {
+		limit = 50
+	}
+	query = strings.ToLower(strings.TrimSpace(query))
+	rows, err := s.pool.Query(ctx, `
+		SELECT id::text, email, display_name, ctrld_id, created_at
+		  FROM users
+		 WHERE id <> $1::text::uuid
+		   AND ($2 = ''
+		        OR lower(ctrld_id) = $2
+		        OR lower(email) = $2
+		        OR lower(display_name) LIKE '%' || $2 || '%')
+		 ORDER BY display_name, created_at
+		 LIMIT $3
+	`, string(currentUserID), query, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list recipients: %w", err)
+	}
+	defer rows.Close()
+
+	users := make([]User, 0)
+	for rows.Next() {
+		user, scanErr := scanUser(rows)
+		if scanErr != nil {
+			return nil, scanErr
+		}
+		users = append(users, user)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list recipients: %w", err)
+	}
+	return users, nil
 }
 
 func (s *PostgresSessionStore) UserByGoogleSubject(ctx context.Context, subject string) (User, error) {

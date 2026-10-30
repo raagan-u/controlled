@@ -83,6 +83,7 @@ func run(ctx context.Context) error {
 		sessions,
 	)
 	passwordAuthenticationHandler := identity.NewPasswordAuthenticationHandler(passwordAuthentication)
+	recipientHandler := identity.NewRecipientHandler(identityStore)
 	walletReadHandler := wallet.NewReadHandler(store)
 	fakeCustody := custody.NewFake(platform.NewUUIDGenerator())
 	accountabilityService := accountability.NewService(
@@ -116,6 +117,7 @@ func run(ctx context.Context) error {
 	mux.HandleFunc("POST /v1/auth/password/login", passwordAuthenticationHandler.Login)
 	mux.HandleFunc("DELETE /v1/sessions/current", sessionHandler.End)
 	mux.Handle("GET /v1/users/current", identity.RequireSession(sessions, http.HandlerFunc(identity.CurrentUserHandler)))
+	mux.Handle("GET /v1/users/recipients", identity.RequireSession(sessions, http.HandlerFunc(recipientHandler.Recipients)))
 	mux.Handle("GET /v1/wallet", identity.RequireSession(sessions, http.HandlerFunc(walletReadHandler.Wallet)))
 	mux.Handle("GET /v1/wallet/transactions", identity.RequireSession(sessions, http.HandlerFunc(walletReadHandler.Transactions)))
 	mux.Handle("GET /v1/wallet/transactions/{id}", identity.RequireSession(sessions, http.HandlerFunc(walletReadHandler.Transaction)))
