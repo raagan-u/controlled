@@ -144,6 +144,7 @@ func (r *PostgresRepository) CompleteFunding(
 	ownerID identity.UserID,
 	id OperationID,
 	providerOrderID string,
+	netAmount money.Money,
 	journalID ledger.JournalID,
 	custodyAccountCandidate ledger.AccountID,
 	now time.Time,
@@ -167,8 +168,11 @@ func (r *PostgresRepository) CompleteFunding(
 	if intent.Status != FundingAwaitingConfirmation || intent.ProviderOrderID != providerOrderID {
 		return FundingIntent{}, ErrInvalidState
 	}
+	if !netAmount.Positive() || netAmount.Currency() != intent.Amount.Currency() || netAmount.AmountMinor() > intent.Amount.AmountMinor() {
+		return FundingIntent{}, ErrInvalidOperation
+	}
 
-	custodyAccount, err := ensureCustodyAccount(ctx, tx, custodyAccountCandidate, intent.Amount.Currency(), now)
+	custodyAccount, err := ensureCustodyAccount(ctx, tx, custodyAccountCandidate, netAmount.Currency(), now)
 	if err != nil {
 		return FundingIntent{}, err
 	}
@@ -176,11 +180,11 @@ func (r *PostgresRepository) CompleteFunding(
 	if err != nil {
 		return FundingIntent{}, err
 	}
-	debit, err := ledger.NewEntry(custodyAccount, ledger.SideDebit, intent.Amount)
+	debit, err := ledger.NewEntry(custodyAccount, ledger.SideDebit, netAmount)
 	if err != nil {
 		return FundingIntent{}, err
 	}
-	credit, err := ledger.NewEntry(availableAccount, ledger.SideCredit, intent.Amount)
+	credit, err := ledger.NewEntry(availableAccount, ledger.SideCredit, netAmount)
 	if err != nil {
 		return FundingIntent{}, err
 	}
@@ -203,10 +207,11 @@ func (r *PostgresRepository) CompleteFunding(
 		UPDATE funding_intents
 		   SET status = 'COMPLETED',
 		       ledger_transaction_id = $2::text::uuid,
-		       updated_at = $3,
-		       completed_at = $3
+		       net_amount_minor = $3,
+		       updated_at = $4,
+		       completed_at = $4
 		 WHERE id = $1::text::uuid
-	`, string(id), string(posted.JournalID), now)
+	`, string(id), string(posted.JournalID), netAmount.AmountMinor(), now)
 	if err != nil {
 		return FundingIntent{}, mapOperationError(err)
 	}
@@ -214,6 +219,7 @@ func (r *PostgresRepository) CompleteFunding(
 		return FundingIntent{}, mapOperationError(err)
 	}
 	intent.Status = FundingCompleted
+	intent.NetAmount = netAmount
 	intent.LedgerTransactionID = posted.JournalID
 	intent.UpdatedAt = now
 	intent.CompletedAt = now
@@ -725,7 +731,7 @@ func loadFundingByKey(
 		suffix = " FOR UPDATE"
 	}
 	return scanFunding(query.QueryRow(ctx, `
-		SELECT id::text, owner_id::text, wallet_id::text, amount_minor, currency,
+		SELECT id::text, owner_id::text, wallet_id::text, amount_minor, net_amount_minor, currency,
 		       status, COALESCE(provider_order_id, ''), COALESCE(approval_url, ''),
 		       COALESCE(ledger_transaction_id::text, ''), created_at, updated_at, completed_at
 		  FROM funding_intents
@@ -744,7 +750,7 @@ func loadFunding(
 		suffix = " FOR UPDATE"
 	}
 	return scanFunding(query.QueryRow(ctx, `
-		SELECT id::text, owner_id::text, wallet_id::text, amount_minor, currency,
+		SELECT id::text, owner_id::text, wallet_id::text, amount_minor, net_amount_minor, currency,
 		       status, COALESCE(provider_order_id, ''), COALESCE(approval_url, ''),
 		       COALESCE(ledger_transaction_id::text, ''), created_at, updated_at, completed_at
 		  FROM funding_intents
@@ -756,12 +762,13 @@ func scanFunding(row pgx.Row) (FundingIntent, error) {
 	var id string
 	var ownerID string
 	var amountMinor int64
+	var netAmountMinor pgtype.Int8
 	var currency string
 	var createdAt pgtype.Timestamptz
 	var updatedAt pgtype.Timestamptz
 	var completedAt pgtype.Timestamptz
 	err := row.Scan(
-		&id, &ownerID, &result.WalletID, &amountMinor, &currency,
+		&id, &ownerID, &result.WalletID, &amountMinor, &netAmountMinor, &currency,
 		&result.Status, &result.ProviderOrderID, &result.ApprovalURL,
 		&result.LedgerTransactionID, &createdAt, &updatedAt, &completedAt,
 	)
@@ -778,6 +785,12 @@ func scanFunding(row pgx.Row) (FundingIntent, error) {
 	result.ID = OperationID(id)
 	result.OwnerID = identity.UserID(ownerID)
 	result.Amount = amount
+	if netAmountMinor.Valid {
+		result.NetAmount, err = money.New(netAmountMinor.Int64, currency)
+		if err != nil {
+			return FundingIntent{}, err
+		}
+	}
 	result.CreatedAt = createdAt.Time.UTC()
 	result.UpdatedAt = updatedAt.Time.UTC()
 	if completedAt.Valid {

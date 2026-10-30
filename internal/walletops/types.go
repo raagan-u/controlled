@@ -42,6 +42,7 @@ type FundingIntent struct {
 	OwnerID             identity.UserID
 	WalletID            string
 	Amount              money.Money
+	NetAmount           money.Money
 	Status              FundingStatus
 	ProviderOrderID     string
 	ApprovalURL         string

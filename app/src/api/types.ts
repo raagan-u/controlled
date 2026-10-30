@@ -9,6 +9,7 @@ export type LedgerEntry = { accountId: string; accountKind: string; amount: Mone
 export type Transaction = { description: string; entries: LedgerEntry[]; id: string; occurredAt: string; postedAt: string; reference: { id: string; type: string }; reversed: boolean; transferDetails?: { paymentRequestId?: string; recipient: PaymentRequestParty; remark?: string; sender: PaymentRequestParty } };
 export type FundingIntent = {
   amount: Money;
+	grossAmount?: Money;
   approvalUrl?: string;
   completedAt?: string;
   duplicate?: boolean;

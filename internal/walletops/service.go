@@ -24,7 +24,7 @@ type Repository interface {
 	CreateFunding(context.Context, string, FundingIntent) (FundingIntent, error)
 	AttachFundingOrder(context.Context, identity.UserID, OperationID, custody.FundingOrder, time.Time) (FundingIntent, error)
 	Funding(context.Context, identity.UserID, OperationID) (FundingIntent, error)
-	CompleteFunding(context.Context, identity.UserID, OperationID, string, ledger.JournalID, ledger.AccountID, time.Time) (FundingIntent, error)
+	CompleteFunding(context.Context, identity.UserID, OperationID, string, money.Money, ledger.JournalID, ledger.AccountID, time.Time) (FundingIntent, error)
 	CreateTransfer(context.Context, string, Transfer, ledger.JournalID) (Transfer, error)
 	ReserveWithdrawal(context.Context, string, Withdrawal, ledger.JournalID) (Withdrawal, error)
 	AttachPayout(context.Context, identity.UserID, OperationID, custody.Payout, time.Time) (Withdrawal, error)
@@ -129,7 +129,9 @@ func (s *Service) ConfirmFunding(
 	if err != nil {
 		return FundingIntent{}, err
 	}
-	if order.Status != custody.FundingCaptured || !order.Amount.Equal(intent.Amount) {
+	if order.Status != custody.FundingCaptured || !order.Amount.Equal(intent.Amount) ||
+		!order.NetAmount.Positive() || order.NetAmount.Currency() != intent.Amount.Currency() ||
+		order.NetAmount.AmountMinor() > intent.Amount.AmountMinor() {
 		return FundingIntent{}, ErrInvalidState
 	}
 	generated, err := generateIDs(s.ids, 2)
@@ -141,6 +143,7 @@ func (s *Service) ConfirmFunding(
 		ownerID,
 		id,
 		order.ID,
+		order.NetAmount,
 		ledger.JournalID(generated[0]),
 		ledger.AccountID(generated[1]),
 		s.clock.Now().UTC(),

@@ -44,6 +44,9 @@ func TestPayPalFundingAndPayoutFlow(t *testing.T) {
 					"payments": map[string]any{"captures": []any{map[string]any{
 						"status": "COMPLETED",
 						"amount": map[string]string{"value": "12.34", "currency_code": "USD"},
+						"seller_receivable_breakdown": map[string]any{
+							"net_amount": map[string]string{"value": "11.68", "currency_code": "USD"},
+						},
 					}}},
 				}},
 			}), nil
@@ -75,7 +78,7 @@ func TestPayPalFundingAndPayoutFlow(t *testing.T) {
 		t.Fatalf("CreateFundingOrder() = %#v, %v", order, err)
 	}
 	captured, err := provider.CaptureFundingOrder(t.Context(), order.ID)
-	if err != nil || captured.Status != FundingCaptured || !captured.Amount.Equal(amount) {
+	if err != nil || captured.Status != FundingCaptured || !captured.Amount.Equal(amount) || captured.NetAmount.AmountMinor() != 1168 {
 		t.Fatalf("CaptureFundingOrder() = %#v, %v", captured, err)
 	}
 	payout, err := provider.CreatePayout(t.Context(), CreatePayout{IdempotencyKey: "withdraw-1", Amount: amount, Destination: "sandbox@example.com"})

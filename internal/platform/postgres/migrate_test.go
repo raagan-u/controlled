@@ -15,8 +15,8 @@ func TestDiscoverEmbeddedMigrations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("discoverMigrations() error = %v", err)
 	}
-	if len(found) != 13 {
-		t.Fatalf("migration count = %d, want 13", len(found))
+	if len(found) != 14 {
+		t.Fatalf("migration count = %d, want 14", len(found))
 	}
 	if found[0].version != 1 || found[0].name != "000001_wallet_ledger.up.sql" || found[0].sql == "" {
 		t.Fatalf("migration = %#v", found[0])
@@ -56,6 +56,9 @@ func TestDiscoverEmbeddedMigrations(t *testing.T) {
 	}
 	if found[12].version != 13 || found[12].name != "000013_payment_request_lifecycle.up.sql" || found[12].sql == "" {
 		t.Fatalf("migration = %#v", found[12])
+	}
+	if found[13].version != 14 || found[13].name != "000014_funding_net_amount.up.sql" || found[13].sql == "" {
+		t.Fatalf("migration = %#v", found[13])
 	}
 }
 

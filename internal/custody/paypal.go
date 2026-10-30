@@ -136,7 +136,13 @@ func (p *PayPal) CaptureFundingOrder(ctx context.Context, orderID string) (Fundi
 						Currency string `json:"currency_code"`
 						Value    string `json:"value"`
 					} `json:"amount"`
-					Status string `json:"status"`
+					Status                    string `json:"status"`
+					SellerReceivableBreakdown struct {
+						NetAmount struct {
+							Currency string `json:"currency_code"`
+							Value    string `json:"value"`
+						} `json:"net_amount"`
+					} `json:"seller_receivable_breakdown"`
 				} `json:"captures"`
 			} `json:"payments"`
 		} `json:"purchase_units"`
@@ -156,7 +162,14 @@ func (p *PayPal) CaptureFundingOrder(ctx context.Context, orderID string) (Fundi
 	if err != nil {
 		return FundingOrder{}, ErrUnavailable
 	}
-	return FundingOrder{ID: orderID, Amount: amount, Status: FundingCaptured}, nil
+	netAmount, err := parsePayPalAmount(
+		capture.SellerReceivableBreakdown.NetAmount.Value,
+		capture.SellerReceivableBreakdown.NetAmount.Currency,
+	)
+	if err != nil || !netAmount.Positive() || netAmount.Currency() != amount.Currency() || netAmount.AmountMinor() > amount.AmountMinor() {
+		return FundingOrder{}, ErrUnavailable
+	}
+	return FundingOrder{ID: orderID, Amount: amount, NetAmount: netAmount, Status: FundingCaptured}, nil
 }
 
 func (p *PayPal) CreatePayout(ctx context.Context, request CreatePayout) (Payout, error) {

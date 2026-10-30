@@ -256,6 +256,7 @@ type fundingAPIResponse struct {
 	ID                  string        `json:"id"`
 	Status              FundingStatus `json:"status"`
 	Amount              moneyOutput   `json:"amount"`
+	GrossAmount         *moneyOutput  `json:"grossAmount,omitempty"`
 	ProviderOrderID     string        `json:"providerOrderId,omitempty"`
 	ApprovalURL         string        `json:"approvalUrl,omitempty"`
 	LedgerTransactionID string        `json:"ledgerTransactionId,omitempty"`
@@ -274,6 +275,11 @@ func fundingResponse(intent FundingIntent) struct {
 		ProviderOrderID: intent.ProviderOrderID, ApprovalURL: intent.ApprovalURL,
 		LedgerTransactionID: string(intent.LedgerTransactionID), CreatedAt: intent.CreatedAt,
 		UpdatedAt: intent.UpdatedAt, Duplicate: intent.Duplicate,
+	}
+	if intent.NetAmount.Valid() {
+		gross := item.Amount
+		item.GrossAmount = &gross
+		item.Amount = moneyOutput{AmountMinor: intent.NetAmount.AmountMinor(), Currency: intent.NetAmount.Currency()}
 	}
 	if !intent.CompletedAt.IsZero() {
 		item.CompletedAt = &intent.CompletedAt
