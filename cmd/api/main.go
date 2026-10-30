@@ -86,7 +86,10 @@ func run(ctx context.Context) error {
 	passwordAuthenticationHandler := identity.NewPasswordAuthenticationHandler(passwordAuthentication)
 	recipientHandler := identity.NewRecipientHandler(identityStore)
 	walletReadHandler := wallet.NewReadHandler(store)
-	fakeCustody := custody.NewFake(platform.NewUUIDGenerator())
+	custodyProvider, err := configuredCustodyProvider(configuration)
+	if err != nil {
+		return err
+	}
 	accountabilityService := accountability.NewService(
 		platform.NewUUIDGenerator(),
 		platform.SystemClock{},
@@ -96,7 +99,7 @@ func run(ctx context.Context) error {
 		platform.NewUUIDGenerator(),
 		platform.SystemClock{},
 		walletops.NewPostgresRepository(database, ledger.NewPostgresBook(database)),
-		fakeCustody,
+		custodyProvider,
 		walletops.AllowAllPolicy{},
 	).EnableAccountability(accountabilityService)
 	accountabilityService.EnableExecutor(walletOperations)
@@ -125,6 +128,7 @@ func run(ctx context.Context) error {
 	mux.Handle("GET /v1/wallet/transactions", identity.RequireSession(sessions, http.HandlerFunc(walletReadHandler.Transactions)))
 	mux.Handle("GET /v1/wallet/transactions/{id}", identity.RequireSession(sessions, http.HandlerFunc(walletReadHandler.Transaction)))
 	mux.Handle("POST /v1/wallet/funding-intents", identity.RequireSession(sessions, http.HandlerFunc(walletOperationHandler.CreateFunding)))
+	mux.Handle("POST /v1/wallet/funding-intents/{id}/capture", identity.RequireSession(sessions, http.HandlerFunc(walletOperationHandler.ConfirmFunding)))
 	mux.Handle("POST /v1/demo/funding-intents/{id}/confirm", identity.RequireSession(sessions, http.HandlerFunc(walletOperationHandler.ConfirmFunding)))
 	mux.Handle("POST /v1/wallet/internal-transfers", identity.RequireSession(sessions, http.HandlerFunc(walletOperationHandler.CreateTransfer)))
 	mux.Handle("POST /v1/wallet/payment-requests", identity.RequireSession(sessions, http.HandlerFunc(paymentRequestHandler.Create)))
@@ -134,6 +138,7 @@ func run(ctx context.Context) error {
 	mux.Handle("POST /v1/wallet/payment-requests/{id}/decline", identity.RequireSession(sessions, http.HandlerFunc(paymentRequestHandler.Decline)))
 	mux.Handle("POST /v1/wallet/payment-requests/{id}/cancel", identity.RequireSession(sessions, http.HandlerFunc(paymentRequestHandler.Cancel)))
 	mux.Handle("POST /v1/wallet/withdrawals", identity.RequireSession(sessions, http.HandlerFunc(walletOperationHandler.CreateWithdrawal)))
+	mux.Handle("POST /v1/wallet/withdrawals/{id}/reconcile", identity.RequireSession(sessions, http.HandlerFunc(walletOperationHandler.ReconcileWithdrawal)))
 	mux.Handle("POST /v1/demo/withdrawals/{id}/settle", identity.RequireSession(sessions, http.HandlerFunc(walletOperationHandler.SettleWithdrawal)))
 	mux.Handle("POST /v1/accountability/invitations", identity.RequireSession(sessions, http.HandlerFunc(accountabilityHandler.Invite)))
 	mux.Handle("GET /v1/accountability/invitations", identity.RequireSession(sessions, http.HandlerFunc(accountabilityHandler.Invitations)))
@@ -185,6 +190,17 @@ func run(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+func configuredCustodyProvider(configuration config.Config) (custody.Provider, error) {
+	if configuration.CustodyProvider == config.CustodyProviderPayPalSandbox {
+		return custody.NewPayPal(custody.PayPalOptions{
+			APIBase: configuration.PayPalAPIBase, ClientID: configuration.PayPalClientID,
+			ClientSecret: configuration.PayPalClientSecret, ReturnURL: configuration.PayPalReturnURL,
+			CancelURL: configuration.PayPalCancelURL,
+		})
+	}
+	return custody.NewFake(platform.NewUUIDGenerator()), nil
 }
 
 func runMaintenance(ctx context.Context, accountabilityService *accountability.Service, pactService *pact.Service, paymentRequests *paymentrequest.Service) {

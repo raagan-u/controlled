@@ -18,6 +18,11 @@ var (
 
 const defaultGoogleClientID = "376706277927-s4mest4okp2a4par7m6tl69b9ut3rl7c.apps.googleusercontent.com"
 
+const (
+	CustodyProviderFake          = "fake"
+	CustodyProviderPayPalSandbox = "paypal_sandbox"
+)
+
 type Config struct {
 	HTTPAddress         string
 	DatabaseURL         string
@@ -27,6 +32,12 @@ type Config struct {
 	DatabaseMinConns    int32
 	DatabasePingTimeout time.Duration
 	GoogleClientID      string
+	CustodyProvider     string
+	PayPalAPIBase       string
+	PayPalClientID      string
+	PayPalClientSecret  string
+	PayPalReturnURL     string
+	PayPalCancelURL     string
 }
 
 func Load() (Config, error) {
@@ -72,6 +83,18 @@ func load(lookup lookupEnv) (Config, error) {
 	if googleClientID == "" {
 		return Config{}, fmt.Errorf("%w: CONTROLLED_GOOGLE_CLIENT_ID", ErrInvalidConfig)
 	}
+	custodyProvider := strings.ToLower(strings.TrimSpace(value(lookup, "CONTROLLED_CUSTODY_PROVIDER", CustodyProviderFake)))
+	if custodyProvider != CustodyProviderFake && custodyProvider != CustodyProviderPayPalSandbox {
+		return Config{}, fmt.Errorf("%w: CONTROLLED_CUSTODY_PROVIDER", ErrInvalidConfig)
+	}
+	payPalAPIBase := strings.TrimRight(strings.TrimSpace(value(lookup, "PAYPAL_API_BASE", "https://api-m.sandbox.paypal.com")), "/")
+	payPalClientID := strings.TrimSpace(value(lookup, "PAYPAL_CLIENT_ID", ""))
+	payPalClientSecret := strings.TrimSpace(value(lookup, "PAYPAL_CLIENT_SECRET", ""))
+	payPalReturnURL := strings.TrimSpace(value(lookup, "PAYPAL_RETURN_URL", "https://example.com/paypal/return"))
+	payPalCancelURL := strings.TrimSpace(value(lookup, "PAYPAL_CANCEL_URL", "https://example.com/paypal/cancel"))
+	if custodyProvider == CustodyProviderPayPalSandbox && (payPalAPIBase == "" || payPalClientID == "" || payPalClientSecret == "" || payPalReturnURL == "" || payPalCancelURL == "") {
+		return Config{}, fmt.Errorf("%w: PayPal sandbox credentials and URLs are required", ErrInvalidConfig)
+	}
 
 	return Config{
 		HTTPAddress:         httpAddress,
@@ -82,6 +105,12 @@ func load(lookup lookupEnv) (Config, error) {
 		DatabaseMinConns:    minConns,
 		DatabasePingTimeout: pingTimeout,
 		GoogleClientID:      googleClientID,
+		CustodyProvider:     custodyProvider,
+		PayPalAPIBase:       payPalAPIBase,
+		PayPalClientID:      payPalClientID,
+		PayPalClientSecret:  payPalClientSecret,
+		PayPalReturnURL:     payPalReturnURL,
+		PayPalCancelURL:     payPalCancelURL,
 	}, nil
 }
 
