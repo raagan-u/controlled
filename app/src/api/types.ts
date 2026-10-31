@@ -52,11 +52,106 @@ export type PaymentRequest = {
 	updatedAt: string;
 };
 export type AccountabilityRequest = {
-  assignedPartnerId: string;
+  assignedPartnerId?: string;
+  amountMinor: number;
+  blockingPacts: AccountabilityRequestPact[];
+  classification?: 'EMERGENCY' | 'CONSCIOUS_BREAK';
   createdAt: string;
-  duplicate: boolean;
+  currency: 'USD';
+  destination: string;
+  executedOperationId?: string;
   expiresAt: string;
   id: string;
   intentId: string;
-  status: string;
+  operationType: 'INTERNAL_TRANSFER' | 'WITHDRAWAL';
+  ownerId: string;
+  reason: string;
+  resolvedAt?: string;
+  reviewers: AccountabilityReviewer[];
+  status: 'ASSIGNED' | 'APPROVED' | 'DENIED' | 'EXPIRED' | 'CANCELLED' | 'FAILED';
+};
+
+export type AccountabilityRequestPact = {
+  goal: string;
+  intent: string;
+  limitMinor: number;
+  overageMinor: number;
+  pactId: string;
+  proposedMinor: number;
+  usedMinor: number;
+};
+
+export type AccountabilityReviewer = {
+  assignedAt?: string;
+  decision?: 'APPROVE_EMERGENCY' | 'APPROVE_CONSCIOUS_BREAK' | 'DENY';
+  expiresAt?: string;
+  partnerId: string;
+  position: number;
+  respondedAt?: string;
+  status: 'WAITING' | 'ACTIVE' | 'RESPONDED' | 'TIMED_OUT' | 'SUPERSEDED';
+};
+
+export type AccountabilityInvitation = {
+  createdAt: string;
+  duplicate: boolean;
+  id: string;
+  ownerId: string;
+  partnerId: string;
+  resolvedAt?: string;
+  status: 'PENDING' | 'ACCEPTED' | 'DECLINED';
+};
+
+export type AccountabilityCircle = {
+  createdAt: string;
+  duplicate: boolean;
+  id: string;
+  name: string;
+  partnerIds: string[];
+};
+
+export type PactStatus = 'DRAFT' | 'AWAITING_STAKE' | 'SCHEDULED' | 'ACTIVE' | 'RESOLVED' | 'CANCELLED';
+export type PactOutcome = 'NONE' | 'KEPT' | 'KEPT_WITH_EXCEPTIONS' | 'BROKEN' | 'CANCELLED';
+export type PactUsage = {
+  amountMinor: number;
+  countedAt: string;
+  counterpartyCtrldId?: string;
+  counterpartyName?: string;
+  currency: 'USD';
+  destination?: string;
+  operationId: string;
+  operationType: 'INTERNAL_TRANSFER' | 'WITHDRAWAL';
+  reversedAt?: string;
+  status: 'COUNTED' | 'REVERSED';
+};
+export type Pact = {
+  duplicate: boolean;
+  emergencyCount: number;
+  id: string;
+  outcome: PactOutcome;
+  progress: { overageMinor: number; remainingMinor: number; usage: PactUsage[]; usedMinor: number };
+  stakeReservationId?: string;
+  status: PactStatus;
+  terms: {
+    accountabilityCircleId: string;
+    breakConsequence: 'COMMITMENT_RESERVE';
+    endsAt: string;
+    goal: string;
+    intent: string;
+    spendingLimit: Money;
+    stake: Money;
+    startsAt: string;
+  };
+  version: number;
+};
+
+export type PactTermsInput = {
+  accountabilityCircleId: string;
+  breakConsequence: 'COMMITMENT_RESERVE';
+  currency: 'USD';
+  endsAt: string;
+  goal: string;
+  intent: string;
+  spendingLimitMinor: number;
+  stakeMinor: number;
+  startsAt: string;
 };
