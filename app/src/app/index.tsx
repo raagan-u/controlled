@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { router } from 'expo-router';
 import { StyleSheet, Text, View } from 'react-native';
 
+import { signedInRoute } from '@/auth/routing';
 import { getSessionToken } from '@/auth/session';
 import { colors, fonts } from '@/theme';
 
@@ -9,8 +10,9 @@ export default function SplashScreen() {
   useEffect(() => {
     let active = true;
     const timer = setTimeout(() => {
-      void getSessionToken().then((token) => {
-        if (active) router.replace(token ? '/home' : '/welcome');
+      void getSessionToken().then(async (token) => {
+        const route = token ? await signedInRoute() : '/welcome';
+        if (active) router.replace(route);
       });
     }, 800);
     return () => { active = false; clearTimeout(timer); };

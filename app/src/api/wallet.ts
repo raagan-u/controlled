@@ -3,6 +3,7 @@ import type { AccountabilityRequest, FundingIntent, PaymentRequest, Transaction,
 import { clearSession } from '@/auth/session';
 
 export const getCurrentUser = () => apiRequest<{ user: User }>('/v1/users/current');
+export const updateDisplayName = async (displayName: string) => (await apiRequest<{ user: User }>('/v1/users/current', { body: { displayName }, method: 'PATCH' })).user;
 export const getRecipients = (query = '') => apiRequest<{ users: User[] }>(`/v1/users/recipients${query.trim() ? `?query=${encodeURIComponent(query.trim())}` : ''}`);
 export const getWallet = () => apiRequest<{ wallet: Wallet }>('/v1/wallet');
 export const getTransactions = () => apiRequest<{ transactions: Transaction[] }>('/v1/wallet/transactions');

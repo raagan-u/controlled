@@ -11,9 +11,6 @@ const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 function validateSignUp(values: Record<string, string>) {
   const errors: Record<string, string> = {};
 
-	if (!(values.displayName?.trim() ?? '')) {
-		errors.displayName = 'Enter your name';
-	}
   if (!emailPattern.test(values.email?.trim() ?? '')) {
     errors.email = 'Enter a valid email address';
   }
@@ -36,7 +33,6 @@ export default function SignUpScreen() {
   return (
     <AuthFormScreen
       fields={[
-		{ autoCapitalize: 'words', autoComplete: 'name', label: 'name', name: 'displayName' },
         { autoComplete: 'email', keyboardType: 'email-address', label: 'email', name: 'email' },
         {
           autoComplete: 'new-password',

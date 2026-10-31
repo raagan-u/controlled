@@ -1,6 +1,6 @@
 import { apiURL, clearSession, getSessionToken } from '@/auth/session';
 
-type RequestOptions = { body?: object; idempotent?: boolean; method?: 'DELETE' | 'GET' | 'POST' | 'PUT' };
+type RequestOptions = { body?: object; idempotent?: boolean; method?: 'DELETE' | 'GET' | 'PATCH' | 'POST' | 'PUT' };
 type ErrorPayload = { error?: { code?: string; message?: string } };
 
 export class APIError extends Error {

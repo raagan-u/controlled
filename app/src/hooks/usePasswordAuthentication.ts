@@ -5,6 +5,7 @@ import {
   authenticateWithPassword,
   PasswordAuthenticationMode,
 } from '@/auth/password';
+import { signedInRoute } from '@/auth/routing';
 import { AuthValues } from '@/components/AuthFormScreen';
 
 export function usePasswordAuthentication(mode: PasswordAuthenticationMode) {
@@ -18,8 +19,8 @@ export function usePasswordAuthentication(mode: PasswordAuthenticationMode) {
     setError(undefined);
     setLoading(true);
     try {
-		  await authenticateWithPassword(mode, values.email, values.password, values.displayName);
-		  router.replace('/home');
+      await authenticateWithPassword(mode, values.email, values.password);
+      router.replace(await signedInRoute());
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Authentication failed. Please try again.');
     } finally {
