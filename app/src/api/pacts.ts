@@ -29,6 +29,20 @@ function normalizePact(pact: Pact): Pact {
   };
 }
 
+function normalizeAccountabilityRequest(request: AccountabilityRequest): AccountabilityRequest {
+  const blockingPacts = (request.blockingPacts ?? []).map((pact) => ({
+    ...pact,
+    goal: pact.goal || 'Spending limit',
+    intent: pact.intent || 'This payment would exceed the pact limit.',
+  }));
+  const reviewers = request.reviewers?.length
+    ? request.reviewers
+    : request.assignedPartnerId
+      ? [{ partnerId: request.assignedPartnerId, position: 0, status: 'ACTIVE' as const }]
+      : [];
+  return { ...request, blockingPacts, reviewers };
+}
+
 export const getPacts = async () => (await apiRequest<{ pacts: Pact[] }>('/v1/pacts')).pacts.map(normalizePact);
 export const getPact = async (id: string) => normalizePact((await apiRequest<{ pact: Pact }>(`/v1/pacts/${encodeURIComponent(id)}`)).pact);
 export const createPact = async (terms: PactTermsInput) => normalizePact((await apiRequest<{ pact: Pact }>('/v1/pacts', { body: terms, idempotent: true, method: 'POST' })).pact);
@@ -45,11 +59,11 @@ export const declineInvitation = async (id: string) => (await apiRequest<{ invit
 export const getCircles = async () => (await apiRequest<{ circles: AccountabilityCircle[] }>('/v1/accountability/circles')).circles;
 export const createCircle = async (name: string, partnerIds: string[]) => (await apiRequest<{ circle: AccountabilityCircle }>('/v1/accountability/circles', { body: { name, partnerIds }, idempotent: true, method: 'POST' })).circle;
 
-export const getAccountabilityRequests = async () => (await apiRequest<{ accountabilityRequests: AccountabilityRequest[] }>('/v1/accountability/requests')).accountabilityRequests;
-export const getAccountabilityRequest = async (id: string) => (await apiRequest<{ accountabilityRequest: AccountabilityRequest }>(`/v1/accountability/requests/${encodeURIComponent(id)}`)).accountabilityRequest;
-export const approveAccountabilityRequest = async (id: string, classification: 'EMERGENCY' | 'CONSCIOUS_BREAK') => (await apiRequest<{ accountabilityRequest: AccountabilityRequest }>(`/v1/accountability/requests/${encodeURIComponent(id)}/approve`, { body: { classification }, method: 'POST' })).accountabilityRequest;
-export const denyAccountabilityRequest = async (id: string) => (await apiRequest<{ accountabilityRequest: AccountabilityRequest }>(`/v1/accountability/requests/${encodeURIComponent(id)}/deny`, { body: {}, method: 'POST' })).accountabilityRequest;
-export const cancelAccountabilityRequest = async (id: string) => (await apiRequest<{ accountabilityRequest: AccountabilityRequest }>(`/v1/accountability/requests/${encodeURIComponent(id)}/cancel`, { body: {}, method: 'POST' })).accountabilityRequest;
+export const getAccountabilityRequests = async () => (await apiRequest<{ accountabilityRequests: AccountabilityRequest[] }>('/v1/accountability/requests')).accountabilityRequests.map(normalizeAccountabilityRequest);
+export const getAccountabilityRequest = async (id: string) => normalizeAccountabilityRequest((await apiRequest<{ accountabilityRequest: AccountabilityRequest }>(`/v1/accountability/requests/${encodeURIComponent(id)}`)).accountabilityRequest);
+export const approveAccountabilityRequest = async (id: string, classification: 'EMERGENCY' | 'CONSCIOUS_BREAK') => normalizeAccountabilityRequest((await apiRequest<{ accountabilityRequest: AccountabilityRequest }>(`/v1/accountability/requests/${encodeURIComponent(id)}/approve`, { body: { classification }, method: 'POST' })).accountabilityRequest);
+export const denyAccountabilityRequest = async (id: string) => normalizeAccountabilityRequest((await apiRequest<{ accountabilityRequest: AccountabilityRequest }>(`/v1/accountability/requests/${encodeURIComponent(id)}/deny`, { body: {}, method: 'POST' })).accountabilityRequest);
+export const cancelAccountabilityRequest = async (id: string) => normalizeAccountabilityRequest((await apiRequest<{ accountabilityRequest: AccountabilityRequest }>(`/v1/accountability/requests/${encodeURIComponent(id)}/cancel`, { body: {}, method: 'POST' })).accountabilityRequest);
 
 export async function loadLocalPactDraft(): Promise<LocalPactDraft | null> {
   const value = await SecureStore.getItemAsync(DRAFT_KEY);
