@@ -8,10 +8,13 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { ErrorBanner } from '@/components/ErrorBanner';
 import { GoogleButton } from '@/components/GoogleButton';
 import { PrimaryButton } from '@/components/PrimaryButton';
+import { ShakeOnError, rise } from '@/motion';
 import { colors, fonts } from '@/theme';
 
 type Field = {
@@ -80,14 +83,14 @@ export function AuthFormScreen({
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <Text style={styles.title}>{title}</Text>
+          <Animated.Text entering={FadeInDown.duration(450)} style={styles.title}>{title}</Animated.Text>
 
           <View style={styles.fields}>
-            {fields.map((field) => {
+            {fields.map((field, index) => {
               const error = touched.has(field.name) ? errors[field.name] : undefined;
 
               return (
-                <View key={field.name} style={styles.field}>
+                <Animated.View entering={rise(index, 120)} key={field.name} style={styles.field}><ShakeOnError error={error}>
                   <TextInput
                     autoCapitalize={field.autoCapitalize ?? 'none'}
                     autoComplete={field.autoComplete}
@@ -101,8 +104,8 @@ export function AuthFormScreen({
                     style={[styles.input, error && styles.inputError]}
                     value={values[field.name] ?? ''}
                   />
-                  {error ? <Text style={styles.error}>{error}</Text> : null}
-                </View>
+                  </ShakeOnError>{error ? <Animated.Text entering={FadeInDown.duration(220)} style={styles.error}>{error}</Animated.Text> : null}
+                </Animated.View>
               );
             })}
           </View>
@@ -112,11 +115,11 @@ export function AuthFormScreen({
             label={submitLabel}
             onPress={handleSubmit}
           />
-          {formError ? <Text style={styles.formError}>{formError}</Text> : null}
+          {formError ? <ErrorBanner message={formError} /> : null}
           <View style={styles.footer}>{footer}</View>
           <Text style={styles.or}>or</Text>
           <GoogleButton disabled={googleLoading} onPress={onGooglePress} />
-          {googleError ? <Text style={styles.googleError}>{googleError}</Text> : null}
+          {googleError ? <ErrorBanner message={googleError} /> : null}
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -178,22 +181,6 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     marginLeft: 20,
     marginTop: 5,
-  },
-  formError: {
-    color: colors.error,
-    fontFamily: fonts.medium,
-    fontSize: 13,
-    lineHeight: 18,
-    marginTop: 10,
-    textAlign: 'center',
-  },
-  googleError: {
-    color: colors.error,
-    fontFamily: fonts.medium,
-    fontSize: 13,
-    lineHeight: 18,
-    marginTop: 10,
-    textAlign: 'center',
   },
   footer: {
     marginTop: 14,
