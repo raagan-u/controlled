@@ -489,9 +489,9 @@ func insertProvisioning(ctx context.Context, transaction pgx.Tx, provisioning Pr
 	}
 
 	if _, err := transaction.Exec(ctx, `
-		INSERT INTO users (id, email, display_name, created_at)
-		VALUES ($1, $2, $3, $4)
-	`, userID, provisioning.user.Email(), provisioning.user.DisplayName(), provisioning.user.CreatedAt()); err != nil {
+		INSERT INTO users (id, email, display_name, name_pending, created_at)
+		VALUES ($1, $2, $3, $4, $5)
+	`, userID, provisioning.user.Email(), provisioning.user.DisplayName(), provisioning.user.NamePending(), provisioning.user.CreatedAt()); err != nil {
 		return mapProvisioningError(err)
 	}
 	if _, err := transaction.Exec(ctx, `
@@ -530,6 +530,7 @@ func loadProvisioning(
 	var displayName string
 	var ctrldID string
 	var userCreatedAt pgtype.Timestamptz
+	var namePending bool
 	var walletID string
 	var currency string
 	var walletCreatedAt pgtype.Timestamptz
@@ -539,6 +540,7 @@ func loadProvisioning(
 		       users.display_name,
 		       users.ctrld_id,
 		       users.created_at,
+		       users.name_pending,
 		       wallets.id::text,
 		       wallets.currency,
 		       wallets.created_at
@@ -551,6 +553,7 @@ func loadProvisioning(
 		&displayName,
 		&ctrldID,
 		&userCreatedAt,
+		&namePending,
 		&walletID,
 		&currency,
 		&walletCreatedAt,
@@ -570,6 +573,7 @@ func loadProvisioning(
 	if err != nil {
 		return Provisioning{}, err
 	}
+	user = user.WithNamePending(namePending)
 
 	rows, err := query.Query(ctx, `
 		SELECT id::text, kind, normal_side, currency

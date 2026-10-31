@@ -24,6 +24,8 @@ type User struct {
 	displayName string
 	ctrldID     string
 	createdAt   time.Time
+	// namePending marks a placeholder display name the user has not yet replaced.
+	namePending bool
 }
 
 func NewUser(id UserID, email, displayName string, createdAt time.Time) (User, error) {
@@ -55,6 +57,12 @@ func (u User) Email() string        { return u.email }
 func (u User) DisplayName() string  { return u.displayName }
 func (u User) CtrldID() string      { return u.ctrldID }
 func (u User) CreatedAt() time.Time { return u.createdAt }
+func (u User) NamePending() bool    { return u.namePending }
+
+func (u User) WithNamePending(value bool) User {
+	u.namePending = value
+	return u
+}
 
 func (u User) WithCtrldID(value string) (User, error) {
 	value = strings.ToLower(strings.TrimSpace(value))

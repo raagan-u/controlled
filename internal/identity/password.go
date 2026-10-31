@@ -24,7 +24,7 @@ type PasswordCredentialStore interface {
 }
 
 type PasswordUserProvisioner interface {
-	ProvisionPasswordUser(context.Context, string, string) (User, error)
+	ProvisionPasswordUser(context.Context, string, string, bool) (User, error)
 }
 
 type PasswordHasher interface {
@@ -80,9 +80,12 @@ func (s *PasswordAuthenticationService) Register(
 	if !validPassword(password) {
 		return StartedSession{}, ErrInvalidPassword
 	}
+	// Sign-up no longer asks for a name: without one the user starts with a placeholder
+	// (the part of the email before the @) and picks their real name on first launch.
 	displayName = strings.TrimSpace(displayName)
-	if displayName == "" {
-		return StartedSession{}, ErrInvalidDisplayName
+	namePending := displayName == ""
+	if namePending {
+		displayName = strings.SplitN(email, "@", 2)[0]
 	}
 	if _, err := s.store.UserByEmail(ctx, email); err == nil {
 		return StartedSession{}, ErrEmailAlreadyRegistered
@@ -94,7 +97,7 @@ func (s *PasswordAuthenticationService) Register(
 	if err != nil {
 		return StartedSession{}, err
 	}
-	user, err := s.provisioner.ProvisionPasswordUser(ctx, email, displayName)
+	user, err := s.provisioner.ProvisionPasswordUser(ctx, email, displayName, namePending)
 	if err != nil {
 		return StartedSession{}, err
 	}

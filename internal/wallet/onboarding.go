@@ -20,6 +20,8 @@ type Clock interface {
 type OnboardingRequest struct {
 	Email       string
 	DisplayName string
+	// NamePending marks DisplayName as a placeholder the user will replace after sign-up.
+	NamePending bool
 	Currency    string
 }
 
@@ -107,6 +109,7 @@ func (s *OnboardingService) Onboard(
 	if err != nil {
 		return OnboardingResult{}, err
 	}
+	user = user.WithNamePending(request.NamePending)
 
 	accountIDs, err := generateIDs(s.ids, 3)
 	if err != nil {
