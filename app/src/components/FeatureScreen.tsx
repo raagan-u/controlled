@@ -4,6 +4,7 @@ import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, fonts, radii } from '@/theme';
 import { AuthenticatedMenu } from './AuthenticatedMenu';
+import { HeroShapes } from './HeroShapes';
 
 type Props = PropsWithChildren<{
   footer?: ReactNode;
@@ -20,6 +21,7 @@ export function FeatureScreen({ children, footer, onBack, scroll = true, title }
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.root}>
       <View style={[styles.header, { paddingTop: Math.max(insets.top + 8, 24) }]}>
+        <HeroShapes />
         <Pressable accessibilityLabel="Go back" onPress={onBack ?? (() => router.back())} style={styles.icon}><Text style={styles.back}>‹</Text></Pressable>
         <Text numberOfLines={1} style={styles.title}>{title}</Text>
         <AuthenticatedMenu style={styles.icon} />
@@ -34,7 +36,7 @@ export function FeatureScreen({ children, footer, onBack, scroll = true, title }
 
 const styles = StyleSheet.create({
   root: { backgroundColor: colors.blue, flex: 1 },
-  header: { alignItems: 'center', flexDirection: 'row', minHeight: 150, paddingBottom: 42, paddingHorizontal: 16 },
+  header: { alignItems: 'center', flexDirection: 'row', minHeight: 150, overflow: 'hidden', paddingBottom: 42, paddingHorizontal: 16 },
   icon: { alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.14)', borderRadius: radii.md, height: 44, justifyContent: 'center', width: 44 },
   back: { color: colors.white, fontFamily: fonts.medium, fontSize: 35, lineHeight: 35, marginTop: -3 },
   title: { color: colors.white, flex: 1, fontFamily: fonts.bold, fontSize: 25, letterSpacing: -0.5, marginHorizontal: 10 },

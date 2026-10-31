@@ -1,5 +1,5 @@
 export const colors = {
-  blue: '#1754EB', navy: '#182235', blueTint: '#DCE6FD', blueSoft: '#9DB8F7', onBlueMuted: '#C9D8FD',
+  blue: '#1754EB', blueDeep: '#0F3A9C', navy: '#182235', blueTint: '#DCE6FD', blueSoft: '#9DB8F7', onBlueMuted: '#C9D8FD',
   white: '#FFFFFF', textMuted: '#5A6478', surface: '#F3F6FB', surfaceAlt: '#F7F8FB', key: '#EEF1F5',
   keyText: '#4A5263', segActive: '#F1F3F7', softButton: '#EEF2F7', divider: '#EEF2F7', grabber: '#D5DCE8',
   dotted: '#9AA3B5', scrim: 'rgba(24,34,53,0.5)', navyText: '#FFFFFF', navyMuted: '#AEB8CC', navyMuted2: '#C9D2E3', navyDanger: '#FF9AA2', green: '#36C38F', greenText: '#0E7A55',

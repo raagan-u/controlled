@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeIn, FadeInDown, interpolate, useAnimatedStyle, useDerivedValue, useSharedValue, withSpring } from 'react-native-reanimated';
 import { PressableScale, rise, useCountUp } from '@/motion';
 import { ActivityRow } from '@/components/ActivityRow';
+import { HeroShapes } from '@/components/HeroShapes';
 import { AuthenticatedMenu } from '@/components/AuthenticatedMenu';
 import { formatUSD } from '@/api/wallet';
 import { transactionToActivity, visibleTransactions } from '@/data/activity';
@@ -100,6 +101,7 @@ export default function HomeScreen() {
   return <View style={styles.root}>
     <View style={[styles.hero, { paddingTop: Math.max(insets.top + 10, 28) }]}>
       <View style={styles.heroTop}><View style={styles.menuButton} /><Text style={styles.brand}>ctrld</Text><View style={styles.menuButton}><AuthenticatedMenu initiallyOpen={openMenu === '1'} /></View></View>
+      <HeroShapes />
       <Animated.View entering={FadeInDown.delay(100).duration(500)} style={styles.balanceWrap}><Animated.View style={[styles.balanceInner, heroFade]}><Text style={styles.available}>AVAILABLE</Text><Text adjustsFontSizeToFit numberOfLines={1} style={styles.balance}>${balance}</Text></Animated.View></Animated.View>
     </View>
     <View style={styles.content}>
