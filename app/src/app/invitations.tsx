@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
-import { router, type Href, useFocusEffect } from 'expo-router';
+import { useFocusEffect } from 'expo-router';
 import { FeatureScreen } from '@/components/FeatureScreen';
 import { acceptInvitation, declineInvitation, getInvitations } from '@/api/pacts';
 import { apiErrorMessage, getCurrentUser, getRecipients } from '@/api/wallet';
@@ -12,7 +12,7 @@ export default function InvitationsScreen() {
   const load = useCallback(async () => { try { const [invites, recipients, me] = await Promise.all([getInvitations(), getRecipients(), getCurrentUser()]); setItems(invites); setUsers(recipients.users); setCurrent(me.user); } catch (value) { setError(apiErrorMessage(value)); } finally { setLoading(false); } }, []);
   useFocusEffect(useCallback(() => { void load(); }, [load])); const people = useMemo(() => new Map([...(current ? [current] : []), ...users].map((user) => [user.id, user])), [current, users]); const incoming = items.filter((item) => item.partnerId === current?.id); const sent = items.filter((item) => item.ownerId === current?.id);
   const respond = async (id: string, accept: boolean) => { setBusy(id); setError(''); try { await (accept ? acceptInvitation(id) : declineInvitation(id)); await load(); } catch (value) { setError(apiErrorMessage(value)); } finally { setBusy(''); } };
-  return <FeatureScreen menu onMenu={() => router.replace('/home?openMenu=1' as Href)} title="Invitations">
+  return <FeatureScreen title="Invitations">
     {loading ? <ActivityIndicator color={colors.blue} style={styles.loader} /> : null}{error ? <Text style={styles.error}>{error}</Text> : null}
     <Section title="INCOMING —">{incoming.map((invite) => { const owner = people.get(invite.ownerId); return <View key={invite.id} style={styles.card}><View style={styles.avatar}><Text style={styles.initial}>{owner?.displayName.charAt(0) ?? 'C'}</Text></View><View style={styles.copy}><Text style={styles.title}>{owner?.displayName ?? owner?.ctrldId ?? 'Controlled user'} invited you to be an accountability partner.</Text><Text style={styles.meta}>{owner?.ctrldId} · {new Date(invite.createdAt).toLocaleDateString()}</Text>{invite.status === 'PENDING' ? <View style={styles.actions}><Pressable disabled={busy === invite.id} onPress={() => void respond(invite.id, true)} style={styles.accept}><Text style={styles.acceptText}>Accept</Text></Pressable><Pressable disabled={busy === invite.id} onPress={() => void respond(invite.id, false)} style={styles.decline}><Text style={styles.declineText}>Decline</Text></Pressable></View> : <Status status={invite.status} />}</View></View>; })}</Section>
     <Section title="SENT —">{sent.map((invite) => { const partner = people.get(invite.partnerId); return <View key={invite.id} style={styles.row}><View style={[styles.dot, { backgroundColor: invite.status === 'ACCEPTED' ? colors.green : invite.status === 'DECLINED' ? colors.red : colors.blue }]} /><View style={styles.copy}><Text style={styles.rowName}>{partner?.displayName ?? partner?.ctrldId ?? 'Partner'}</Text><Text style={styles.meta}>{partner?.ctrldId} · {new Date(invite.createdAt).toLocaleDateString()}</Text></View><Status status={invite.status} /></View>; })}</Section>

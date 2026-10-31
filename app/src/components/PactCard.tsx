@@ -14,6 +14,7 @@ const toneColors: Record<Tone, { accent: string; background: string }> = {
 };
 
 export function pactTone(pact: Pact): Tone {
+  if (pact.progressAvailable === false) return 'neutral';
   if (pact.status === 'CANCELLED' || pact.status === 'DRAFT' || pact.status === 'AWAITING_STAKE') return 'neutral';
   if (pact.outcome === 'BROKEN' || pact.progress.overageMinor > 0) return 'red';
   if (pact.status === 'RESOLVED' || pact.progress.usedMinor / pact.terms.spendingLimit.amountMinor < 0.5) return 'green';
@@ -25,13 +26,13 @@ export function PactCard({ compact, onPress, pact }: { compact?: boolean; onPres
   const [now] = useState(Date.now);
   const tone = toneColors[pactTone(pact)];
   const limit = pact.terms.spendingLimit.amountMinor;
+  const progressAvailable = pact.progressAvailable !== false;
   const progress = Math.min(1, limit ? pact.progress.usedMinor / limit : 0);
   const days = Math.max(0, Math.ceil((new Date(pact.terms.endsAt).getTime() - now) / 86_400_000));
   return (
     <Pressable disabled={!onPress} onPress={onPress} style={[styles.card, compact && styles.compact, { backgroundColor: tone.background }]}>
       <View style={styles.top}><Text numberOfLines={2} style={styles.goal}>{pact.terms.goal}</Text><View style={[styles.badge, { backgroundColor: colors.white }]}><Text style={[styles.badgeText, { color: tone.accent }]}>{pact.status.replaceAll('_', ' ')}</Text></View></View>
-      <View style={styles.amountRow}><Text style={styles.amount}>${formatUSD(pact.progress.usedMinor)}</Text><Text style={styles.of}> spent of ${formatUSD(limit)}</Text><Text style={styles.left}>${formatUSD(pact.progress.remainingMinor)} left</Text></View>
-      <View style={styles.track}><View style={[styles.fill, { backgroundColor: tone.accent, width: `${Math.max(3, progress * 100)}%` }]} /></View>
+      {progressAvailable ? <><View style={styles.amountRow}><Text style={styles.amount}>${formatUSD(pact.progress.usedMinor)}</Text><Text style={styles.of}> spent of ${formatUSD(limit)}</Text><Text style={styles.left}>${formatUSD(pact.progress.remainingMinor)} left</Text></View><View style={styles.track}><View style={[styles.fill, { backgroundColor: tone.accent, width: `${Math.max(3, progress * 100)}%` }]} /></View></> : <View style={styles.unavailable}><Text style={styles.unavailableTitle}>Progress unavailable</Text><Text style={styles.of}>Reconnect to the updated API to refresh spending.</Text></View>}
       <Text style={styles.meta}>{pact.status === 'RESOLVED' ? 'Completed' : `${days} day${days === 1 ? '' : 's'} left`} · {pact.emergencyCount} emergenc{pact.emergencyCount === 1 ? 'y' : 'ies'}</Text>
     </Pressable>
   );
@@ -50,4 +51,5 @@ const styles = StyleSheet.create({
   track: { backgroundColor: 'rgba(90,100,120,0.16)', borderRadius: 4, height: 6, marginTop: 9, overflow: 'hidden' },
   fill: { borderRadius: 4, height: 6 },
   meta: { color: colors.textMuted, fontFamily: fonts.medium, fontSize: 11, marginTop: 9 },
+  unavailable: { marginTop: 12 }, unavailableTitle: { color: colors.navy, fontFamily: fonts.bold, fontSize: 13, marginBottom: 3 },
 });

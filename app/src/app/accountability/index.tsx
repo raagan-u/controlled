@@ -15,7 +15,7 @@ export default function AccountabilityScreen() {
   const needs = requests.filter((item) => item.status === 'ASSIGNED' && item.assignedPartnerId === current?.id);
   const pending = requests.filter((item) => item.status === 'ASSIGNED' && item.ownerId === current?.id);
   const complete = requests.filter((item) => item.status !== 'ASSIGNED');
-  return <FeatureScreen menu onMenu={() => router.replace('/home?openMenu=1' as Href)} title="Accountability">
+  return <FeatureScreen title="Accountability">
     {loading ? <ActivityIndicator color={colors.blue} style={styles.loader} /> : null}{error ? <Pressable onPress={() => void load()}><Text style={styles.error}>{error} Tap to retry.</Text></Pressable> : null}
     {!loading && !requests.length ? <View style={styles.empty}><Text style={styles.emptyIcon}>◇</Text><Text style={styles.emptyTitle}>Nothing needs attention</Text><Text style={styles.muted}>Approval requests involving you will appear here.</Text></View> : null}
     <Section items={needs} label="NEEDS YOUR DECISION —" people={people} />
