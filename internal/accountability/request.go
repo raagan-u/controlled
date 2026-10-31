@@ -17,10 +17,22 @@ const (
 
 type RequestPact struct {
 	PactID        string
+	Goal          string
+	Intent        string
 	LimitMinor    int64
 	UsedMinor     int64
 	ProposedMinor int64
 	OverageMinor  int64
+}
+
+type RequestReviewer struct {
+	PartnerID   identity.UserID
+	Position    int
+	Status      string
+	Decision    string
+	AssignedAt  time.Time
+	ExpiresAt   time.Time
+	RespondedAt time.Time
 }
 
 type Request struct {
@@ -37,6 +49,7 @@ type Request struct {
 	Classification      string
 	AssignedPartnerID   identity.UserID
 	Pacts               []RequestPact
+	Reviewers           []RequestReviewer
 	CreatedAt           time.Time
 	ExpiresAt           time.Time
 	ResolvedAt          time.Time
