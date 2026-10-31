@@ -23,7 +23,10 @@ export default function RootLayout() {
 
   return (
     <>
-      <Stack screenOptions={{ animation: 'fade', headerShown: false }}>
+      <Stack screenOptions={{ animation: 'slide_from_right', animationDuration: 320, gestureEnabled: true, headerShown: false }}>
+        <Stack.Screen name="index" options={{ animation: 'fade' }} />
+        <Stack.Screen name="home" options={{ animation: 'fade', animationDuration: 380 }} />
+        <Stack.Screen name="welcome" options={{ animation: 'fade' }} />
         <Stack.Screen name="activity" options={{ animation: 'none', contentStyle: { backgroundColor: 'transparent' }, gestureEnabled: false, presentation: 'transparentModal' }} />
       </Stack>
       <StatusBar style="dark" />
