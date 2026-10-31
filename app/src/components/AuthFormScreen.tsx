@@ -117,7 +117,7 @@ export function AuthFormScreen({
           />
           {formError ? <ErrorBanner message={formError} /> : null}
           <View style={styles.footer}>{footer}</View>
-          <Text style={styles.or}>or</Text>
+          <View style={styles.orRow}><View style={styles.orLine} /><Text style={styles.or}>or</Text><View style={styles.orLine} /></View>
           <GoogleButton disabled={googleLoading} onPress={onGooglePress} />
           {googleError ? <ErrorBanner message={googleError} /> : null}
         </ScrollView>
@@ -185,12 +185,23 @@ const styles = StyleSheet.create({
   footer: {
     marginTop: 14,
   },
+  orRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 14,
+    marginBottom: 28,
+    marginTop: 10,
+    width: '100%',
+  },
+  orLine: {
+    backgroundColor: colors.grabber,
+    flex: 1,
+    height: 1.5,
+  },
   or: {
     color: colors.muted,
     fontFamily: fonts.regular,
     fontSize: 17,
     lineHeight: 24,
-    marginBottom: 28,
-    marginTop: 10,
   },
 });
