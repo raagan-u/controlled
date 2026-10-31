@@ -423,7 +423,11 @@ func (s *PostgresProvisioningStore) Create(
 	if err := transaction.Commit(ctx); err != nil {
 		return Provisioning{}, false, mapProvisioningError(err)
 	}
-	return provisioning, false, nil
+	stored, err = loadProvisioning(ctx, s.pool, provisioning.user.ID())
+	if err != nil {
+		return Provisioning{}, false, err
+	}
+	return stored, false, nil
 }
 
 func (s *PostgresProvisioningStore) ByUser(
