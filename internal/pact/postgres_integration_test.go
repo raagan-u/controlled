@@ -148,6 +148,17 @@ func TestPostgresPactStakeLifecycle(t *testing.T) {
 	); err != nil {
 		t.Fatalf("transfer within pact: %v", err)
 	}
+	progress, err := pactService.PactProgress(ctx, active.OwnerID(), active.ID())
+	if err != nil {
+		t.Fatalf("read pact progress: %v", err)
+	}
+	if progress.UsedMinor != 3_000 || progress.RemainingMinor != 2_000 || len(progress.Usage) != 1 {
+		t.Fatalf("pact progress = %+v", progress)
+	}
+	if progress.Usage[0].CounterpartyCtrldID != partner.Provisioning.User().CtrldID() ||
+		progress.Usage[0].ReversedAt != (time.Time{}) {
+		t.Fatalf("pact usage = %+v", progress.Usage[0])
+	}
 	if _, err := operations.Transfer(
 		ctx, "pact-blocked-transfer:"+runID, owner.Provisioning.User().ID(),
 		partner.Provisioning.User().Email(), 2_001, "USD",

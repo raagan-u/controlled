@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // UsageItem is one wallet debit that contributes to a pact's spending total.
@@ -90,12 +92,16 @@ func (r *PostgresRepository) Progress(ctx context.Context, owner UserID, id Pact
 	defer rows.Close()
 	for rows.Next() {
 		var item UsageItem
+		var reversedAt pgtype.Timestamptz
 		if err := rows.Scan(
 			&item.OperationType, &item.OperationID, &item.AmountMinor, &item.Currency,
-			&item.Status, &item.CountedAt, &item.ReversedAt,
+			&item.Status, &item.CountedAt, &reversedAt,
 			&item.CounterpartyName, &item.CounterpartyCtrldID, &item.Destination,
 		); err != nil {
 			return Progress{}, fmt.Errorf("scan pact usage: %w", err)
+		}
+		if reversedAt.Valid {
+			item.ReversedAt = reversedAt.Time.UTC()
 		}
 		progress.Usage = append(progress.Usage, item)
 	}
