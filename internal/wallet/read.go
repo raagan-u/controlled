@@ -12,6 +12,7 @@ import (
 type BalanceSet struct {
 	Available         money.Money
 	Pending           money.Money
+	Staked            money.Money
 	CommitmentReserve money.Money
 }
 
@@ -24,6 +25,7 @@ func NewSnapshot(wallet Wallet, balances BalanceSet) (Snapshot, error) {
 	if wallet.ID() == "" ||
 		balances.Available.Currency() != wallet.Currency() ||
 		balances.Pending.Currency() != wallet.Currency() ||
+		balances.Staked.Currency() != wallet.Currency() ||
 		balances.CommitmentReserve.Currency() != wallet.Currency() {
 		return Snapshot{}, ErrInvalidWallet
 	}
@@ -36,6 +38,7 @@ func (s Snapshot) Balances() BalanceSet { return s.balances }
 type Reader interface {
 	WalletByUser(context.Context, identity.UserID) (Snapshot, error)
 	TransactionsByUser(context.Context, identity.UserID, int) ([]Transaction, error)
+	TransactionByUser(context.Context, identity.UserID, ledger.JournalID) (Transaction, error)
 }
 
 type TransactionEntry struct {
@@ -53,4 +56,19 @@ type Transaction struct {
 	PostedAt    time.Time
 	Reversed    bool
 	Entries     []TransactionEntry
+	Transfer    *TransferDetails
+}
+
+type TransactionParty struct {
+	ID          identity.UserID
+	CtrldID     string
+	Email       string
+	DisplayName string
+}
+
+type TransferDetails struct {
+	Sender           TransactionParty
+	Recipient        TransactionParty
+	Remark           string
+	PaymentRequestID string
 }

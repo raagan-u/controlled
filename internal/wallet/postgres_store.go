@@ -43,6 +43,7 @@ func (s *PostgresProvisioningStore) WalletByUser(
 	var reserveID string
 	var availableMinor int64
 	var pendingMinor int64
+	var stakedMinor int64
 	var reserveMinor int64
 	err = s.pool.QueryRow(ctx, `
 		SELECT wallet.id::text,
@@ -103,9 +104,21 @@ func (s *PostgresProvisioningStore) WalletByUser(
 	if err != nil {
 		return Snapshot{}, err
 	}
+	if err := s.pool.QueryRow(ctx, `
+		SELECT COALESCE(sum(amount_minor), 0)::bigint
+		  FROM stake_allocations
+		 WHERE owner_id = $1 AND status = 'ACTIVE'
+	`, parsedUserID).Scan(&stakedMinor); err != nil {
+		return Snapshot{}, fmt.Errorf("read staked balance: %w", err)
+	}
+	staked, err := money.New(stakedMinor, currency)
+	if err != nil {
+		return Snapshot{}, err
+	}
 	return NewSnapshot(wallet, BalanceSet{
 		Available:         available,
 		Pending:           pending,
+		Staked:            staked,
 		CommitmentReserve: reserve,
 	})
 }
@@ -229,7 +242,126 @@ func (s *PostgresProvisioningStore) TransactionsByUser(
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate wallet transactions: %w", err)
 	}
+	rows.Close()
+	for index := range transactions {
+		if transactions[index].Reference.Type != "INTERNAL_TRANSFER" {
+			continue
+		}
+		transfer, err := s.transferDetails(ctx, transactions[index].Reference.ID)
+		if err != nil {
+			return nil, err
+		}
+		transactions[index].Transfer = &transfer
+	}
 	return transactions, nil
+}
+
+func (s *PostgresProvisioningStore) TransactionByUser(
+	ctx context.Context,
+	userID identity.UserID,
+	transactionID ledger.JournalID,
+) (Transaction, error) {
+	if s == nil || s.pool == nil {
+		return Transaction{}, ErrStoreUnavailable
+	}
+	parsedUserID, err := walletUUID(string(userID))
+	if err != nil {
+		return Transaction{}, err
+	}
+	parsedTransactionID, err := walletUUID(string(transactionID))
+	if err != nil {
+		return Transaction{}, ErrTransactionNotFound
+	}
+	rows, err := s.pool.Query(ctx, `
+		WITH wallet_accounts AS (
+			SELECT account.id, account.kind
+			  FROM wallets AS wallet
+			  JOIN ledger_accounts AS account ON account.wallet_id = wallet.id
+			 WHERE wallet.owner_id = $1
+		)
+		SELECT transaction.id::text, transaction.reference_type, transaction.reference_id,
+		       transaction.description, transaction.occurred_at, transaction.posted_at,
+		       EXISTS (SELECT 1 FROM ledger_transactions AS reversal WHERE reversal.reverses_transaction_id = transaction.id),
+		       entry.account_id::text, wallet_accounts.kind, entry.side, entry.amount_minor, entry.currency
+		  FROM ledger_transactions AS transaction
+		  JOIN ledger_entries AS entry ON entry.transaction_id = transaction.id
+		  JOIN wallet_accounts ON wallet_accounts.id = entry.account_id
+		 WHERE transaction.id = $2
+		 ORDER BY entry.line_number
+	`, parsedUserID, parsedTransactionID)
+	if err != nil {
+		return Transaction{}, fmt.Errorf("read wallet transaction: %w", err)
+	}
+	defer rows.Close()
+	var result Transaction
+	for rows.Next() {
+		var id, accountID, currency string
+		var reference ledger.Reference
+		var occurredAt, postedAt pgtype.Timestamptz
+		var accountKind ledger.AccountKind
+		var side ledger.Side
+		var amountMinor int64
+		if err := rows.Scan(
+			&id, &reference.Type, &reference.ID, &result.Description, &occurredAt, &postedAt,
+			&result.Reversed, &accountID, &accountKind, &side, &amountMinor, &currency,
+		); err != nil {
+			return Transaction{}, fmt.Errorf("scan wallet transaction: %w", err)
+		}
+		if result.ID == "" {
+			result.ID = ledger.JournalID(id)
+			result.Reference = reference
+			result.OccurredAt = occurredAt.Time.UTC()
+			result.PostedAt = postedAt.Time.UTC()
+		}
+		amount, err := money.New(amountMinor, currency)
+		if err != nil {
+			return Transaction{}, err
+		}
+		result.Entries = append(result.Entries, TransactionEntry{
+			AccountID: ledger.AccountID(accountID), AccountKind: accountKind, Side: side, Amount: amount,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return Transaction{}, fmt.Errorf("iterate wallet transaction: %w", err)
+	}
+	if result.ID == "" {
+		return Transaction{}, ErrTransactionNotFound
+	}
+	if result.Reference.Type == "INTERNAL_TRANSFER" {
+		transfer, err := s.transferDetails(ctx, result.Reference.ID)
+		if err != nil {
+			return Transaction{}, err
+		}
+		result.Transfer = &transfer
+	}
+	return result, nil
+}
+
+func (s *PostgresProvisioningStore) transferDetails(ctx context.Context, transferID string) (TransferDetails, error) {
+	var result TransferDetails
+	err := s.pool.QueryRow(ctx, `
+		SELECT sender.id::text, sender.ctrld_id, sender.email, sender.display_name,
+		       recipient.id::text, recipient.ctrld_id, recipient.email, recipient.display_name,
+		       COALESCE(request.note, ''), COALESCE(request.id::text, '')
+		  FROM internal_transfers AS transfer
+		  JOIN wallets AS sender_wallet ON sender_wallet.id = transfer.sender_wallet_id
+		  JOIN users AS sender ON sender.id = sender_wallet.owner_id
+		  JOIN wallets AS recipient_wallet ON recipient_wallet.id = transfer.recipient_wallet_id
+		  JOIN users AS recipient ON recipient.id = recipient_wallet.owner_id
+		  LEFT JOIN payment_requests AS request ON request.transfer_id = transfer.id
+		 WHERE transfer.id = $1::text::uuid
+	`, transferID).Scan(
+		&result.Sender.ID, &result.Sender.CtrldID, &result.Sender.Email, &result.Sender.DisplayName,
+		&result.Recipient.ID, &result.Recipient.CtrldID, &result.Recipient.Email, &result.Recipient.DisplayName,
+		&result.Remark, &result.PaymentRequestID,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return TransferDetails{}, ErrTransactionNotFound
+	}
+	if err != nil {
+		return TransferDetails{}, fmt.Errorf("read transfer details: %w", err)
+	}
+	return result, nil
 }
 
 func NewPostgresProvisioningStore(pool *pgxpool.Pool) *PostgresProvisioningStore {
@@ -392,6 +524,7 @@ func loadProvisioning(
 	var storedUserID string
 	var email string
 	var displayName string
+	var ctrldID string
 	var userCreatedAt pgtype.Timestamptz
 	var walletID string
 	var currency string
@@ -400,6 +533,7 @@ func loadProvisioning(
 		SELECT users.id::text,
 		       users.email,
 		       users.display_name,
+		       users.ctrld_id,
 		       users.created_at,
 		       wallets.id::text,
 		       wallets.currency,
@@ -411,6 +545,7 @@ func loadProvisioning(
 		&storedUserID,
 		&email,
 		&displayName,
+		&ctrldID,
 		&userCreatedAt,
 		&walletID,
 		&currency,
@@ -424,6 +559,10 @@ func loadProvisioning(
 	}
 
 	user, err := identity.NewUser(identity.UserID(storedUserID), email, displayName, userCreatedAt.Time)
+	if err != nil {
+		return Provisioning{}, err
+	}
+	user, err = user.WithCtrldID(ctrldID)
 	if err != nil {
 		return Provisioning{}, err
 	}

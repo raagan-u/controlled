@@ -68,6 +68,7 @@ func (s *PasswordAuthenticationService) Register(
 	ctx context.Context,
 	email string,
 	password string,
+	displayName string,
 ) (StartedSession, error) {
 	if !s.available() {
 		return StartedSession{}, ErrPasswordAuthentication
@@ -79,6 +80,10 @@ func (s *PasswordAuthenticationService) Register(
 	if !validPassword(password) {
 		return StartedSession{}, ErrInvalidPassword
 	}
+	displayName = strings.TrimSpace(displayName)
+	if displayName == "" {
+		return StartedSession{}, ErrInvalidDisplayName
+	}
 	if _, err := s.store.UserByEmail(ctx, email); err == nil {
 		return StartedSession{}, ErrEmailAlreadyRegistered
 	} else if !errors.Is(err, ErrInvalidCredentials) {
@@ -89,7 +94,6 @@ func (s *PasswordAuthenticationService) Register(
 	if err != nil {
 		return StartedSession{}, err
 	}
-	displayName := strings.SplitN(email, "@", 2)[0]
 	user, err := s.provisioner.ProvisionPasswordUser(ctx, email, displayName)
 	if err != nil {
 		return StartedSession{}, err

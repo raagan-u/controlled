@@ -109,3 +109,14 @@ func (t Terms) AccountabilityCircleID() CircleID {
 func (t Terms) BreakConsequence() BreakConsequence {
 	return t.breakConsequence
 }
+
+func (t Terms) Equal(other Terms) bool {
+	return t.goal == other.goal &&
+		t.intent == other.intent &&
+		t.spendingLimit.Equal(other.spendingLimit) &&
+		t.stake.Equal(other.stake) &&
+		t.startsAt.Equal(other.startsAt) &&
+		t.endsAt.Equal(other.endsAt) &&
+		t.accountabilityCircle == other.accountabilityCircle &&
+		t.breakConsequence == other.breakConsequence
+}

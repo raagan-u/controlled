@@ -13,11 +13,11 @@ Users can send, receive, and spend normally. When they want more control, they c
 ## How it works
 
 1. Fund the Controlled wallet through PayPal.
-2. State a financial goal and create a daily or weekly spending pact.
+2. State a financial goal and create a pact with one total limit for its chosen period.
 3. Back the budget with an additional stake held separately from spendable funds.
 4. Add n ( n>=1) trusted accountability partners.
 5. Spend normally while remaining within every active pact.
-6. If a transaction exceeds a limit, request approval from the next partner in round-robin order.
+6. If a transaction exceeds a limit, request approval through the pact's ordered partner circle.
 
 A denied request leaves the transaction blocked. An approved emergency allows the expense and preserves the active stake. An approved conscious break allows the expense but moves the stake into the user's **Commitment Reserve**.
 
@@ -25,7 +25,7 @@ A denied request leaves the transaction blocked. An approved emergency allows th
 
 Before activating a pact, the user must explicitly select what happens to the stake after a conscious break. The initial MVP enables one option:
 
-- **Commitment Reserve:** the stake remains the user's money but becomes unavailable to spend, send, or withdraw. It can be unlocked by successfully completing a recovery pact.
+- **Commitment Reserve:** the stake remains the user's money but becomes unavailable to spend, send, or withdraw. The MVP exposes a future recovery-pact entry point but does not yet define or permit release.
 
 The onboarding interface will also show options such as a neutral fund, goal vault, and split consequence as disabled **Coming soon** choices. Controlled does not receive forfeited or reserved stakes.
 
@@ -49,8 +49,8 @@ The MVP demonstrates:
 - A wallet ledger funded through PayPal Sandbox
 - Free sending and receiving when no pact is active
 - Account-wide enforcement of one or more active pacts
-- Stake locking, release, and Commitment Reserve recovery flows
-- n-partner round-robin accountability (n >= 1)
+- Stake locking, release, and Commitment Reserve entry-point flows
+- Ordered n-partner accountability with timeout reassignment (n >= 1)
 - Emergency and conscious-break outcomes
 - AI-assisted planning and factual approval briefs
 - An auditable timeline of financial and accountability decisions

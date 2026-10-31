@@ -41,6 +41,7 @@ type CreateFundingOrder struct {
 type FundingOrder struct {
 	ID          string
 	Amount      money.Money
+	NetAmount   money.Money
 	Status      FundingStatus
 	ApprovalURL string
 }

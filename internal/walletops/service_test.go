@@ -9,6 +9,7 @@ import (
 	"github.com/raagan-u/controlled/internal/custody"
 	"github.com/raagan-u/controlled/internal/identity"
 	"github.com/raagan-u/controlled/internal/ledger"
+	"github.com/raagan-u/controlled/internal/money"
 	"github.com/raagan-u/controlled/internal/walletops"
 )
 
@@ -116,9 +117,10 @@ func (r *memoryRepository) Funding(context.Context, identity.UserID, walletops.O
 	return r.funding, nil
 }
 
-func (r *memoryRepository) CompleteFunding(_ context.Context, _ identity.UserID, _ walletops.OperationID, _ string, journalID ledger.JournalID, _ ledger.AccountID, now time.Time) (walletops.FundingIntent, error) {
+func (r *memoryRepository) CompleteFunding(_ context.Context, _ identity.UserID, _ walletops.OperationID, _ string, netAmount money.Money, journalID ledger.JournalID, _ ledger.AccountID, now time.Time) (walletops.FundingIntent, error) {
 	r.fundingCompleted = true
 	r.funding.Status = walletops.FundingCompleted
+	r.funding.NetAmount = netAmount
 	r.funding.LedgerTransactionID = journalID
 	r.funding.CompletedAt = now
 	return r.funding, nil
@@ -148,6 +150,13 @@ func (r *memoryRepository) AttachPayout(_ context.Context, _ identity.UserID, _ 
 
 func (r *memoryRepository) Withdrawal(context.Context, identity.UserID, walletops.OperationID) (walletops.Withdrawal, error) {
 	return r.withdrawal, nil
+}
+
+func (r *memoryRepository) PendingWithdrawals(context.Context, int) ([]walletops.Withdrawal, error) {
+	if r.withdrawal.Status == walletops.WithdrawalPending {
+		return []walletops.Withdrawal{r.withdrawal}, nil
+	}
+	return nil, nil
 }
 
 func (r *memoryRepository) SettleWithdrawal(_ context.Context, _ identity.UserID, _ walletops.OperationID, succeeded bool, journalID ledger.JournalID, _ ledger.AccountID, now time.Time) (walletops.Withdrawal, error) {

@@ -16,7 +16,7 @@ export function useGoogleAuthentication() {
     try {
       const result = await authenticateWithGoogle();
       if (result === 'authenticated') {
-        router.replace('/onboarding');
+		  router.replace('/home');
       }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Google sign-in failed. Please try again.');

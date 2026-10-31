@@ -10,7 +10,7 @@ import (
 )
 
 type PasswordAuthenticator interface {
-	Register(context.Context, string, string) (StartedSession, error)
+	Register(context.Context, string, string, string) (StartedSession, error)
 	Login(context.Context, string, string) (StartedSession, error)
 }
 
@@ -36,8 +36,9 @@ func (h *PasswordAuthenticationHandler) authenticate(
 	register bool,
 ) {
 	var input struct {
-		Email    string `json:"email"`
-		Password string `json:"password"`
+		Email       string `json:"email"`
+		Password    string `json:"password"`
+		DisplayName string `json:"displayName"`
 	}
 	if err := httpapi.ReadJSON(response, request, &input, httpapi.DefaultMaxBodyBytes); err != nil {
 		httpapi.WriteError(response, http.StatusBadRequest, "invalid_request", "Request body must contain an email and password.")
@@ -48,7 +49,7 @@ func (h *PasswordAuthenticationHandler) authenticate(
 	var err error
 	status := http.StatusOK
 	if register {
-		started, err = h.authenticator.Register(request.Context(), input.Email, input.Password)
+		started, err = h.authenticator.Register(request.Context(), input.Email, input.Password, input.DisplayName)
 		status = http.StatusCreated
 	} else {
 		started, err = h.authenticator.Login(request.Context(), input.Email, input.Password)
@@ -67,8 +68,8 @@ func (h *PasswordAuthenticationHandler) authenticate(
 
 func writePasswordAuthenticationError(response http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, ErrInvalidEmail), errors.Is(err, ErrInvalidPassword):
-		httpapi.WriteError(response, http.StatusUnprocessableEntity, "invalid_credentials", "A valid email and non-empty password are required.")
+	case errors.Is(err, ErrInvalidEmail), errors.Is(err, ErrInvalidPassword), errors.Is(err, ErrInvalidDisplayName):
+		httpapi.WriteError(response, http.StatusUnprocessableEntity, "invalid_credentials", "A display name, valid email, and non-empty password are required.")
 	case errors.Is(err, ErrEmailAlreadyRegistered), errors.Is(err, ErrPasswordCredentialExists):
 		httpapi.WriteError(response, http.StatusConflict, "email_registered", "An account already exists for this email.")
 	case errors.Is(err, ErrInvalidCredentials):

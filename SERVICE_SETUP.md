@@ -115,11 +115,56 @@ This is the hackathon backend, not a production deployment:
 
 - custody and payout behavior is provided by an in-memory fake provider;
 - funding confirmation and withdrawal settlement use `/v1/demo/*` endpoints;
-- the debit policy currently allows valid wallet transfers and withdrawals; pact enforcement is not connected yet;
+- outgoing transfers and withdrawals are atomically enforced against every active pact;
+- accountability assignment and pact lifecycle maintenance runs at startup and once per minute;
 - the API is HTTP-only when run locally; and
 - there is no frontend service in this repository yet.
 
 Because fake custody state is held in the API process, finish any pending funding or withdrawal simulation before restarting the API. PostgreSQL data survives a restart, but the fake provider's pending orders do not.
+
+## Test PayPal Sandbox funding directly
+
+The standalone funding harness exercises the real PayPal Sandbox Orders v2 flow without changing the API's current fake-custody implementation. It creates an order for the Controlled Sandbox Business account, asks a Sandbox Personal buyer to approve it, and captures the approved payment.
+
+Install `curl` and `jq`, then export the REST app credentials belonging to the Controlled Sandbox Business account:
+
+```bash
+export PAYPAL_CLIENT_ID='your-sandbox-client-id'
+export PAYPAL_CLIENT_SECRET='your-sandbox-client-secret'
+```
+
+Run an interactive USD 10 funding test:
+
+```bash
+scripts/paypal_sandbox_funding.sh run 10.00 USD
+```
+
+The script prints the PayPal approval URL. Open it, sign in with the Sandbox Personal test account, approve the payment, and return to the terminal to capture it. The configured return URL does not need to be running for this terminal-driven test.
+
+To create and capture in separate terminal commands:
+
+```bash
+scripts/paypal_sandbox_funding.sh create 10.00 USD
+scripts/paypal_sandbox_funding.sh capture PAYPAL_ORDER_ID
+```
+
+The capture output includes the PayPal capture ID, status, gross amount, PayPal fee, and net amount. Keep the capture ID for subsequent refund testing. Do not commit Sandbox credentials or use live credentials with this script.
+
+### Test a withdrawal with PayPal Payouts
+
+To send a separate wallet withdrawal from the Controlled Sandbox Business account to a Sandbox Personal PayPal account, use the recipient's Sandbox email address:
+
+```bash
+scripts/paypal_sandbox_payout.sh send RECIPIENT_SANDBOX_EMAIL 1.00 USD
+```
+
+The script prints the payout batch ID and retrieves its initial item status. Payout processing can be asynchronous; retrieve its latest state with:
+
+```bash
+scripts/paypal_sandbox_payout.sh status PAYOUT_BATCH_ID
+```
+
+Verify the withdrawal in the Business account's Sandbox activity and the receipt in the Personal account's Sandbox activity. A payout is a new transfer to a PayPal recipient and is not a refund of the original checkout funding source. To return an original payment to its original source instead, use the Payments v2 capture-refund endpoint.
 
 ## Prerequisites
 
@@ -282,6 +327,13 @@ CONTROLLED_TEST_DATABASE_URL='postgres://postgres:postgres@localhost:5432/contro
   go test -v ./...
 ```
 
+Run only the pact stake lifecycle integration test:
+
+```bash
+CONTROLLED_TEST_DATABASE_URL='postgres://postgres:postgres@localhost:5432/controlled_test?sslmode=disable' \
+  go test -v ./internal/pact -run TestPostgresPactStakeLifecycle
+```
+
 Run the race detector against the same suite:
 
 ```bash
@@ -305,6 +357,13 @@ The expected versions are:
 1. `000001_wallet_ledger.up.sql`
 2. `000002_sessions.up.sql`
 3. `000003_wallet_operations.up.sql`
+4. `000004_google_identities.up.sql`
+5. `000005_password_credentials.up.sql`
+6. `000006_accountability_relationships.up.sql`
+7. `000007_pacts.up.sql`
+8. `000008_pact_stakes.up.sql`
+9. `000009_pact_usage.up.sql`
+10. `000010_accountability_requests.up.sql`
 
 Applied migration files must not be edited. The API stores their checksums and refuses to start if an applied migration changes.
 

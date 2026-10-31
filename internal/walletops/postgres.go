@@ -144,6 +144,7 @@ func (r *PostgresRepository) CompleteFunding(
 	ownerID identity.UserID,
 	id OperationID,
 	providerOrderID string,
+	netAmount money.Money,
 	journalID ledger.JournalID,
 	custodyAccountCandidate ledger.AccountID,
 	now time.Time,
@@ -167,8 +168,11 @@ func (r *PostgresRepository) CompleteFunding(
 	if intent.Status != FundingAwaitingConfirmation || intent.ProviderOrderID != providerOrderID {
 		return FundingIntent{}, ErrInvalidState
 	}
+	if !netAmount.Positive() || netAmount.Currency() != intent.Amount.Currency() || netAmount.AmountMinor() > intent.Amount.AmountMinor() {
+		return FundingIntent{}, ErrInvalidOperation
+	}
 
-	custodyAccount, err := ensureCustodyAccount(ctx, tx, custodyAccountCandidate, intent.Amount.Currency(), now)
+	custodyAccount, err := ensureCustodyAccount(ctx, tx, custodyAccountCandidate, netAmount.Currency(), now)
 	if err != nil {
 		return FundingIntent{}, err
 	}
@@ -176,11 +180,11 @@ func (r *PostgresRepository) CompleteFunding(
 	if err != nil {
 		return FundingIntent{}, err
 	}
-	debit, err := ledger.NewEntry(custodyAccount, ledger.SideDebit, intent.Amount)
+	debit, err := ledger.NewEntry(custodyAccount, ledger.SideDebit, netAmount)
 	if err != nil {
 		return FundingIntent{}, err
 	}
-	credit, err := ledger.NewEntry(availableAccount, ledger.SideCredit, intent.Amount)
+	credit, err := ledger.NewEntry(availableAccount, ledger.SideCredit, netAmount)
 	if err != nil {
 		return FundingIntent{}, err
 	}
@@ -203,10 +207,11 @@ func (r *PostgresRepository) CompleteFunding(
 		UPDATE funding_intents
 		   SET status = 'COMPLETED',
 		       ledger_transaction_id = $2::text::uuid,
-		       updated_at = $3,
-		       completed_at = $3
+		       net_amount_minor = $3,
+		       updated_at = $4,
+		       completed_at = $4
 		 WHERE id = $1::text::uuid
-	`, string(id), string(posted.JournalID), now)
+	`, string(id), string(posted.JournalID), netAmount.AmountMinor(), now)
 	if err != nil {
 		return FundingIntent{}, mapOperationError(err)
 	}
@@ -214,6 +219,7 @@ func (r *PostgresRepository) CompleteFunding(
 		return FundingIntent{}, mapOperationError(err)
 	}
 	intent.Status = FundingCompleted
+	intent.NetAmount = netAmount
 	intent.LedgerTransactionID = posted.JournalID
 	intent.UpdatedAt = now
 	intent.CompletedAt = now
@@ -240,7 +246,11 @@ func (r *PostgresRepository) CreateTransfer(
 
 	existing, err := loadTransferByKey(ctx, tx, candidate.SenderID, key)
 	if err == nil {
-		if existing.RecipientEmail != candidate.RecipientEmail || !existing.Amount.Equal(candidate.Amount) {
+		matches, matchErr := transferRecipientMatches(ctx, tx, existing.RecipientID, candidate.RecipientEmail)
+		if matchErr != nil {
+			return Transfer{}, matchErr
+		}
+		if !matches || !existing.Amount.Equal(candidate.Amount) {
 			return Transfer{}, ErrIdempotencyConflict
 		}
 		existing.Duplicate = true
@@ -258,14 +268,15 @@ func (r *PostgresRepository) CreateTransfer(
 		return Transfer{}, ErrCurrencyMismatch
 	}
 	var recipientID string
+	var recipientEmail string
 	var recipientWallet string
 	var recipientCurrency string
 	err = tx.QueryRow(ctx, `
-		SELECT users.id::text, wallets.id::text, wallets.currency
+		SELECT users.id::text, users.email, wallets.id::text, wallets.currency
 		  FROM users
 		  JOIN wallets ON wallets.owner_id = users.id
-		 WHERE users.email = $1
-	`, candidate.RecipientEmail).Scan(&recipientID, &recipientWallet, &recipientCurrency)
+		 WHERE users.email = $1 OR users.ctrld_id = $1
+	`, candidate.RecipientEmail).Scan(&recipientID, &recipientEmail, &recipientWallet, &recipientCurrency)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Transfer{}, ErrRecipientNotFound
 	}
@@ -278,12 +289,23 @@ func (r *PostgresRepository) CreateTransfer(
 	if recipientCurrency != currency {
 		return Transfer{}, ErrCurrencyMismatch
 	}
+	candidate.RecipientEmail = recipientEmail
 
 	senderAvailable, _, err := accountForWallet(ctx, tx, senderWallet, ledger.AccountKindAvailable)
 	if err != nil {
 		return Transfer{}, err
 	}
 	recipientAvailable, _, err := accountForWallet(ctx, tx, recipientWallet, ledger.AccountKindAvailable)
+	if err != nil {
+		return Transfer{}, err
+	}
+	if err := ensureAvailableBalance(ctx, tx, senderAvailable, candidate.Amount); err != nil {
+		return Transfer{}, err
+	}
+	pactIDs, err := r.authorizePactDebit(
+		ctx, tx, candidate.SenderID, DebitInternalTransfer, candidate.RecipientEmail,
+		candidate.Amount, candidate.CreatedAt,
+	)
 	if err != nil {
 		return Transfer{}, err
 	}
@@ -322,6 +344,12 @@ func (r *PostgresRepository) CreateTransfer(
 	`, parsedID, senderWallet, recipientWallet, key, candidate.Amount.AmountMinor(), currency, string(posted.JournalID), candidate.CreatedAt)
 	if err != nil {
 		return Transfer{}, mapOperationError(err)
+	}
+	if err := recordPactUsage(
+		ctx, tx, pactIDs, string(candidate.SenderID), DebitInternalTransfer,
+		candidate.ID, candidate.Amount, posted.JournalID, candidate.CreatedAt,
+	); err != nil {
+		return Transfer{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return Transfer{}, mapOperationError(err)
@@ -376,6 +404,16 @@ func (r *PostgresRepository) ReserveWithdrawal(
 	if err != nil {
 		return Withdrawal{}, err
 	}
+	if err := ensureAvailableBalance(ctx, tx, availableAccount, candidate.Amount); err != nil {
+		return Withdrawal{}, err
+	}
+	pactIDs, err := r.authorizePactDebit(
+		ctx, tx, candidate.OwnerID, DebitWithdrawal, candidate.Destination,
+		candidate.Amount, candidate.CreatedAt,
+	)
+	if err != nil {
+		return Withdrawal{}, err
+	}
 	debit, err := ledger.NewEntry(availableAccount, ledger.SideDebit, candidate.Amount)
 	if err != nil {
 		return Withdrawal{}, err
@@ -416,6 +454,12 @@ func (r *PostgresRepository) ReserveWithdrawal(
 	`, parsedID, ownerID, walletID, key, candidate.Destination, candidate.Amount.AmountMinor(), currency, string(posted.JournalID), candidate.CreatedAt)
 	if err != nil {
 		return Withdrawal{}, mapOperationError(err)
+	}
+	if err := recordPactUsage(
+		ctx, tx, pactIDs, string(candidate.OwnerID), DebitWithdrawal,
+		candidate.ID, candidate.Amount, posted.JournalID, candidate.CreatedAt,
+	); err != nil {
+		return Withdrawal{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return Withdrawal{}, mapOperationError(err)
@@ -475,6 +519,29 @@ func (r *PostgresRepository) Withdrawal(
 		return Withdrawal{}, ErrUnavailable
 	}
 	return loadWithdrawal(ctx, r.pool, ownerID, id, false)
+}
+
+func (r *PostgresRepository) PendingWithdrawals(ctx context.Context, limit int) ([]Withdrawal, error) {
+	if r == nil || r.pool == nil || limit <= 0 {
+		return nil, ErrUnavailable
+	}
+	rows, err := r.pool.Query(ctx, withdrawalSelect+` WHERE status = 'PENDING' ORDER BY updated_at LIMIT $1`, limit)
+	if err != nil {
+		return nil, mapOperationError(err)
+	}
+	defer rows.Close()
+	withdrawals := make([]Withdrawal, 0)
+	for rows.Next() {
+		withdrawal, scanErr := scanWithdrawal(rows)
+		if scanErr != nil {
+			return nil, scanErr
+		}
+		withdrawals = append(withdrawals, withdrawal)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list pending withdrawals: %w", err)
+	}
+	return withdrawals, nil
 }
 
 func (r *PostgresRepository) SettleWithdrawal(
@@ -566,6 +633,11 @@ func (r *PostgresRepository) SettleWithdrawal(
 	`, string(id), status, string(posted.JournalID), now)
 	if err != nil {
 		return Withdrawal{}, mapOperationError(err)
+	}
+	if !succeeded {
+		if err := reverseWithdrawalPactUsage(ctx, tx, id, posted.JournalID, now); err != nil {
+			return Withdrawal{}, err
+		}
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return Withdrawal{}, mapOperationError(err)
@@ -682,7 +754,7 @@ func loadFundingByKey(
 		suffix = " FOR UPDATE"
 	}
 	return scanFunding(query.QueryRow(ctx, `
-		SELECT id::text, owner_id::text, wallet_id::text, amount_minor, currency,
+		SELECT id::text, owner_id::text, wallet_id::text, amount_minor, net_amount_minor, currency,
 		       status, COALESCE(provider_order_id, ''), COALESCE(approval_url, ''),
 		       COALESCE(ledger_transaction_id::text, ''), created_at, updated_at, completed_at
 		  FROM funding_intents
@@ -701,7 +773,7 @@ func loadFunding(
 		suffix = " FOR UPDATE"
 	}
 	return scanFunding(query.QueryRow(ctx, `
-		SELECT id::text, owner_id::text, wallet_id::text, amount_minor, currency,
+		SELECT id::text, owner_id::text, wallet_id::text, amount_minor, net_amount_minor, currency,
 		       status, COALESCE(provider_order_id, ''), COALESCE(approval_url, ''),
 		       COALESCE(ledger_transaction_id::text, ''), created_at, updated_at, completed_at
 		  FROM funding_intents
@@ -713,12 +785,13 @@ func scanFunding(row pgx.Row) (FundingIntent, error) {
 	var id string
 	var ownerID string
 	var amountMinor int64
+	var netAmountMinor pgtype.Int8
 	var currency string
 	var createdAt pgtype.Timestamptz
 	var updatedAt pgtype.Timestamptz
 	var completedAt pgtype.Timestamptz
 	err := row.Scan(
-		&id, &ownerID, &result.WalletID, &amountMinor, &currency,
+		&id, &ownerID, &result.WalletID, &amountMinor, &netAmountMinor, &currency,
 		&result.Status, &result.ProviderOrderID, &result.ApprovalURL,
 		&result.LedgerTransactionID, &createdAt, &updatedAt, &completedAt,
 	)
@@ -735,6 +808,12 @@ func scanFunding(row pgx.Row) (FundingIntent, error) {
 	result.ID = OperationID(id)
 	result.OwnerID = identity.UserID(ownerID)
 	result.Amount = amount
+	if netAmountMinor.Valid {
+		result.NetAmount, err = money.New(netAmountMinor.Int64, currency)
+		if err != nil {
+			return FundingIntent{}, err
+		}
+	}
 	result.CreatedAt = createdAt.Time.UTC()
 	result.UpdatedAt = updatedAt.Time.UTC()
 	if completedAt.Valid {
@@ -829,7 +908,7 @@ const withdrawalSelect = `
 	       created_at, updated_at, completed_at
 	  FROM withdrawals`
 
-func scanWithdrawal(row pgx.Row) (Withdrawal, error) {
+func scanWithdrawal(row interface{ Scan(...any) error }) (Withdrawal, error) {
 	var result Withdrawal
 	var id string
 	var ownerID string
@@ -892,4 +971,24 @@ func mapOperationError(err error) error {
 
 func normalizedEmail(value string) string {
 	return strings.ToLower(strings.TrimSpace(value))
+}
+
+func transferRecipientMatches(
+	ctx context.Context,
+	query pgx.Tx,
+	recipientID identity.UserID,
+	identifier string,
+) (bool, error) {
+	var matches bool
+	err := query.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM users
+			 WHERE id = $1::text::uuid
+			   AND (email = $2 OR ctrld_id = $2)
+		)
+	`, recipientID, identifier).Scan(&matches)
+	if err != nil {
+		return false, fmt.Errorf("match transfer recipient: %w", err)
+	}
+	return matches, nil
 }

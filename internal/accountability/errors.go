@@ -1,0 +1,31 @@
+package accountability
+
+import "errors"
+
+var (
+	ErrInvalidInvitationID = errors.New("accountability invitation ID is required")
+	ErrInvalidCircleID     = errors.New("accountability circle ID is required")
+	ErrInvalidOwnerID      = errors.New("accountability owner ID is required")
+	ErrInvalidPartnerID    = errors.New("accountability partner ID is required")
+	ErrInvalidTimestamp    = errors.New("accountability timestamp is required")
+	ErrSelfPartner         = errors.New("a user cannot be their own accountability partner")
+	ErrInvalidStatus       = errors.New("accountability status is invalid")
+	ErrInvitationFinal     = errors.New("accountability invitation is already resolved")
+	ErrInvitationExists    = errors.New("an active accountability invitation or relationship already exists")
+	ErrWrongInvitee        = errors.New("only the invited partner can resolve the invitation")
+	ErrMissingCircleName   = errors.New("accountability circle name is required")
+	ErrMissingPartners     = errors.New("accountability circle requires at least one partner")
+	ErrDuplicatePartner    = errors.New("accountability circle partners must be distinct")
+	ErrPartnerNotAccepted  = errors.New("accountability circle partner has not accepted an invitation")
+	ErrInvitationNotFound  = errors.New("accountability invitation was not found")
+	ErrPartnerNotFound     = errors.New("accountability partner was not found")
+	ErrIdempotencyKey      = errors.New("accountability idempotency key is required")
+	ErrIdempotencyConflict = errors.New("accountability idempotency key was reused with different input")
+	ErrUnavailable         = errors.New("accountability dependencies are unavailable")
+	ErrPersistenceID       = errors.New("accountability persistence requires UUID identifiers")
+	ErrMissingReason       = errors.New("accountability request reason is required")
+	ErrRequestNotFound     = errors.New("accountability request was not found")
+	ErrRequestFinal        = errors.New("accountability request is already resolved")
+	ErrWrongReviewer       = errors.New("only the current assigned partner can decide the request")
+	ErrInvalidDecision     = errors.New("accountability decision is invalid")
+)

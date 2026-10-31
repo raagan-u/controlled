@@ -42,6 +42,7 @@ type FundingIntent struct {
 	OwnerID             identity.UserID
 	WalletID            string
 	Amount              money.Money
+	NetAmount           money.Money
 	Status              FundingStatus
 	ProviderOrderID     string
 	ApprovalURL         string
@@ -100,6 +101,74 @@ type DebitRequest struct {
 	Kind         DebitKind
 	ReferenceKey string
 	Amount       money.Money
+}
+
+// PactBlock describes one active pact that rejects a proposed debit. Used and
+// proposed values are snapshots taken while that pact is locked.
+type PactBlock struct {
+	PactID        string
+	LimitMinor    int64
+	UsedMinor     int64
+	ProposedMinor int64
+	OverageMinor  int64
+}
+
+// PolicyBlockedError preserves every blocking pact so the accountability flow
+// can create one exact, reviewable request rather than losing policy facts in a
+// generic denial.
+type PolicyBlockedError struct {
+	Blocks []PactBlock
+}
+
+func (e *PolicyBlockedError) Error() string { return ErrPolicyDenied.Error() }
+func (e *PolicyBlockedError) Unwrap() error { return ErrPolicyDenied }
+
+type PendingDebit struct {
+	IntentID       OperationID
+	IdempotencyKey string
+	OwnerID        identity.UserID
+	Kind           DebitKind
+	Destination    string
+	Amount         money.Money
+	Reason         string
+	Blocks         []PactBlock
+	CreatedAt      time.Time
+}
+
+type ReviewRequest struct {
+	ID                string
+	IntentID          OperationID
+	Status            string
+	AssignedPartnerID identity.UserID
+	CreatedAt         time.Time
+	ExpiresAt         time.Time
+	Duplicate         bool
+}
+
+type RequestCoordinator interface {
+	RequestDebit(context.Context, PendingDebit) (ReviewRequest, error)
+}
+
+type DebitAttempt struct {
+	Transfer   *Transfer
+	Withdrawal *Withdrawal
+	Request    *ReviewRequest
+}
+
+type ApprovedDebit struct {
+	RequestID      string
+	IntentID       OperationID
+	IdempotencyKey string
+	OwnerID        identity.UserID
+	Kind           DebitKind
+	Destination    string
+	Amount         money.Money
+	Classification string
+	PactIDs        []string
+}
+
+type ApprovedExecutor interface {
+	ExecuteApproved(context.Context, ApprovedDebit) (OperationID, error)
 }
 
 type Policy interface {

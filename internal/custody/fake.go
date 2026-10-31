@@ -83,6 +83,7 @@ func (f *Fake) CaptureFundingOrder(ctx context.Context, id string) (FundingOrder
 		return FundingOrder{}, ErrOrderNotFound
 	}
 	order.Status = FundingCaptured
+	order.NetAmount = order.Amount
 	f.fundingByID[order.ID] = order
 	return order, nil
 }

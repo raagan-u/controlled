@@ -12,6 +12,7 @@ var (
 	ErrInvalidUserID      = errors.New("user ID is required")
 	ErrInvalidEmail       = errors.New("a valid email address is required")
 	ErrInvalidDisplayName = errors.New("display name is required")
+	ErrInvalidCtrldID     = errors.New("ctrld ID must use ctrld followed by five digits")
 	ErrInvalidCreatedAt   = errors.New("user creation time is required")
 )
 
@@ -21,6 +22,7 @@ type User struct {
 	id          UserID
 	email       string
 	displayName string
+	ctrldID     string
 	createdAt   time.Time
 }
 
@@ -51,7 +53,22 @@ func NewUser(id UserID, email, displayName string, createdAt time.Time) (User, e
 func (u User) ID() UserID           { return u.id }
 func (u User) Email() string        { return u.email }
 func (u User) DisplayName() string  { return u.displayName }
+func (u User) CtrldID() string      { return u.ctrldID }
 func (u User) CreatedAt() time.Time { return u.createdAt }
+
+func (u User) WithCtrldID(value string) (User, error) {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if len(value) != 10 || !strings.HasPrefix(value, "ctrld") {
+		return User{}, ErrInvalidCtrldID
+	}
+	for _, character := range value[5:] {
+		if character < '0' || character > '9' {
+			return User{}, ErrInvalidCtrldID
+		}
+	}
+	u.ctrldID = value
+	return u, nil
+}
 
 func validEmail(value string) bool {
 	parsed, err := mail.ParseAddress(value)

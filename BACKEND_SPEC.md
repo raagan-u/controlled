@@ -239,6 +239,10 @@ CANCELLED
 
 Terms are immutable after confirmation.
 
+Each pact has one total USD spending limit across its complete start-to-end period. Daily, weekly, monthly, and other layered limits are separate overlapping pacts. Timestamps are accepted with the user's local timezone context, stored in UTC, and evaluated with an inclusive start and exclusive end.
+
+Limits and stakes are positive integer USD cents. A stake has no product-level minimum or maximum beyond being greater than zero and no greater than the owner's available balance.
+
 ## 10. Stake Vault and Commitment Reserve
 
 The Stake Vault is one global internal ledger account with an allocation record for each pact.
@@ -266,28 +270,33 @@ Pact success:      Stake Vault -> user available
 Scheduled cancel:  Stake Vault -> user available
 Emergency:         no stake movement
 Conscious break:   Stake Vault -> user Commitment Reserve
-Recovery success:  Commitment Reserve -> user available
 ```
 
 The ledger journal and pact transition must commit in the same database transaction.
 
-Recovery rules must prevent a trivial follow-up pact from immediately unlocking reserves. Their detailed eligibility policy is deferred until the recovery flow is implemented.
+Commitment Reserve is user-owned but unavailable indefinitely for the MVP. `Start recovery pact` is only an entry point; no reserve-release policy is implemented until recovery qualification is explicitly designed.
 
 ## 11. Accountability
 
-A circle contains `n` accepted partners where `n >= 1`.
+A circle contains `n` accepted partners where `n >= 1`. An invitation must be accepted before membership becomes eligible.
 
 Rules:
 
 - Every partner is distinct.
 - The owner cannot be a partner.
-- Partners have stable positions.
+- The owner defines stable partner positions, which become immutable at pact confirmation.
+- A partner may participate in multiple circles and pacts.
 - Each request has one active assignment.
-- Assignment advances round robin.
 - The owner cannot select the reviewer.
 - Only the current assignment can resolve a request.
 - A late response to a superseded assignment is rejected.
-- Scores measure response timing, not approval or denial.
+- Denial immediately advances to the next eligible partner.
+- Non-response advances after a six-hour assignment timeout.
+- The entire request expires after 24 hours.
+- If every partner denies, the request and transaction are cancelled.
+- If no eligible partner remains without unanimous denial, the request waits until expiry.
+- The owner may cancel a pending request and its transaction attempt.
+- Decisions are final and idempotent.
 
 Core states:
 
@@ -320,7 +329,7 @@ Any non-terminal state -> FAILED | CANCELLED | EXPIRED
 Policy evaluation:
 
 1. Load every active pact for the owner.
-2. Calculate confirmed and pending consumption for each pact.
+2. Calculate completed or settlement-reserved consumption for each pact.
 3. Evaluate the proposed total debit against each pact.
 4. Return every blocking pact.
 5. Authorize immediately only if every pact permits the transaction.
@@ -329,11 +338,19 @@ Policy evaluation:
 Rules:
 
 - The same outgoing transaction consumes capacity in every active pact.
-- Pending transactions reserve wallet and pact capacity.
-- Failed and expired transactions release capacity.
-- Confirmed refunds restore capacity.
+- Transactions awaiting accountability do not reserve wallet funds or pact capacity.
+- Internal transfers count when completed; withdrawals count when reserved for settlement.
+- Failed or reversed debits remove their usage.
+- A completed debit continues counting unless that debit itself is reversed; a separate incoming repayment does not alter usage.
 - Incoming funds do not consume or increase fixed pact limits.
-- An approval applies only to its referenced transaction and amount.
+- Funding, stake movements, and Commitment Reserve movements do not consume pact limits.
+- Insufficient balance cannot be overridden and does not create a request.
+- A request includes an owner reason and verified transaction, limit, usage, and overage facts.
+- An approval applies only to the exact transaction type, amount, destination, and blocking pacts.
+- Approval is single-use and immediately attempts execution after atomically rechecking balance and all active pacts.
+- Multiple requests may be pending, but concurrent approvals cannot bypass policy.
+- Failed execution requires a new transaction attempt.
+- Pact expiry cancels its pending requests before resolving the pact.
 
 Resolution effects:
 
@@ -342,7 +359,7 @@ Resolution effects:
 | Deny | Blocked | Continues | Remains locked |
 | Approve emergency | Allowed | Records exception | Remains locked |
 | Approve conscious break | Allowed | Resolves as broken | Moves to Commitment Reserve |
-| Timeout | Blocked or reassigned | Continues | Remains locked |
+| Timeout | Cancelled or reassigned | Continues | Remains locked |
 
 ## 13. Database model
 
@@ -494,7 +511,7 @@ Expected domain failures return `4xx`. Unexpected failures return `500` without 
 - Stake consequence decisions
 - Policy evaluation across multiple pacts
 - Round-robin assignment
-- Timeout and response scoring
+- Ordered assignment, denial reassignment, and timeout behavior
 
 ### PostgreSQL integration tests
 
@@ -546,6 +563,6 @@ The deterministic backend is complete when APIs can demonstrate:
 5. Every outgoing debit is checked against all active pacts.
 6. Accountability can approve emergencies or conscious breaks.
 7. Conscious breaks move stakes into Commitment Reserve.
-8. Recovery can release an eligible reserve.
+8. Commitment Reserve remains unavailable while exposing the future recovery-pact entry point.
 9. Retries do not duplicate money or decisions.
 10. The audit timeline explains every consequential action.

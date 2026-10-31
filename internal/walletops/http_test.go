@@ -32,6 +32,7 @@ func TestWalletOperationHandlers(t *testing.T) {
 	mux.Handle("POST /v1/wallet/internal-transfers", identity.RequireSession(operationSessionManager{user: user}, http.HandlerFunc(handler.CreateTransfer)))
 	mux.Handle("POST /v1/wallet/withdrawals", identity.RequireSession(operationSessionManager{user: user}, http.HandlerFunc(handler.CreateWithdrawal)))
 	mux.Handle("POST /v1/demo/withdrawals/{id}/settle", identity.RequireSession(operationSessionManager{user: user}, http.HandlerFunc(handler.SettleWithdrawal)))
+	mux.Handle("POST /v1/wallet/withdrawals/{id}/reconcile", identity.RequireSession(operationSessionManager{user: user}, http.HandlerFunc(handler.ReconcileWithdrawal)))
 
 	tests := []struct {
 		name   string
@@ -44,6 +45,7 @@ func TestWalletOperationHandlers(t *testing.T) {
 		{name: "internal transfer", path: "/v1/wallet/internal-transfers", body: `{"recipientEmail":"friend@example.com","amountMinor":2500,"currency":"USD"}`, status: http.StatusCreated},
 		{name: "withdrawal", path: "/v1/wallet/withdrawals", body: `{"destination":"paypal@example.com","amountMinor":2500,"currency":"USD"}`, status: http.StatusAccepted},
 		{name: "settle withdrawal", path: "/v1/demo/withdrawals/withdrawal-1/settle", body: `{"succeeded":true}`, status: http.StatusOK},
+		{name: "reconcile withdrawal", path: "/v1/wallet/withdrawals/withdrawal-1/reconcile", body: `{}`, status: http.StatusOK},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -95,6 +97,13 @@ func (s stubCommands) SimulateWithdrawalSettlement(context.Context, identity.Use
 	return walletops.Withdrawal{
 		ID: "withdrawal-1", Destination: "paypal@example.com", Amount: s.amount,
 		Status: walletops.WithdrawalCompleted, CreatedAt: time.Now(), UpdatedAt: time.Now(), CompletedAt: time.Now(),
+	}, nil
+}
+
+func (s stubCommands) ReconcileWithdrawal(context.Context, identity.UserID, walletops.OperationID) (walletops.Withdrawal, error) {
+	return walletops.Withdrawal{
+		ID: "withdrawal-1", Destination: "paypal@example.com", Amount: s.amount,
+		Status: walletops.WithdrawalPending, CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}, nil
 }
 

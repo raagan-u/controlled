@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/raagan-u/controlled/internal/identity"
+	"github.com/raagan-u/controlled/internal/ledger"
 	"github.com/raagan-u/controlled/internal/platform/httpapi"
 )
 
@@ -49,34 +50,57 @@ func (h *ReadHandler) Transactions(response http.ResponseWriter, request *http.R
 
 	items := make([]transactionAPIResponse, 0, len(transactions))
 	for _, transaction := range transactions {
-		item := transactionAPIResponse{
-			ID: string(transaction.ID),
-			Reference: transactionReferenceAPIResponse{
-				Type: transaction.Reference.Type,
-				ID:   transaction.Reference.ID,
-			},
-			Description: transaction.Description,
-			OccurredAt:  transaction.OccurredAt,
-			PostedAt:    transaction.PostedAt,
-			Reversed:    transaction.Reversed,
-			Entries:     make([]transactionEntryAPIResponse, 0, len(transaction.Entries)),
-		}
-		for _, entry := range transaction.Entries {
-			item.Entries = append(item.Entries, transactionEntryAPIResponse{
-				AccountID:   string(entry.AccountID),
-				AccountKind: string(entry.AccountKind),
-				Side:        string(entry.Side),
-				Amount: moneyResponse{
-					AmountMinor: entry.Amount.AmountMinor(),
-					Currency:    entry.Amount.Currency(),
-				},
-			})
-		}
-		items = append(items, item)
+		items = append(items, transactionResponse(transaction))
 	}
 	httpapi.WriteJSON(response, http.StatusOK, struct {
 		Transactions []transactionAPIResponse `json:"transactions"`
 	}{Transactions: items})
+}
+
+func (h *ReadHandler) Transaction(response http.ResponseWriter, request *http.Request) {
+	user, ok := identity.CurrentUser(request.Context())
+	if !ok {
+		httpapi.WriteError(response, http.StatusUnauthorized, "authentication_required", "A valid Controlled session is required.")
+		return
+	}
+	transaction, err := h.reader.TransactionByUser(
+		request.Context(), user.ID(), ledger.JournalID(request.PathValue("id")),
+	)
+	if errors.Is(err, ErrTransactionNotFound) {
+		httpapi.WriteError(response, http.StatusNotFound, "transaction_not_found", "The wallet transaction was not found.")
+		return
+	}
+	if err != nil {
+		httpapi.WriteError(response, http.StatusInternalServerError, "internal_error", "Controlled could not read the wallet transaction.")
+		return
+	}
+	httpapi.WriteJSON(response, http.StatusOK, struct {
+		Transaction transactionAPIResponse `json:"transaction"`
+	}{Transaction: transactionResponse(transaction)})
+}
+
+func transactionResponse(transaction Transaction) transactionAPIResponse {
+	item := transactionAPIResponse{
+		ID:          string(transaction.ID),
+		Reference:   transactionReferenceAPIResponse{Type: transaction.Reference.Type, ID: transaction.Reference.ID},
+		Description: transaction.Description, OccurredAt: transaction.OccurredAt,
+		PostedAt: transaction.PostedAt, Reversed: transaction.Reversed,
+		Entries: make([]transactionEntryAPIResponse, 0, len(transaction.Entries)),
+	}
+	if transaction.Transfer != nil {
+		item.Transfer = &transferDetailsAPIResponse{
+			Sender:    partyAPIResponse{ID: string(transaction.Transfer.Sender.ID), CtrldID: transaction.Transfer.Sender.CtrldID, Email: transaction.Transfer.Sender.Email, DisplayName: transaction.Transfer.Sender.DisplayName},
+			Recipient: partyAPIResponse{ID: string(transaction.Transfer.Recipient.ID), CtrldID: transaction.Transfer.Recipient.CtrldID, Email: transaction.Transfer.Recipient.Email, DisplayName: transaction.Transfer.Recipient.DisplayName},
+			Remark:    transaction.Transfer.Remark, PaymentRequestID: transaction.Transfer.PaymentRequestID,
+		}
+	}
+	for _, entry := range transaction.Entries {
+		item.Entries = append(item.Entries, transactionEntryAPIResponse{
+			AccountID: string(entry.AccountID), AccountKind: string(entry.AccountKind), Side: string(entry.Side),
+			Amount: moneyResponse{AmountMinor: entry.Amount.AmountMinor(), Currency: entry.Amount.Currency()},
+		})
+	}
+	return item
 }
 
 type transactionAPIResponse struct {
@@ -87,6 +111,20 @@ type transactionAPIResponse struct {
 	PostedAt    time.Time                       `json:"postedAt"`
 	Reversed    bool                            `json:"reversed"`
 	Entries     []transactionEntryAPIResponse   `json:"entries"`
+	Transfer    *transferDetailsAPIResponse     `json:"transferDetails,omitempty"`
+}
+
+type partyAPIResponse struct {
+	ID          string `json:"id"`
+	CtrldID     string `json:"ctrldId"`
+	Email       string `json:"email"`
+	DisplayName string `json:"displayName"`
+}
+type transferDetailsAPIResponse struct {
+	Sender           partyAPIResponse `json:"sender"`
+	Recipient        partyAPIResponse `json:"recipient"`
+	Remark           string           `json:"remark,omitempty"`
+	PaymentRequestID string           `json:"paymentRequestId,omitempty"`
 }
 
 type transactionReferenceAPIResponse struct {
@@ -113,6 +151,7 @@ type walletAPIResponse struct {
 	Balances struct {
 		Available         moneyResponse `json:"available"`
 		Pending           moneyResponse `json:"pending"`
+		Staked            moneyResponse `json:"staked"`
 		CommitmentReserve moneyResponse `json:"commitmentReserve"`
 	} `json:"balances"`
 	CreatedAt time.Time `json:"createdAt"`
@@ -140,6 +179,10 @@ func walletReadResponse(snapshot Snapshot) struct {
 	response.Wallet.Balances.Pending = moneyResponse{
 		AmountMinor: balances.Pending.AmountMinor(),
 		Currency:    balances.Pending.Currency(),
+	}
+	response.Wallet.Balances.Staked = moneyResponse{
+		AmountMinor: balances.Staked.AmountMinor(),
+		Currency:    balances.Staked.Currency(),
 	}
 	response.Wallet.Balances.CommitmentReserve = moneyResponse{
 		AmountMinor: balances.CommitmentReserve.AmountMinor(),

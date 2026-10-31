@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -26,10 +27,53 @@ func (s *PostgresSessionStore) UserByEmail(ctx context.Context, email string) (U
 		return User{}, ErrSessionStore
 	}
 	return scanUser(s.pool.QueryRow(ctx, `
-		SELECT id::text, email, display_name, created_at
+		SELECT id::text, email, display_name, ctrld_id, created_at
 		  FROM users
 		 WHERE email = $1
 	`, email))
+}
+
+func (s *PostgresSessionStore) Recipients(
+	ctx context.Context,
+	currentUserID UserID,
+	query string,
+	limit int,
+) ([]User, error) {
+	if s == nil || s.pool == nil {
+		return nil, ErrSessionStore
+	}
+	if limit < 1 || limit > 50 {
+		limit = 50
+	}
+	query = strings.ToLower(strings.TrimSpace(query))
+	rows, err := s.pool.Query(ctx, `
+		SELECT id::text, email, display_name, ctrld_id, created_at
+		  FROM users
+		 WHERE id <> $1::text::uuid
+		   AND ($2 = ''
+		        OR lower(ctrld_id) = $2
+		        OR lower(email) = $2
+		        OR lower(display_name) LIKE '%' || $2 || '%')
+		 ORDER BY display_name, created_at
+		 LIMIT $3
+	`, string(currentUserID), query, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list recipients: %w", err)
+	}
+	defer rows.Close()
+
+	users := make([]User, 0)
+	for rows.Next() {
+		user, scanErr := scanUser(rows)
+		if scanErr != nil {
+			return nil, scanErr
+		}
+		users = append(users, user)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list recipients: %w", err)
+	}
+	return users, nil
 }
 
 func (s *PostgresSessionStore) UserByGoogleSubject(ctx context.Context, subject string) (User, error) {
@@ -37,7 +81,7 @@ func (s *PostgresSessionStore) UserByGoogleSubject(ctx context.Context, subject 
 		return User{}, ErrSessionStore
 	}
 	user, err := scanUser(s.pool.QueryRow(ctx, `
-		SELECT users.id::text, users.email, users.display_name, users.created_at
+		SELECT users.id::text, users.email, users.display_name, users.ctrld_id, users.created_at
 		  FROM oauth_identities
 		  JOIN users ON users.id = oauth_identities.user_id
 		 WHERE oauth_identities.provider = 'google'
@@ -87,6 +131,7 @@ func (s *PostgresSessionStore) UserAndPasswordHashByEmail(
 		SELECT users.id::text,
 		       users.email,
 		       users.display_name,
+		       users.ctrld_id,
 		       users.created_at,
 		       password_credentials.password_hash
 		  FROM users
@@ -96,14 +141,18 @@ func (s *PostgresSessionStore) UserAndPasswordHashByEmail(
 	var id string
 	var storedEmail string
 	var displayName string
+	var ctrldID string
 	var createdAt pgtype.Timestamptz
 	var passwordHash string
-	if err := row.Scan(&id, &storedEmail, &displayName, &createdAt, &passwordHash); errors.Is(err, pgx.ErrNoRows) {
+	if err := row.Scan(&id, &storedEmail, &displayName, &ctrldID, &createdAt, &passwordHash); errors.Is(err, pgx.ErrNoRows) {
 		return User{}, "", ErrInvalidCredentials
 	} else if err != nil {
 		return User{}, "", fmt.Errorf("read password credential: %w", err)
 	}
 	user, err := NewUser(UserID(id), storedEmail, displayName, createdAt.Time)
+	if err == nil {
+		user, err = user.WithCtrldID(ctrldID)
+	}
 	return user, passwordHash, err
 }
 
@@ -165,7 +214,7 @@ func (s *PostgresSessionStore) UserBySession(
 		return User{}, ErrSessionStore
 	}
 	return scanUser(s.pool.QueryRow(ctx, `
-		SELECT users.id::text, users.email, users.display_name, users.created_at
+		SELECT users.id::text, users.email, users.display_name, users.ctrld_id, users.created_at
 		  FROM sessions
 		  JOIN users ON users.id = sessions.user_id
 		 WHERE sessions.token_hash = $1
@@ -202,13 +251,18 @@ func scanUser(row pgx.Row) (User, error) {
 	var id string
 	var email string
 	var displayName string
+	var ctrldID string
 	var createdAt pgtype.Timestamptz
-	if err := row.Scan(&id, &email, &displayName, &createdAt); errors.Is(err, pgx.ErrNoRows) {
+	if err := row.Scan(&id, &email, &displayName, &ctrldID, &createdAt); errors.Is(err, pgx.ErrNoRows) {
 		return User{}, ErrInvalidCredentials
 	} else if err != nil {
 		return User{}, fmt.Errorf("read identity user: %w", err)
 	}
-	return NewUser(UserID(id), email, displayName, createdAt.Time)
+	user, err := NewUser(UserID(id), email, displayName, createdAt.Time)
+	if err != nil {
+		return User{}, err
+	}
+	return user.WithCtrldID(ctrldID)
 }
 
 func identityUUID(value string) (pgtype.UUID, error) {

@@ -73,6 +73,7 @@ func (h *SessionHandler) End(response http.ResponseWriter, request *http.Request
 
 type userResponse struct {
 	ID          string    `json:"id"`
+	CtrldID     string    `json:"ctrldId"`
 	Email       string    `json:"email"`
 	DisplayName string    `json:"displayName"`
 	CreatedAt   time.Time `json:"createdAt"`
@@ -81,6 +82,7 @@ type userResponse struct {
 func newUserResponse(user User) userResponse {
 	return userResponse{
 		ID:          string(user.ID()),
+		CtrldID:     user.CtrldID(),
 		Email:       user.Email(),
 		DisplayName: user.DisplayName(),
 		CreatedAt:   user.CreatedAt(),

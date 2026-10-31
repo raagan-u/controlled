@@ -15,8 +15,8 @@ func TestDiscoverEmbeddedMigrations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("discoverMigrations() error = %v", err)
 	}
-	if len(found) != 5 {
-		t.Fatalf("migration count = %d, want 5", len(found))
+	if len(found) != 14 {
+		t.Fatalf("migration count = %d, want 14", len(found))
 	}
 	if found[0].version != 1 || found[0].name != "000001_wallet_ledger.up.sql" || found[0].sql == "" {
 		t.Fatalf("migration = %#v", found[0])
@@ -32,6 +32,33 @@ func TestDiscoverEmbeddedMigrations(t *testing.T) {
 	}
 	if found[4].version != 5 || found[4].name != "000005_password_credentials.up.sql" || found[4].sql == "" {
 		t.Fatalf("migration = %#v", found[4])
+	}
+	if found[5].version != 6 || found[5].name != "000006_accountability_relationships.up.sql" || found[5].sql == "" {
+		t.Fatalf("migration = %#v", found[5])
+	}
+	if found[6].version != 7 || found[6].name != "000007_pacts.up.sql" || found[6].sql == "" {
+		t.Fatalf("migration = %#v", found[6])
+	}
+	if found[7].version != 8 || found[7].name != "000008_pact_stakes.up.sql" || found[7].sql == "" {
+		t.Fatalf("migration = %#v", found[7])
+	}
+	if found[8].version != 9 || found[8].name != "000009_pact_usage.up.sql" || found[8].sql == "" {
+		t.Fatalf("migration = %#v", found[8])
+	}
+	if found[9].version != 10 || found[9].name != "000010_accountability_requests.up.sql" || found[9].sql == "" {
+		t.Fatalf("migration = %#v", found[9])
+	}
+	if found[10].version != 11 || found[10].name != "000011_ctrld_ids.up.sql" || found[10].sql == "" {
+		t.Fatalf("migration = %#v", found[10])
+	}
+	if found[11].version != 12 || found[11].name != "000012_payment_requests.up.sql" || found[11].sql == "" {
+		t.Fatalf("migration = %#v", found[11])
+	}
+	if found[12].version != 13 || found[12].name != "000013_payment_request_lifecycle.up.sql" || found[12].sql == "" {
+		t.Fatalf("migration = %#v", found[12])
+	}
+	if found[13].version != 14 || found[13].name != "000014_funding_net_amount.up.sql" || found[13].sql == "" {
+		t.Fatalf("migration = %#v", found[13])
 	}
 }
 

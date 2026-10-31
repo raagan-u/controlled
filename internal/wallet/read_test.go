@@ -34,7 +34,7 @@ func TestWalletReadHandlerReturnsAuthenticatedWallet(t *testing.T) {
 		t.Fatalf("money.New() error = %v", err)
 	}
 	snapshot, err := wallet.NewSnapshot(walletValue, wallet.BalanceSet{
-		Available: zero, Pending: zero, CommitmentReserve: zero,
+		Available: zero, Pending: zero, Staked: zero, CommitmentReserve: zero,
 	})
 	if err != nil {
 		t.Fatalf("NewSnapshot() error = %v", err)
@@ -126,13 +126,64 @@ func TestWalletTransactionsHandler(t *testing.T) {
 	}
 }
 
+func TestWalletTransactionHandler(t *testing.T) {
+	t.Parallel()
+	user, err := identity.NewUser("user-1", "founder@example.com", "Raagan", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	amount, _ := money.New(900, "USD")
+	reader := stubWalletReader{transaction: wallet.Transaction{
+		ID: "journal-1", Reference: ledger.Reference{Type: "INTERNAL_TRANSFER", ID: "transfer-1"},
+		Description: "Controlled internal transfer", OccurredAt: time.Now(), PostedAt: time.Now(),
+		Entries: []wallet.TransactionEntry{{AccountID: "available-1", AccountKind: ledger.AccountKindAvailable, Side: ledger.SideDebit, Amount: amount}},
+		Transfer: &wallet.TransferDetails{
+			Sender:    wallet.TransactionParty{ID: "user-1", CtrldID: "ctrld00001", DisplayName: "Raagan", Email: "founder@example.com"},
+			Recipient: wallet.TransactionParty{ID: "user-2", CtrldID: "ctrld00002", DisplayName: "Friend", Email: "friend@example.com"},
+			Remark:    "Dinner", PaymentRequestID: "request-1",
+		},
+	}}
+	handler := wallet.NewReadHandler(reader)
+	protected := identity.RequireSession(walletSessionManager{user: user}, http.HandlerFunc(handler.Transaction))
+	request := httptest.NewRequest(http.MethodGet, "/v1/wallet/transactions/journal-1", nil)
+	request.SetPathValue("id", "journal-1")
+	request.Header.Set("Authorization", "Bearer test-token")
+	response := httptest.NewRecorder()
+	protected.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+	}
+	var payload struct {
+		Transaction struct {
+			ID              string `json:"id"`
+			TransferDetails struct {
+				Remark string `json:"remark"`
+				Sender struct {
+					DisplayName string `json:"displayName"`
+				} `json:"sender"`
+			} `json:"transferDetails"`
+		} `json:"transaction"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil || payload.Transaction.ID != "journal-1" {
+		t.Fatalf("response = %s, err = %v", response.Body.String(), err)
+	}
+	if payload.Transaction.TransferDetails.Remark != "Dinner" || payload.Transaction.TransferDetails.Sender.DisplayName != "Raagan" {
+		t.Fatalf("transfer details = %#v", payload.Transaction.TransferDetails)
+	}
+}
+
 type stubWalletReader struct {
 	snapshot     wallet.Snapshot
 	transactions []wallet.Transaction
+	transaction  wallet.Transaction
 }
 
 func (s stubWalletReader) TransactionsByUser(context.Context, identity.UserID, int) ([]wallet.Transaction, error) {
 	return s.transactions, nil
+}
+
+func (s stubWalletReader) TransactionByUser(context.Context, identity.UserID, ledger.JournalID) (wallet.Transaction, error) {
+	return s.transaction, nil
 }
 
 func (s stubWalletReader) WalletByUser(context.Context, identity.UserID) (wallet.Snapshot, error) {

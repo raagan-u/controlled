@@ -19,12 +19,15 @@ func TestPasswordRegistrationCreatesCredentialAndSession(t *testing.T) {
 		store, provisioner, passwordHasher{}, sessions,
 	)
 
-	started, err := service.Register(context.Background(), " Founder@Example.com ", "plain password")
+	started, err := service.Register(context.Background(), " Founder@Example.com ", "plain password", "Founder Name")
 	if err != nil {
 		t.Fatalf("Register() error = %v", err)
 	}
 	if started.User.ID() != user.ID() || provisioner.email != "founder@example.com" {
 		t.Fatalf("started = %#v, provisioned email = %q", started, provisioner.email)
+	}
+	if provisioner.displayName != "Founder Name" {
+		t.Fatalf("provisioned display name = %q", provisioner.displayName)
 	}
 	if store.createdUserID != user.ID() || store.createdHash != "hashed:plain password" {
 		t.Fatalf("credential = %q/%q", store.createdUserID, store.createdHash)
@@ -41,7 +44,7 @@ func TestPasswordRegistrationRejectsExistingEmail(t *testing.T) {
 		passwordHasher{},
 		&googleSessions{},
 	)
-	_, err := service.Register(context.Background(), user.Email(), "password")
+	_, err := service.Register(context.Background(), user.Email(), "password", "Founder")
 	if !errors.Is(err, identity.ErrEmailAlreadyRegistered) {
 		t.Fatalf("Register() error = %v", err)
 	}

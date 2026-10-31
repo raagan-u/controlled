@@ -35,7 +35,8 @@ func TestSessionHandlerStartsSecureCookie(t *testing.T) {
 	}
 	var payload struct {
 		User struct {
-			ID string `json:"id"`
+			ID      string `json:"id"`
+			CtrldID string `json:"ctrldId"`
 		} `json:"user"`
 	}
 	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
@@ -43,6 +44,9 @@ func TestSessionHandlerStartsSecureCookie(t *testing.T) {
 	}
 	if payload.User.ID != string(user.ID()) {
 		t.Fatalf("user ID = %q, want %q", payload.User.ID, user.ID())
+	}
+	if payload.User.CtrldID != user.CtrldID() {
+		t.Fatalf("ctrld ID = %q, want %q", payload.User.CtrldID, user.CtrldID())
 	}
 }
 
@@ -103,6 +107,10 @@ func testUser(t *testing.T) identity.User {
 	user, err := identity.NewUser("user-1", "founder@example.com", "Raagan", time.Now())
 	if err != nil {
 		t.Fatalf("NewUser() error = %v", err)
+	}
+	user, err = user.WithCtrldID("ctrld04217")
+	if err != nil {
+		t.Fatalf("WithCtrldID() error = %v", err)
 	}
 	return user
 }

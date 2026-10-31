@@ -2,12 +2,18 @@ import { useEffect } from 'react';
 import { router } from 'expo-router';
 import { StyleSheet, Text, View } from 'react-native';
 
+import { getSessionToken } from '@/auth/session';
 import { colors, fonts } from '@/theme';
 
 export default function SplashScreen() {
   useEffect(() => {
-    const timer = setTimeout(() => router.replace('/welcome'), 1200);
-    return () => clearTimeout(timer);
+    let active = true;
+    const timer = setTimeout(() => {
+      void getSessionToken().then((token) => {
+        if (active) router.replace(token ? '/home' : '/welcome');
+      });
+    }, 800);
+    return () => { active = false; clearTimeout(timer); };
   }, []);
 
   return (

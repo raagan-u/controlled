@@ -32,6 +32,12 @@ services:
       CONTROLLED_DB_MAX_CONNS: ${CONTROLLED_DB_MAX_CONNS:-10}
       CONTROLLED_DB_MIN_CONNS: ${CONTROLLED_DB_MIN_CONNS:-1}
       CONTROLLED_GOOGLE_CLIENT_ID: ${CONTROLLED_GOOGLE_CLIENT_ID:-376706277927-s4mest4okp2a4par7m6tl69b9ut3rl7c.apps.googleusercontent.com}
+      CONTROLLED_CUSTODY_PROVIDER: ${CONTROLLED_CUSTODY_PROVIDER:-fake}
+      PAYPAL_API_BASE: ${PAYPAL_API_BASE:-https://api-m.sandbox.paypal.com}
+      PAYPAL_CLIENT_ID: ${PAYPAL_CLIENT_ID:-}
+      PAYPAL_CLIENT_SECRET: ${PAYPAL_CLIENT_SECRET:-}
+      PAYPAL_RETURN_URL: ${PAYPAL_RETURN_URL:-https://example.com/paypal/return}
+      PAYPAL_CANCEL_URL: ${PAYPAL_CANCEL_URL:-https://example.com/paypal/cancel}
     depends_on:
       postgres:
         condition: service_healthy

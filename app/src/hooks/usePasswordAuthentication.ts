@@ -18,8 +18,8 @@ export function usePasswordAuthentication(mode: PasswordAuthenticationMode) {
     setError(undefined);
     setLoading(true);
     try {
-      await authenticateWithPassword(mode, values.email, values.password);
-      router.replace('/onboarding');
+		  await authenticateWithPassword(mode, values.email, values.password, values.displayName);
+		  router.replace('/home');
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Authentication failed. Please try again.');
     } finally {
@@ -29,4 +29,3 @@ export function usePasswordAuthentication(mode: PasswordAuthenticationMode) {
 
   return { authenticate, error, loading };
 }
-
