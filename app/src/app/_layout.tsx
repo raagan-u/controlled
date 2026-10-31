@@ -27,7 +27,6 @@ export default function RootLayout() {
         <Stack.Screen name="index" options={{ animation: 'fade' }} />
         <Stack.Screen name="home" options={{ animation: 'fade', animationDuration: 380 }} />
         <Stack.Screen name="welcome" options={{ animation: 'fade' }} />
-        <Stack.Screen name="activity" options={{ animation: 'none', contentStyle: { backgroundColor: 'transparent' }, gestureEnabled: false, presentation: 'transparentModal' }} />
       </Stack>
       <StatusBar style="dark" />
     </>

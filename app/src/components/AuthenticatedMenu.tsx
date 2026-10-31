@@ -8,13 +8,16 @@ import { getCurrentUser, signOut } from '@/api/wallet';
 import type { User } from '@/api/types';
 import { colors, fonts } from '@/theme';
 
-const destinations: { label: string; route: Href }[] = [
+// Distinct value per request so re-selecting Activity on Home re-triggers the expand.
+let activityRequests = 0;
+
+const destinations: { label: string; opensActivity?: boolean; route: Href }[] = [
   { label: 'Home', route: '/home' },
   { label: 'Requests', route: '/requests' },
   { label: 'Pacts', route: '/pacts' },
   { label: 'Accountability', route: '/accountability' },
   { label: 'Invitations', route: '/invitations' },
-  { label: 'Activity', route: '/activity' },
+  { label: 'Activity', opensActivity: true, route: '/home' },
 ];
 
 export function AuthenticatedMenu({ initiallyOpen = false, style }: { initiallyOpen?: boolean; style?: StyleProp<ViewStyle> }) {
@@ -32,10 +35,12 @@ export function AuthenticatedMenu({ initiallyOpen = false, style }: { initiallyO
     setOpen(true);
     if (!user) void getCurrentUser().then((value) => setUser(value.user)).catch(() => undefined);
   };
-  const navigate = (route: Href) => {
+  const navigate = (route: Href, opensActivity?: boolean) => {
     progress.set(0);
     setOpen(false);
-    if (route === '/home') router.replace(route); else router.push(route);
+    // Activity is Home's expanded panel; the changing param re-triggers it even when already on Home.
+    if (opensActivity) router.replace({ pathname: '/home', params: { openActivity: String(++activityRequests) } });
+    else if (route === '/home') router.replace(route); else router.push(route);
   };
   return <>
     <PressableScale accessibilityLabel="Open menu" accessibilityRole="button" onPress={show} scaleTo={0.9} style={[styles.trigger, style]}><Text style={styles.menuIcon}>≡</Text></PressableScale>
@@ -47,7 +52,7 @@ export function AuthenticatedMenu({ initiallyOpen = false, style }: { initiallyO
           <Pressable accessibilityLabel="Close menu" onPress={hide} style={styles.close}><Text style={styles.closeText}>×</Text></Pressable>
           <View style={styles.profile}><View style={styles.profileAvatar}><Text style={styles.profileInitial}>{user?.displayName.charAt(0) ?? 'C'}</Text></View><View style={styles.profileCopy}><Text numberOfLines={1} style={styles.drawerName}>{user?.displayName ?? 'ctrld'}</Text><Text style={styles.drawerID}>{user?.ctrldId ?? ''}</Text><Text numberOfLines={1} style={styles.drawerEmail}>{user?.email ?? ''}</Text></View></View>
           <Text style={styles.drawerKicker}>MENU —</Text>
-          {destinations.map(({ label, route }, index) => { const active = route === '/home' ? pathname === '/home' : pathname.startsWith(String(route)); return <PressableScale entering={FadeInRight.delay(120 + index * 45).duration(320)} key={label} onPress={() => navigate(route)} scaleTo={0.97} style={[styles.drawerItem, active && styles.drawerItemActive]}><Text style={[styles.drawerItemText, active && styles.drawerItemTextActive]}>{label}</Text></PressableScale>; })}
+          {destinations.map(({ label, opensActivity, route }, index) => { const active = opensActivity ? false : route === '/home' ? pathname === '/home' : pathname.startsWith(String(route)); return <PressableScale entering={FadeInRight.delay(120 + index * 45).duration(320)} key={label} onPress={() => navigate(route, opensActivity)} scaleTo={0.97} style={[styles.drawerItem, active && styles.drawerItemActive]}><Text style={[styles.drawerItemText, active && styles.drawerItemTextActive]}>{label}</Text></PressableScale>; })}
           <View style={styles.drawerBottom}><Text style={styles.drawerSmall}>Settings</Text><Text style={styles.drawerSmall}>Help</Text><Text onPress={() => void signOut().finally(() => router.replace('/welcome'))} style={styles.signOut}>Sign out</Text></View>
         </Pressable></Animated.View>
         </Pressable>
