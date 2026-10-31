@@ -2,6 +2,7 @@ import { router } from 'expo-router';
 import { useState } from 'react';
 
 import { authenticateWithGoogle } from '@/auth/google';
+import { signedInRoute } from '@/auth/routing';
 
 export function useGoogleAuthentication() {
   const [error, setError] = useState<string>();
@@ -16,7 +17,7 @@ export function useGoogleAuthentication() {
     try {
       const result = await authenticateWithGoogle();
       if (result === 'authenticated') {
-		  router.replace('/home');
+        router.replace(await signedInRoute());
       }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Google sign-in failed. Please try again.');
