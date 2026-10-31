@@ -1,5 +1,6 @@
-import { Pressable, StyleSheet, Text } from 'react-native';
+import { StyleSheet, Text } from 'react-native';
 
+import { PressableScale } from '@/motion';
 import { colors, fonts } from '@/theme';
 
 type PrimaryButtonProps = {
@@ -10,19 +11,16 @@ type PrimaryButtonProps = {
 
 export function PrimaryButton({ disabled = false, label, onPress }: PrimaryButtonProps) {
   return (
-    <Pressable
+    <PressableScale
+      scaleTo={0.97}
       accessibilityState={{ disabled }}
       accessibilityRole="button"
       disabled={disabled}
       onPress={onPress}
-      style={({ pressed }) => [
-        styles.button,
-        disabled && styles.disabled,
-        pressed && styles.pressed,
-      ]}
+      style={[styles.button, disabled && styles.disabled]}
     >
       <Text style={styles.label}>{label}</Text>
-    </Pressable>
+    </PressableScale>
   );
 }
 
@@ -34,10 +32,6 @@ const styles = StyleSheet.create({
     height: 66,
     justifyContent: 'center',
     width: '100%',
-  },
-  pressed: {
-    opacity: 0.84,
-    transform: [{ scale: 0.99 }],
   },
   disabled: {
     opacity: 0.5,
