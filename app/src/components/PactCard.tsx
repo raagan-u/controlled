@@ -1,5 +1,7 @@
-import { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { StyleSheet, Text, View } from 'react-native';
+import Animated, { Easing, useAnimatedStyle, useSharedValue, withDelay, withTiming } from 'react-native-reanimated';
+import { PressableScale, rise } from '@/motion';
 import type { Pact } from '@/api/types';
 import { colors, fonts, radii } from '@/theme';
 import { formatUSD } from '@/api/wallet';
@@ -28,13 +30,17 @@ export function PactCard({ compact, onPress, pact }: { compact?: boolean; onPres
   const limit = pact.terms.spendingLimit.amountMinor;
   const progressAvailable = pact.progressAvailable !== false;
   const progress = Math.min(1, limit ? pact.progress.usedMinor / limit : 0);
+  const fill = useSharedValue(0);
+  const target = Math.max(3, progress * 100);
+  useEffect(() => { fill.set(withDelay(250, withTiming(target, { duration: 700, easing: Easing.out(Easing.cubic) }))); }, [fill, target]);
+  const fillStyle = useAnimatedStyle(() => ({ width: `${fill.value}%` }));
   const days = Math.max(0, Math.ceil((new Date(pact.terms.endsAt).getTime() - now) / 86_400_000));
   return (
-    <Pressable disabled={!onPress} onPress={onPress} style={[styles.card, compact && styles.compact, { backgroundColor: tone.background }]}>
+    <PressableScale disabled={!onPress} entering={rise()} onPress={onPress} scaleTo={0.98} style={[styles.card, compact && styles.compact, { backgroundColor: tone.background }]}>
       <View style={styles.top}><Text numberOfLines={2} style={styles.goal}>{pact.terms.goal}</Text><View style={[styles.badge, { backgroundColor: colors.white }]}><Text style={[styles.badgeText, { color: tone.accent }]}>{pact.status.replaceAll('_', ' ')}</Text></View></View>
-      {progressAvailable ? <><View style={styles.amountRow}><Text style={styles.amount}>${formatUSD(pact.progress.usedMinor)}</Text><Text style={styles.of}> spent of ${formatUSD(limit)}</Text><Text style={styles.left}>${formatUSD(pact.progress.remainingMinor)} left</Text></View><View style={styles.track}><View style={[styles.fill, { backgroundColor: tone.accent, width: `${Math.max(3, progress * 100)}%` }]} /></View></> : <View style={styles.unavailable}><Text style={styles.unavailableTitle}>Progress unavailable</Text><Text style={styles.of}>Reconnect to the updated API to refresh spending.</Text></View>}
+      {progressAvailable ? <><View style={styles.amountRow}><Text style={styles.amount}>${formatUSD(pact.progress.usedMinor)}</Text><Text style={styles.of}> spent of ${formatUSD(limit)}</Text><Text style={styles.left}>${formatUSD(pact.progress.remainingMinor)} left</Text></View><View style={styles.track}><Animated.View style={[styles.fill, { backgroundColor: tone.accent }, fillStyle]} /></View></> : <View style={styles.unavailable}><Text style={styles.unavailableTitle}>Progress unavailable</Text><Text style={styles.of}>Reconnect to the updated API to refresh spending.</Text></View>}
       <Text style={styles.meta}>{pact.status === 'RESOLVED' ? 'Completed' : `${days} day${days === 1 ? '' : 's'} left`} · {pact.emergencyCount} emergenc{pact.emergencyCount === 1 ? 'y' : 'ies'}</Text>
-    </Pressable>
+    </PressableScale>
   );
 }
 
