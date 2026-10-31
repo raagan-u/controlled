@@ -248,6 +248,9 @@ func TestPostgresPactStakeLifecycle(t *testing.T) {
 	if !errors.Is(err, accountability.ErrUnavailable) {
 		t.Fatalf("interrupted emergency approval error = %v", err)
 	}
+	if _, err := pool.Exec(ctx, `UPDATE transaction_intents SET status = 'FAILED' WHERE id = $1::text::uuid`, string(emergencyAttempt.Request.IntentID)); err != nil {
+		t.Fatalf("simulate legacy failed approved intent: %v", err)
+	}
 	recoveryResult, err := accountabilityService.RunMaintenance(ctx)
 	if err != nil || recoveryResult.Recovered < 1 {
 		t.Fatalf("recover emergency approval = %+v err=%v", recoveryResult, err)
@@ -267,7 +270,7 @@ func TestPostgresPactStakeLifecycle(t *testing.T) {
 	}
 	breakAttempt, err := operations.TransferWithReason(
 		ctx, "pact-conscious-break:"+runID, owner.Provisioning.User().ID(),
-		partner.Provisioning.User().Email(), 1, "USD", "Conscious break test",
+		partner.Provisioning.User().CtrldID(), 1, "USD", "Conscious break test",
 	)
 	if err != nil || breakAttempt.Request == nil {
 		t.Fatalf("create conscious break request: attempt=%+v err=%v", breakAttempt, err)

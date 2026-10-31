@@ -267,6 +267,7 @@ func (r *PostgresRepository) CreateTransfer(
 	if currency != candidate.Amount.Currency() {
 		return Transfer{}, ErrCurrencyMismatch
 	}
+	requestedRecipient := candidate.RecipientEmail
 	var recipientID string
 	var recipientEmail string
 	var recipientWallet string
@@ -303,7 +304,7 @@ func (r *PostgresRepository) CreateTransfer(
 		return Transfer{}, err
 	}
 	pactIDs, err := r.authorizePactDebit(
-		ctx, tx, candidate.SenderID, DebitInternalTransfer, candidate.RecipientEmail,
+		ctx, tx, candidate.SenderID, DebitInternalTransfer, requestedRecipient,
 		candidate.Amount, candidate.CreatedAt,
 	)
 	if err != nil {
