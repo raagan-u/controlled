@@ -99,10 +99,12 @@ func (r *PostgresRepository) RequestForUser(ctx context.Context, userID identity
 		item.ResolvedAt = resolvedAt.Time
 	}
 	rows, err := r.pool.Query(ctx, `
-		SELECT pact_id::text, limit_minor, used_minor, proposed_minor, overage_minor
-		  FROM accountability_request_pacts
-		 WHERE request_id = $1::text::uuid
-		 ORDER BY pact_id
+		SELECT blocked.pact_id::text, pact.goal, pact.intent,
+		       blocked.limit_minor, blocked.used_minor, blocked.proposed_minor, blocked.overage_minor
+		  FROM accountability_request_pacts AS blocked
+		  JOIN pacts AS pact ON pact.id = blocked.pact_id
+		 WHERE blocked.request_id = $1::text::uuid
+		 ORDER BY blocked.pact_id
 	`, requestID)
 	if err != nil {
 		return Request{}, fmt.Errorf("read accountability request pacts: %w", err)
@@ -110,10 +112,52 @@ func (r *PostgresRepository) RequestForUser(ctx context.Context, userID identity
 	defer rows.Close()
 	for rows.Next() {
 		var pact RequestPact
-		if err := rows.Scan(&pact.PactID, &pact.LimitMinor, &pact.UsedMinor, &pact.ProposedMinor, &pact.OverageMinor); err != nil {
+		if err := rows.Scan(
+			&pact.PactID, &pact.Goal, &pact.Intent,
+			&pact.LimitMinor, &pact.UsedMinor, &pact.ProposedMinor, &pact.OverageMinor,
+		); err != nil {
 			return Request{}, err
 		}
 		item.Pacts = append(item.Pacts, pact)
 	}
-	return item, rows.Err()
+	if err := rows.Err(); err != nil {
+		return Request{}, err
+	}
+	rows.Close()
+	reviewerRows, err := r.pool.Query(ctx, `
+		SELECT reviewer.partner_id::text, reviewer.position,
+		       COALESCE(assignment.status, 'WAITING'), COALESCE(assignment.decision, ''),
+		       assignment.assigned_at, assignment.expires_at, assignment.responded_at
+		  FROM accountability_request_reviewers AS reviewer
+		  LEFT JOIN accountability_assignments AS assignment
+		    ON assignment.request_id = reviewer.request_id
+		   AND assignment.reviewer_position = reviewer.position
+		 WHERE reviewer.request_id = $1::text::uuid
+		 ORDER BY reviewer.position
+	`, requestID)
+	if err != nil {
+		return Request{}, fmt.Errorf("read accountability reviewers: %w", err)
+	}
+	defer reviewerRows.Close()
+	for reviewerRows.Next() {
+		var reviewer RequestReviewer
+		var assignedAt, expiresAt, respondedAt pgtype.Timestamptz
+		if err := reviewerRows.Scan(
+			&reviewer.PartnerID, &reviewer.Position, &reviewer.Status, &reviewer.Decision,
+			&assignedAt, &expiresAt, &respondedAt,
+		); err != nil {
+			return Request{}, fmt.Errorf("scan accountability reviewer: %w", err)
+		}
+		if assignedAt.Valid {
+			reviewer.AssignedAt = assignedAt.Time
+		}
+		if expiresAt.Valid {
+			reviewer.ExpiresAt = expiresAt.Time
+		}
+		if respondedAt.Valid {
+			reviewer.RespondedAt = respondedAt.Time
+		}
+		item.Reviewers = append(item.Reviewers, reviewer)
+	}
+	return item, reviewerRows.Err()
 }

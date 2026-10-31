@@ -298,29 +298,42 @@ type circleAPIResponse struct {
 
 type requestPactAPIResponse struct {
 	PactID        string `json:"pactId"`
+	Goal          string `json:"goal"`
+	Intent        string `json:"intent"`
 	LimitMinor    int64  `json:"limitMinor"`
 	UsedMinor     int64  `json:"usedMinor"`
 	ProposedMinor int64  `json:"proposedMinor"`
 	OverageMinor  int64  `json:"overageMinor"`
 }
 
+type requestReviewerAPIResponse struct {
+	PartnerID   string     `json:"partnerId"`
+	Position    int        `json:"position"`
+	Status      string     `json:"status"`
+	Decision    string     `json:"decision,omitempty"`
+	AssignedAt  *time.Time `json:"assignedAt,omitempty"`
+	ExpiresAt   *time.Time `json:"expiresAt,omitempty"`
+	RespondedAt *time.Time `json:"respondedAt,omitempty"`
+}
+
 type requestAPIResponse struct {
-	ID                  string                   `json:"id"`
-	IntentID            string                   `json:"intentId"`
-	ExecutedOperationID string                   `json:"executedOperationId,omitempty"`
-	OwnerID             string                   `json:"ownerId"`
-	OperationType       string                   `json:"operationType"`
-	Destination         string                   `json:"destination"`
-	AmountMinor         int64                    `json:"amountMinor"`
-	Currency            string                   `json:"currency"`
-	Reason              string                   `json:"reason"`
-	Status              string                   `json:"status"`
-	Classification      string                   `json:"classification,omitempty"`
-	AssignedPartnerID   string                   `json:"assignedPartnerId,omitempty"`
-	Pacts               []requestPactAPIResponse `json:"blockingPacts"`
-	CreatedAt           time.Time                `json:"createdAt"`
-	ExpiresAt           time.Time                `json:"expiresAt"`
-	ResolvedAt          *time.Time               `json:"resolvedAt,omitempty"`
+	ID                  string                       `json:"id"`
+	IntentID            string                       `json:"intentId"`
+	ExecutedOperationID string                       `json:"executedOperationId,omitempty"`
+	OwnerID             string                       `json:"ownerId"`
+	OperationType       string                       `json:"operationType"`
+	Destination         string                       `json:"destination"`
+	AmountMinor         int64                        `json:"amountMinor"`
+	Currency            string                       `json:"currency"`
+	Reason              string                       `json:"reason"`
+	Status              string                       `json:"status"`
+	Classification      string                       `json:"classification,omitempty"`
+	AssignedPartnerID   string                       `json:"assignedPartnerId,omitempty"`
+	Pacts               []requestPactAPIResponse     `json:"blockingPacts"`
+	Reviewers           []requestReviewerAPIResponse `json:"reviewers"`
+	CreatedAt           time.Time                    `json:"createdAt"`
+	ExpiresAt           time.Time                    `json:"expiresAt"`
+	ResolvedAt          *time.Time                   `json:"resolvedAt,omitempty"`
 }
 
 func requestResponse(item Request) struct {
@@ -329,16 +342,37 @@ func requestResponse(item Request) struct {
 	pacts := make([]requestPactAPIResponse, len(item.Pacts))
 	for index, pact := range item.Pacts {
 		pacts[index] = requestPactAPIResponse{
-			PactID: pact.PactID, LimitMinor: pact.LimitMinor, UsedMinor: pact.UsedMinor,
+			PactID: pact.PactID, Goal: pact.Goal, Intent: pact.Intent,
+			LimitMinor: pact.LimitMinor, UsedMinor: pact.UsedMinor,
 			ProposedMinor: pact.ProposedMinor, OverageMinor: pact.OverageMinor,
 		}
+	}
+	reviewers := make([]requestReviewerAPIResponse, 0, len(item.Reviewers))
+	for _, reviewer := range item.Reviewers {
+		value := requestReviewerAPIResponse{
+			PartnerID: string(reviewer.PartnerID), Position: reviewer.Position,
+			Status: reviewer.Status, Decision: reviewer.Decision,
+		}
+		if !reviewer.AssignedAt.IsZero() {
+			at := reviewer.AssignedAt
+			value.AssignedAt = &at
+		}
+		if !reviewer.ExpiresAt.IsZero() {
+			at := reviewer.ExpiresAt
+			value.ExpiresAt = &at
+		}
+		if !reviewer.RespondedAt.IsZero() {
+			at := reviewer.RespondedAt
+			value.RespondedAt = &at
+		}
+		reviewers = append(reviewers, value)
 	}
 	result := requestAPIResponse{
 		ID: item.ID, IntentID: string(item.IntentID), ExecutedOperationID: string(item.ExecutedOperationID), OwnerID: string(item.OwnerID),
 		OperationType: string(item.OperationType), Destination: item.Destination,
 		AmountMinor: item.AmountMinor, Currency: item.Currency, Reason: item.Reason,
 		Status: item.Status, Classification: item.Classification,
-		AssignedPartnerID: string(item.AssignedPartnerID), Pacts: pacts,
+		AssignedPartnerID: string(item.AssignedPartnerID), Pacts: pacts, Reviewers: reviewers,
 		CreatedAt: item.CreatedAt, ExpiresAt: item.ExpiresAt,
 	}
 	if !item.ResolvedAt.IsZero() {

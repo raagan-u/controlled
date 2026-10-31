@@ -21,6 +21,11 @@ type Commander interface {
 	Cancel(context.Context, UserID, PactID) (*Pact, bool, error)
 }
 
+type progressCommander interface {
+	PactProgress(context.Context, UserID, PactID) (Progress, error)
+	PactsProgress(context.Context, UserID) (map[PactID]Progress, error)
+}
+
 func (h *Handler) ReserveStake(response http.ResponseWriter, request *http.Request) {
 	user, ok := pactUser(response, request)
 	if !ok {
@@ -34,7 +39,7 @@ func (h *Handler) ReserveStake(response http.ResponseWriter, request *http.Reque
 		writePactError(response, err)
 		return
 	}
-	httpapi.WriteJSON(response, http.StatusOK, pactEnvelope(value, duplicate))
+	httpapi.WriteJSON(response, http.StatusOK, h.pactEnvelope(request.Context(), UserID(user.ID()), value, duplicate))
 }
 
 func (h *Handler) Cancel(response http.ResponseWriter, request *http.Request) {
@@ -49,7 +54,7 @@ func (h *Handler) Cancel(response http.ResponseWriter, request *http.Request) {
 		writePactError(response, err)
 		return
 	}
-	httpapi.WriteJSON(response, http.StatusOK, pactEnvelope(value, duplicate))
+	httpapi.WriteJSON(response, http.StatusOK, h.pactEnvelope(request.Context(), UserID(user.ID()), value, duplicate))
 }
 
 type Handler struct {
@@ -78,7 +83,7 @@ func (h *Handler) CreateDraft(response http.ResponseWriter, request *http.Reques
 	if duplicate {
 		status = http.StatusOK
 	}
-	httpapi.WriteJSON(response, status, pactEnvelope(created, duplicate))
+	httpapi.WriteJSON(response, status, h.pactEnvelope(request.Context(), UserID(user.ID()), created, duplicate))
 }
 
 func (h *Handler) UpdateDraft(response http.ResponseWriter, request *http.Request) {
@@ -97,7 +102,7 @@ func (h *Handler) UpdateDraft(response http.ResponseWriter, request *http.Reques
 		writePactError(response, err)
 		return
 	}
-	httpapi.WriteJSON(response, http.StatusOK, pactEnvelope(updated, false))
+	httpapi.WriteJSON(response, http.StatusOK, h.pactEnvelope(request.Context(), UserID(user.ID()), updated, false))
 }
 
 func (h *Handler) Confirm(response http.ResponseWriter, request *http.Request) {
@@ -112,7 +117,7 @@ func (h *Handler) Confirm(response http.ResponseWriter, request *http.Request) {
 		writePactError(response, err)
 		return
 	}
-	httpapi.WriteJSON(response, http.StatusOK, pactEnvelope(confirmed, false))
+	httpapi.WriteJSON(response, http.StatusOK, h.pactEnvelope(request.Context(), UserID(user.ID()), confirmed, false))
 }
 
 func (h *Handler) Pact(response http.ResponseWriter, request *http.Request) {
@@ -125,7 +130,7 @@ func (h *Handler) Pact(response http.ResponseWriter, request *http.Request) {
 		writePactError(response, err)
 		return
 	}
-	httpapi.WriteJSON(response, http.StatusOK, pactEnvelope(value, false))
+	httpapi.WriteJSON(response, http.StatusOK, h.pactEnvelope(request.Context(), UserID(user.ID()), value, false))
 }
 
 func (h *Handler) Pacts(response http.ResponseWriter, request *http.Request) {
@@ -139,8 +144,16 @@ func (h *Handler) Pacts(response http.ResponseWriter, request *http.Request) {
 		return
 	}
 	items := make([]pactAPIResponse, len(values))
+	progressByID := map[PactID]Progress{}
+	if reader, ok := h.commands.(progressCommander); ok {
+		progressByID, err = reader.PactsProgress(request.Context(), UserID(user.ID()))
+		if err != nil {
+			writePactError(response, err)
+			return
+		}
+	}
 	for index, value := range values {
-		items[index] = pactEnvelope(value, false).Pact
+		items[index] = pactEnvelope(value, false, progressByID[value.ID()]).Pact
 	}
 	httpapi.WriteJSON(response, http.StatusOK, struct {
 		Pacts []pactAPIResponse `json:"pacts"`
@@ -215,9 +228,30 @@ type pactAPIResponse struct {
 	EmergencyCount     int                  `json:"emergencyCount"`
 	Version            uint64               `json:"version"`
 	Duplicate          bool                 `json:"duplicate"`
+	Progress           pactProgressResponse `json:"progress"`
 }
 
-func pactEnvelope(value *Pact, duplicate bool) struct {
+type pactUsageResponse struct {
+	OperationType       string     `json:"operationType"`
+	OperationID         string     `json:"operationId"`
+	AmountMinor         int64      `json:"amountMinor"`
+	Currency            string     `json:"currency"`
+	Status              string     `json:"status"`
+	CountedAt           time.Time  `json:"countedAt"`
+	ReversedAt          *time.Time `json:"reversedAt,omitempty"`
+	CounterpartyName    string     `json:"counterpartyName,omitempty"`
+	CounterpartyCtrldID string     `json:"counterpartyCtrldId,omitempty"`
+	Destination         string     `json:"destination,omitempty"`
+}
+
+type pactProgressResponse struct {
+	UsedMinor      int64               `json:"usedMinor"`
+	RemainingMinor int64               `json:"remainingMinor"`
+	OverageMinor   int64               `json:"overageMinor"`
+	Usage          []pactUsageResponse `json:"usage"`
+}
+
+func pactEnvelope(value *Pact, duplicate bool, progress Progress) struct {
 	Pact pactAPIResponse `json:"pact"`
 } {
 	terms := value.Terms()
@@ -233,7 +267,42 @@ func pactEnvelope(value *Pact, duplicate bool) struct {
 		},
 		Status: value.Status(), Outcome: value.Outcome(), StakeReservationID: value.StakeReservationID(),
 		EmergencyCount: value.EmergencyCount(), Version: value.Version(), Duplicate: duplicate,
+		Progress: pactProgressEnvelope(progress),
 	}}
+}
+
+func (h *Handler) pactEnvelope(ctx context.Context, owner UserID, value *Pact, duplicate bool) struct {
+	Pact pactAPIResponse `json:"pact"`
+} {
+	progress := Progress{}
+	if reader, ok := h.commands.(progressCommander); ok {
+		loaded, err := reader.PactProgress(ctx, owner, value.ID())
+		if err == nil {
+			progress = loaded
+		}
+	}
+	return pactEnvelope(value, duplicate, progress)
+}
+
+func pactProgressEnvelope(progress Progress) pactProgressResponse {
+	items := make([]pactUsageResponse, 0, len(progress.Usage))
+	for _, usage := range progress.Usage {
+		item := pactUsageResponse{
+			OperationType: usage.OperationType, OperationID: usage.OperationID,
+			AmountMinor: usage.AmountMinor, Currency: usage.Currency, Status: usage.Status,
+			CountedAt: usage.CountedAt, CounterpartyName: usage.CounterpartyName,
+			CounterpartyCtrldID: usage.CounterpartyCtrldID, Destination: usage.Destination,
+		}
+		if !usage.ReversedAt.IsZero() {
+			reversedAt := usage.ReversedAt
+			item.ReversedAt = &reversedAt
+		}
+		items = append(items, item)
+	}
+	return pactProgressResponse{
+		UsedMinor: progress.UsedMinor, RemainingMinor: progress.RemainingMinor,
+		OverageMinor: progress.OverageMinor, Usage: items,
+	}
 }
 
 func pactUser(response http.ResponseWriter, request *http.Request) (identity.User, bool) {
