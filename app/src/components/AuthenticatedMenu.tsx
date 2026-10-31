@@ -1,5 +1,7 @@
-import { useState } from 'react';
-import { Modal, Pressable, StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Modal, Pressable, StyleProp, StyleSheet, Text, useWindowDimensions, View, ViewStyle } from 'react-native';
+import Animated, { Easing, FadeInRight, interpolate, runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import { PressableScale } from '@/motion';
 import { router, type Href, usePathname } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getCurrentUser, signOut } from '@/api/wallet';
@@ -19,27 +21,37 @@ export function AuthenticatedMenu({ initiallyOpen = false, style }: { initiallyO
   const [open, setOpen] = useState(initiallyOpen);
   const [user, setUser] = useState<User | null>(null);
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
+  const progress = useSharedValue(0);
   const pathname = usePathname();
+  useEffect(() => { if (open) progress.set(withTiming(1, { duration: 320, easing: Easing.out(Easing.cubic) })); }, [open, progress]);
+  const hide = () => { progress.set(withTiming(0, { duration: 220, easing: Easing.in(Easing.cubic) }, (finished) => { if (finished) runOnJS(setOpen)(false); })); };
+  const scrimStyle = useAnimatedStyle(() => ({ opacity: progress.value }));
+  const drawerStyle = useAnimatedStyle(() => ({ transform: [{ translateX: interpolate(progress.value, [0, 1], [width * 0.76, 0]) }] }));
   const show = () => {
     setOpen(true);
     if (!user) void getCurrentUser().then((value) => setUser(value.user)).catch(() => undefined);
   };
   const navigate = (route: Href) => {
+    progress.set(0);
     setOpen(false);
     if (route === '/home') router.replace(route); else router.push(route);
   };
   return <>
-    <Pressable accessibilityLabel="Open menu" accessibilityRole="button" onPress={show} style={[styles.trigger, style]}><Text style={styles.menuIcon}>≡</Text></Pressable>
-    <Modal animationType="fade" onRequestClose={() => setOpen(false)} transparent visible={open}>
-      <Pressable onPress={() => setOpen(false)} style={styles.scrim}>
-        <Pressable onPress={() => undefined} style={[styles.drawer, { paddingTop: Math.max(insets.top + 30, 58) }]}>
-          <Pressable accessibilityLabel="Close menu" onPress={() => setOpen(false)} style={styles.close}><Text style={styles.closeText}>×</Text></Pressable>
+    <PressableScale accessibilityLabel="Open menu" accessibilityRole="button" onPress={show} scaleTo={0.9} style={[styles.trigger, style]}><Text style={styles.menuIcon}>≡</Text></PressableScale>
+    <Modal animationType="none" onRequestClose={hide} transparent visible={open}>
+      <View style={styles.modalRoot}>
+        <Animated.View pointerEvents="none" style={[styles.scrimFill, scrimStyle]} />
+        <Pressable onPress={hide} style={styles.scrim}>
+        <Animated.View style={[styles.drawerWrap, drawerStyle]}><Pressable onPress={() => undefined} style={[styles.drawer, { paddingTop: Math.max(insets.top + 30, 58) }]}>
+          <Pressable accessibilityLabel="Close menu" onPress={hide} style={styles.close}><Text style={styles.closeText}>×</Text></Pressable>
           <View style={styles.profile}><View style={styles.profileAvatar}><Text style={styles.profileInitial}>{user?.displayName.charAt(0) ?? 'C'}</Text></View><View style={styles.profileCopy}><Text numberOfLines={1} style={styles.drawerName}>{user?.displayName ?? 'ctrld'}</Text><Text style={styles.drawerID}>{user?.ctrldId ?? ''}</Text><Text numberOfLines={1} style={styles.drawerEmail}>{user?.email ?? ''}</Text></View></View>
           <Text style={styles.drawerKicker}>MENU —</Text>
-          {destinations.map(({ label, route }) => { const active = route === '/home' ? pathname === '/home' : pathname.startsWith(String(route)); return <Pressable key={label} onPress={() => navigate(route)} style={[styles.drawerItem, active && styles.drawerItemActive]}><Text style={[styles.drawerItemText, active && styles.drawerItemTextActive]}>{label}</Text></Pressable>; })}
+          {destinations.map(({ label, route }, index) => { const active = route === '/home' ? pathname === '/home' : pathname.startsWith(String(route)); return <PressableScale entering={FadeInRight.delay(120 + index * 45).duration(320)} key={label} onPress={() => navigate(route)} scaleTo={0.97} style={[styles.drawerItem, active && styles.drawerItemActive]}><Text style={[styles.drawerItemText, active && styles.drawerItemTextActive]}>{label}</Text></PressableScale>; })}
           <View style={styles.drawerBottom}><Text style={styles.drawerSmall}>Settings</Text><Text style={styles.drawerSmall}>Help</Text><Text onPress={() => void signOut().finally(() => router.replace('/welcome'))} style={styles.signOut}>Sign out</Text></View>
+        </Pressable></Animated.View>
         </Pressable>
-      </Pressable>
+      </View>
     </Modal>
   </>;
 }
@@ -47,8 +59,11 @@ export function AuthenticatedMenu({ initiallyOpen = false, style }: { initiallyO
 const styles = StyleSheet.create({
   trigger: { alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.14)', borderRadius: 12, height: 44, justifyContent: 'center', width: 44 },
   menuIcon: { color: colors.white, fontFamily: fonts.bold, fontSize: 27, lineHeight: 29 },
-  scrim: { alignItems: 'flex-end', backgroundColor: colors.scrim, flex: 1 },
-  drawer: { backgroundColor: colors.surfaceAlt, elevation: 18, flex: 1, paddingHorizontal: 24, shadowColor: colors.navy, shadowOffset: { height: 0, width: -5 }, shadowOpacity: 0.18, shadowRadius: 18, width: '76%' },
+  modalRoot: { flex: 1 },
+  scrimFill: { backgroundColor: colors.scrim, ...StyleSheet.absoluteFill },
+  scrim: { alignItems: 'flex-end', flex: 1 },
+  drawerWrap: { height: '100%', width: '76%' },
+  drawer: { backgroundColor: colors.surfaceAlt, elevation: 18, flex: 1, paddingHorizontal: 24, shadowColor: colors.navy, shadowOffset: { height: 0, width: -5 }, shadowOpacity: 0.18, shadowRadius: 18 },
   close: { alignItems: 'center', alignSelf: 'flex-end', backgroundColor: colors.softButton, borderRadius: 10, height: 44, justifyContent: 'center', width: 44 },
   closeText: { color: colors.navy, fontFamily: fonts.medium, fontSize: 27 },
   profile: { alignItems: 'center', flexDirection: 'row', marginTop: 14 },
