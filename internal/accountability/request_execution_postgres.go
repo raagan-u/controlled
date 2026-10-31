@@ -48,7 +48,7 @@ func (r *PostgresRepository) MarkIntentFailed(ctx context.Context, requestID str
 	}
 	_, err = tx.Exec(ctx, `
 		UPDATE accountability_requests
-		   SET status = 'FAILED', resolved_at = COALESCE(resolved_at, $2)
+		   SET status = 'FAILED', classification = NULL, resolved_at = COALESCE(resolved_at, $2)
 		 WHERE id = $1::text::uuid AND status = 'APPROVED'
 	`, requestID, now)
 	if err != nil {
