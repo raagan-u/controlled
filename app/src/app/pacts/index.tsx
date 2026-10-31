@@ -25,7 +25,7 @@ export default function PactsScreen() {
   const current = pacts.filter((pact) => ['ACTIVE', 'SCHEDULED', 'AWAITING_STAKE'].includes(pact.status));
   const drafts = pacts.filter((pact) => pact.status === 'DRAFT');
   return (
-    <FeatureScreen menu onMenu={() => router.replace('/home?openMenu=1' as Href)} title="Pacts">
+    <FeatureScreen title="Pacts">
       <Pressable onPress={() => router.push('/pacts/new/goal' as Href)} style={styles.create}><Text style={styles.plus}>＋</Text><Text style={styles.createText}>Create pact</Text></Pressable>
       {loading ? <ActivityIndicator color={colors.blue} style={styles.loader} /> : null}
       {error ? <Pressable onPress={() => void load()} style={styles.error}><Text style={styles.errorTitle}>Couldn’t load pacts</Text><Text style={styles.copy}>{error} Tap to retry.</Text></Pressable> : null}

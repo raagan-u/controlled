@@ -8,11 +8,13 @@ export type Activity = {
   meta: string;
   outgoing?: boolean;
   requested?: boolean;
+  neutral?: boolean;
   section: string;
   status: 'Completed' | 'Pending' | 'Failed';
 };
 
 const withdrawalTerminalTypes = new Set(['WITHDRAWAL_SETTLEMENT', 'WITHDRAWAL_RELEASE']);
+const stakeMovementTypes = new Set(['PACT_STAKE_RESERVATION', 'PACT_STAKE_RELEASE', 'PACT_COMPLETION', 'PACT_CONSCIOUS_BREAK']);
 
 export function visibleTransactions(transactions: Transaction[]) {
   const terminalWithdrawalIDs = new Set(
@@ -47,6 +49,9 @@ function presentation(transaction: Transaction, outgoing: boolean) {
   }
   if (referenceType === 'WITHDRAWAL_RESERVATION') return { label: 'Withdraw to PayPal', status: 'Pending' as const };
   if (referenceType === 'WITHDRAWAL_SETTLEMENT') return { label: 'Withdraw to PayPal', status: 'Completed' as const };
+  if (referenceType === 'PACT_STAKE_RESERVATION') return { label: 'Stake reserved', status: 'Completed' as const };
+  if (referenceType === 'PACT_STAKE_RELEASE' || referenceType === 'PACT_COMPLETION') return { label: 'Stake released', status: 'Completed' as const };
+  if (referenceType === 'PACT_CONSCIOUS_BREAK') return { label: 'Stake moved to Commitment Reserve', status: 'Completed' as const };
   return { label: outgoing ? 'Money sent' : 'Money received', status: 'Completed' as const };
 }
 
@@ -58,6 +63,7 @@ export function transactionToActivity(transaction: Transaction, wallet: Wallet):
   const outgoing = ownEntry?.side === 'DEBIT';
   const amountMinor = ownEntry?.amount.amountMinor ?? 0;
   const view = presentation(transaction, outgoing);
+  const neutral = stakeMovementTypes.has(transaction.reference.type);
   const time = new Date(transaction.occurredAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
   const direction = transaction.reference.type === 'INTERNAL_TRANSFER' ? (outgoing ? 'Sent' : 'Received') : view.status;
   return {
@@ -65,7 +71,8 @@ export function transactionToActivity(transaction: Transaction, wallet: Wallet):
     id: transaction.id,
     label: view.label,
     meta: `${direction} · ${time}`,
-    outgoing,
+    neutral,
+    outgoing: neutral ? undefined : outgoing,
     section: sectionFor(transaction.occurredAt),
     status: view.status,
   };

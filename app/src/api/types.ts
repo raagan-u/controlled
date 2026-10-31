@@ -129,6 +129,7 @@ export type Pact = {
   id: string;
   outcome: PactOutcome;
   progress: { overageMinor: number; remainingMinor: number; usage: PactUsage[]; usedMinor: number };
+  progressAvailable?: boolean;
   stakeReservationId?: string;
   status: PactStatus;
   terms: {

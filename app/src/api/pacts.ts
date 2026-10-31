@@ -17,9 +17,11 @@ const DRAFT_KEY = 'controlled.local-pact-draft';
 
 function normalizePact(pact: Pact): Pact {
   const limit = pact.terms.spendingLimit.amountMinor;
+  const progressAvailable = Boolean(pact.progress);
   const usedMinor = pact.progress?.usedMinor ?? 0;
   return {
     ...pact,
+    progressAvailable,
     progress: {
       overageMinor: pact.progress?.overageMinor ?? Math.max(0, usedMinor - limit),
       remainingMinor: pact.progress?.remainingMinor ?? Math.max(0, limit - usedMinor),

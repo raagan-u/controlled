@@ -27,7 +27,7 @@ export default function ReviewPactScreen() {
       }
       const confirmed = await confirmPact(id);
       await clearLocalPactDraft();
-      router.replace(`/pacts/${confirmed.id}` as Href);
+      router.replace(`/pacts/${confirmed.id}?created=1` as Href);
     } catch (value) { setError(apiErrorMessage(value)); setBusy(false); }
   };
   if (!draft) return <FeatureScreen scroll={false} title="Review pact"><ActivityIndicator color={colors.blue} style={styles.loader} /></FeatureScreen>;

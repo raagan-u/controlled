@@ -13,7 +13,7 @@ import { colors, fonts, radii } from '@/theme';
 function shortDate(value: string) { return new Date(value).toLocaleString('en-US', { day: 'numeric', hour: 'numeric', minute: '2-digit', month: 'short' }); }
 
 export default function PactDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { created, id } = useLocalSearchParams<{ created?: string; id: string }>();
   const [pact, setPact] = useState<Pact | null>(null); const [wallet, setWallet] = useState<Wallet | null>(null); const [circle, setCircle] = useState<AccountabilityCircle | null>(null); const [users, setUsers] = useState<User[]>([]); const [loading, setLoading] = useState(true); const [busy, setBusy] = useState(false); const [error, setError] = useState('');
   const load = useCallback(async () => {
     if (!id) return;
@@ -28,7 +28,7 @@ export default function PactDetailScreen() {
   const people = useMemo(() => new Map(users.map((user) => [user.id, user])), [users]);
   const reserve = async () => {
     if (!pact) return; setBusy(true); setError('');
-    try { const result = await reservePactStake(pact.id); setPact(result); router.replace(`/pacts/${result.id}?activated=1` as Href); }
+    try { const result = await reservePactStake(pact.id); setPact(result); router.replace(`/pacts/${result.id}${created === '1' ? '?created=1' : ''}` as Href); }
     catch (value) { setError(apiErrorMessage(value)); setBusy(false); }
   };
   const cancel = () => pact && Alert.alert('Cancel this pact?', 'Scheduled stakes are returned to your available balance.', [{ text: 'Keep pact', style: 'cancel' }, { text: 'Cancel pact', style: 'destructive', onPress: () => { setBusy(true); void cancelPact(pact.id).then(setPact).catch((value) => setError(apiErrorMessage(value))).finally(() => setBusy(false)); } }]);
@@ -37,7 +37,7 @@ export default function PactDetailScreen() {
   const available = wallet?.balances.available.amountMinor ?? 0;
   const shortage = Math.max(0, pact.terms.stake.amountMinor - available);
   const circlePeople = circle?.partnerIds.map((partner, index) => `${index + 1} ${people.get(partner)?.displayName ?? people.get(partner)?.ctrldId ?? 'Partner'}`).join(' · ') ?? 'Accountability circle';
-  return <FeatureScreen title="Pact">
+  return <FeatureScreen onBack={created === '1' ? () => router.replace('/home') : undefined} title="Pact">
     <PactCard pact={pact} />
     <Text style={styles.intent}>“{pact.terms.intent}”</Text>
     {pact.status === 'AWAITING_STAKE' && shortage > 0 ? <InfoBox tone="orange">Your ${formatUSD(pact.terms.stake.amountMinor)} stake needs ${formatUSD(shortage)} more available. Add money before reserving the stake.</InfoBox> : null}
