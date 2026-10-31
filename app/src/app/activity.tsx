@@ -49,7 +49,7 @@ export default function ActivityScreen() {
       <ScrollView contentContainerStyle={styles.list} refreshControl={<RefreshControl colors={[colors.blue]} onRefresh={() => void refresh()} refreshing={loading} tintColor={colors.blue} />} showsVerticalScrollIndicator={false}>
         {error && !data ? <Pressable onPress={() => void refresh()} style={styles.state}><Text style={styles.stateTitle}>Couldn’t load activity</Text><Text style={styles.stateCopy}>{error}{'\n'}Tap to try again.</Text></Pressable> : null}
         {!loading && !error && activities.length === 0 ? <View style={styles.state}><Text style={styles.stateTitle}>No activity yet</Text><Text style={styles.stateCopy}>Add money or make a transfer to get started.</Text></View> : null}
-        {sections.map((section) => { const items = activities.filter((item) => item.section === section); return <View key={section} style={styles.section}><Text style={styles.kicker}>{section.toUpperCase()} —</Text>{items.map((item, index) => <ActivityRow detailed item={item} key={item.id} last={index === items.length - 1} />)}</View>; })}
+        {sections.map((section) => { const items = activities.filter((item) => item.section === section); return <View key={section} style={styles.section}><Text style={styles.kicker}>{section.toUpperCase()} —</Text>{items.map((item, index) => <ActivityRow detailed index={index} item={item} key={item.id} last={index === items.length - 1} />)}</View>; })}
       </ScrollView>
     </Animated.View>
   </View>;
