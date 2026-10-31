@@ -19,7 +19,7 @@ func (r *PostgresRepository) ApprovedDebits(ctx context.Context) ([]walletops.Ap
 		       intent.amount_minor, intent.currency, request.classification
 		  FROM accountability_requests AS request
 		  JOIN transaction_intents AS intent ON intent.id = request.intent_id
-		 WHERE request.status = 'APPROVED' AND intent.status = 'APPROVED'
+		 WHERE request.status = 'APPROVED' AND intent.status IN ('APPROVED', 'FAILED')
 		 ORDER BY request.resolved_at, request.id
 	`)
 	if err != nil {
