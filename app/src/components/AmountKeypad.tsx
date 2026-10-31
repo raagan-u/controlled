@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 
+import { PressableScale } from '@/motion';
 import { colors, fonts, radii } from '@/theme';
 
 const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '⌫'];
@@ -116,16 +117,16 @@ export function AmountKeypad({ onCalculationChange, onChange, onDisplayChange, v
     <View>
       <View style={styles.operators}>
         {operators.map((operator) => (
-          <Pressable key={operator} onPress={() => pressOperator(operator)} style={({ pressed }) => pressed && styles.operatorPressed}>
+          <PressableScale key={operator} onPress={() => pressOperator(operator)} scaleTo={0.8}>
             <Text style={styles.math}>{operator}</Text>
-          </Pressable>
+          </PressableScale>
         ))}
       </View>
       <View style={styles.panel}>
         {keys.map((key) => (
-          <Pressable accessibilityLabel={key === '⌫' ? 'Delete' : key} key={key} onPress={() => press(key)} style={({ pressed }) => [styles.key, pressed && styles.pressed]}>
+          <PressableScale accessibilityLabel={key === '⌫' ? 'Delete' : key} key={key} onPress={() => press(key)} scaleTo={0.9} style={styles.key}>
             <Text style={key === '⌫' || key === '.' ? styles.operator : styles.number}>{key}</Text>
-          </Pressable>
+          </PressableScale>
         ))}
       </View>
     </View>
@@ -135,10 +136,8 @@ export function AmountKeypad({ onCalculationChange, onChange, onDisplayChange, v
 const styles = StyleSheet.create({
   operators: { flexDirection: 'row', justifyContent: 'space-around', paddingBottom: 12, paddingHorizontal: 20 },
   math: { color: colors.textMuted, fontFamily: fonts.medium, fontSize: 27, textAlign: 'center', width: 48 },
-  operatorPressed: { opacity: 0.45 },
   panel: { backgroundColor: colors.surfaceAlt, borderRadius: radii.keypad, flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10, marginHorizontal: 8, padding: 10 },
   key: { alignItems: 'center', backgroundColor: colors.key, borderRadius: radii.pill, flexGrow: 1, height: 56, justifyContent: 'center', width: '30%' },
-  pressed: { opacity: 0.65, transform: [{ scale: 0.97 }] },
   number: { color: colors.keyText, fontFamily: fonts.medium, fontSize: 26 },
   operator: { color: colors.keyText, fontFamily: fonts.medium, fontSize: 23 },
 });
