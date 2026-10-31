@@ -15,13 +15,27 @@ export type LocalPactDraft = Partial<Omit<PactTermsInput, 'breakConsequence' | '
 
 const DRAFT_KEY = 'controlled.local-pact-draft';
 
-export const getPacts = async () => (await apiRequest<{ pacts: Pact[] }>('/v1/pacts')).pacts;
-export const getPact = async (id: string) => (await apiRequest<{ pact: Pact }>(`/v1/pacts/${encodeURIComponent(id)}`)).pact;
-export const createPact = async (terms: PactTermsInput) => (await apiRequest<{ pact: Pact }>('/v1/pacts', { body: terms, idempotent: true, method: 'POST' })).pact;
-export const updatePact = async (id: string, terms: PactTermsInput) => (await apiRequest<{ pact: Pact }>(`/v1/pacts/${encodeURIComponent(id)}`, { body: terms, method: 'PUT' })).pact;
-export const confirmPact = async (id: string) => (await apiRequest<{ pact: Pact }>(`/v1/pacts/${encodeURIComponent(id)}/confirm`, { body: {}, method: 'POST' })).pact;
-export const reservePactStake = async (id: string) => (await apiRequest<{ pact: Pact }>(`/v1/pacts/${encodeURIComponent(id)}/stake`, { body: {}, idempotent: true, method: 'POST' })).pact;
-export const cancelPact = async (id: string) => (await apiRequest<{ pact: Pact }>(`/v1/pacts/${encodeURIComponent(id)}/cancel`, { body: {}, method: 'POST' })).pact;
+function normalizePact(pact: Pact): Pact {
+  const limit = pact.terms.spendingLimit.amountMinor;
+  const usedMinor = pact.progress?.usedMinor ?? 0;
+  return {
+    ...pact,
+    progress: {
+      overageMinor: pact.progress?.overageMinor ?? Math.max(0, usedMinor - limit),
+      remainingMinor: pact.progress?.remainingMinor ?? Math.max(0, limit - usedMinor),
+      usage: pact.progress?.usage ?? [],
+      usedMinor,
+    },
+  };
+}
+
+export const getPacts = async () => (await apiRequest<{ pacts: Pact[] }>('/v1/pacts')).pacts.map(normalizePact);
+export const getPact = async (id: string) => normalizePact((await apiRequest<{ pact: Pact }>(`/v1/pacts/${encodeURIComponent(id)}`)).pact);
+export const createPact = async (terms: PactTermsInput) => normalizePact((await apiRequest<{ pact: Pact }>('/v1/pacts', { body: terms, idempotent: true, method: 'POST' })).pact);
+export const updatePact = async (id: string, terms: PactTermsInput) => normalizePact((await apiRequest<{ pact: Pact }>(`/v1/pacts/${encodeURIComponent(id)}`, { body: terms, method: 'PUT' })).pact);
+export const confirmPact = async (id: string) => normalizePact((await apiRequest<{ pact: Pact }>(`/v1/pacts/${encodeURIComponent(id)}/confirm`, { body: {}, method: 'POST' })).pact);
+export const reservePactStake = async (id: string) => normalizePact((await apiRequest<{ pact: Pact }>(`/v1/pacts/${encodeURIComponent(id)}/stake`, { body: {}, idempotent: true, method: 'POST' })).pact);
+export const cancelPact = async (id: string) => normalizePact((await apiRequest<{ pact: Pact }>(`/v1/pacts/${encodeURIComponent(id)}/cancel`, { body: {}, method: 'POST' })).pact);
 
 export const getInvitations = async () => (await apiRequest<{ invitations: AccountabilityInvitation[] }>('/v1/accountability/invitations')).invitations;
 export const invitePartner = async (partnerEmail: string) => (await apiRequest<{ invitation: AccountabilityInvitation }>('/v1/accountability/invitations', { body: { partnerEmail }, idempotent: true, method: 'POST' })).invitation;
