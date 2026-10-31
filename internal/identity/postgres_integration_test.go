@@ -72,3 +72,54 @@ func TestPostgresSessionLifecycle(t *testing.T) {
 		t.Fatalf("authenticate revoked session error = %v, want %v", err, identity.ErrInvalidCredentials)
 	}
 }
+
+func TestPostgresUpdateDisplayNameClearsPlaceholder(t *testing.T) {
+	databaseURL := os.Getenv("CONTROLLED_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("CONTROLLED_TEST_DATABASE_URL is not set")
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	pool, err := pgxpool.New(ctx, databaseURL)
+	if err != nil {
+		t.Fatalf("open test database: %v", err)
+	}
+	t.Cleanup(pool.Close)
+	if err := platformpostgres.Migrate(ctx, pool); err != nil {
+		t.Fatalf("migrate test database: %v", err)
+	}
+
+	userID, err := platform.NewUUIDGenerator().NewID()
+	if err != nil {
+		t.Fatalf("generate user ID: %v", err)
+	}
+	email := fmt.Sprintf("pending-%s@example.test", userID)
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO users (id, email, display_name, name_pending, created_at)
+		VALUES ($1::text::uuid, $2, 'pending', true, $3)
+	`, userID, email, time.Now().UTC()); err != nil {
+		t.Fatalf("create test user: %v", err)
+	}
+
+	store := identity.NewPostgresSessionStore(pool)
+	before, err := store.UserByEmail(ctx, email)
+	if err != nil {
+		t.Fatalf("read user: %v", err)
+	}
+	if !before.NamePending() || before.DisplayName() != "pending" {
+		t.Fatalf("before = %q pending=%t, want placeholder pending", before.DisplayName(), before.NamePending())
+	}
+
+	updated, err := store.UpdateDisplayName(ctx, identity.UserID(userID), "Ada Lovelace")
+	if err != nil {
+		t.Fatalf("update display name: %v", err)
+	}
+	if updated.DisplayName() != "Ada Lovelace" || updated.NamePending() {
+		t.Fatalf("updated = %q pending=%t", updated.DisplayName(), updated.NamePending())
+	}
+	after, err := store.UserByEmail(ctx, email)
+	if err != nil || after.DisplayName() != "Ada Lovelace" || after.NamePending() {
+		t.Fatalf("after = %q pending=%t err=%v", after.DisplayName(), after.NamePending(), err)
+	}
+}

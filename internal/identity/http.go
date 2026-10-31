@@ -76,6 +76,7 @@ type userResponse struct {
 	CtrldID     string    `json:"ctrldId"`
 	Email       string    `json:"email"`
 	DisplayName string    `json:"displayName"`
+	NamePending bool      `json:"namePending"`
 	CreatedAt   time.Time `json:"createdAt"`
 }
 
@@ -85,6 +86,7 @@ func newUserResponse(user User) userResponse {
 		CtrldID:     user.CtrldID(),
 		Email:       user.Email(),
 		DisplayName: user.DisplayName(),
+		NamePending: user.NamePending(),
 		CreatedAt:   user.CreatedAt(),
 	}
 }

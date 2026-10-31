@@ -27,7 +27,7 @@ func (s *PostgresSessionStore) UserByEmail(ctx context.Context, email string) (U
 		return User{}, ErrSessionStore
 	}
 	return scanUser(s.pool.QueryRow(ctx, `
-		SELECT id::text, email, display_name, ctrld_id, created_at
+		SELECT id::text, email, display_name, ctrld_id, created_at, name_pending
 		  FROM users
 		 WHERE email = $1
 	`, email))
@@ -47,7 +47,7 @@ func (s *PostgresSessionStore) Recipients(
 	}
 	query = strings.ToLower(strings.TrimSpace(query))
 	rows, err := s.pool.Query(ctx, `
-		SELECT id::text, email, display_name, ctrld_id, created_at
+		SELECT id::text, email, display_name, ctrld_id, created_at, name_pending
 		  FROM users
 		 WHERE id <> $1::text::uuid
 		   AND ($2 = ''
@@ -81,7 +81,7 @@ func (s *PostgresSessionStore) UserByGoogleSubject(ctx context.Context, subject 
 		return User{}, ErrSessionStore
 	}
 	user, err := scanUser(s.pool.QueryRow(ctx, `
-		SELECT users.id::text, users.email, users.display_name, users.ctrld_id, users.created_at
+		SELECT users.id::text, users.email, users.display_name, users.ctrld_id, users.created_at, users.name_pending
 		  FROM oauth_identities
 		  JOIN users ON users.id = oauth_identities.user_id
 		 WHERE oauth_identities.provider = 'google'
@@ -133,6 +133,7 @@ func (s *PostgresSessionStore) UserAndPasswordHashByEmail(
 		       users.display_name,
 		       users.ctrld_id,
 		       users.created_at,
+		       users.name_pending,
 		       password_credentials.password_hash
 		  FROM users
 		  JOIN password_credentials ON password_credentials.user_id = users.id
@@ -143,8 +144,9 @@ func (s *PostgresSessionStore) UserAndPasswordHashByEmail(
 	var displayName string
 	var ctrldID string
 	var createdAt pgtype.Timestamptz
+	var namePending bool
 	var passwordHash string
-	if err := row.Scan(&id, &storedEmail, &displayName, &ctrldID, &createdAt, &passwordHash); errors.Is(err, pgx.ErrNoRows) {
+	if err := row.Scan(&id, &storedEmail, &displayName, &ctrldID, &createdAt, &namePending, &passwordHash); errors.Is(err, pgx.ErrNoRows) {
 		return User{}, "", ErrInvalidCredentials
 	} else if err != nil {
 		return User{}, "", fmt.Errorf("read password credential: %w", err)
@@ -153,7 +155,7 @@ func (s *PostgresSessionStore) UserAndPasswordHashByEmail(
 	if err == nil {
 		user, err = user.WithCtrldID(ctrldID)
 	}
-	return user, passwordHash, err
+	return user.WithNamePending(namePending), passwordHash, err
 }
 
 func (s *PostgresSessionStore) CreatePasswordCredential(
@@ -214,13 +216,30 @@ func (s *PostgresSessionStore) UserBySession(
 		return User{}, ErrSessionStore
 	}
 	return scanUser(s.pool.QueryRow(ctx, `
-		SELECT users.id::text, users.email, users.display_name, users.ctrld_id, users.created_at
+		SELECT users.id::text, users.email, users.display_name, users.ctrld_id, users.created_at, users.name_pending
 		  FROM sessions
 		  JOIN users ON users.id = sessions.user_id
 		 WHERE sessions.token_hash = $1
 		   AND sessions.revoked_at IS NULL
 		   AND sessions.expires_at > $2
 	`, tokenHash[:], now))
+}
+
+// UpdateDisplayName replaces the user's display name and clears the placeholder marker.
+func (s *PostgresSessionStore) UpdateDisplayName(ctx context.Context, userID UserID, displayName string) (User, error) {
+	if s == nil || s.pool == nil {
+		return User{}, ErrSessionStore
+	}
+	id, err := identityUUID(string(userID))
+	if err != nil {
+		return User{}, err
+	}
+	return scanUser(s.pool.QueryRow(ctx, `
+		UPDATE users
+		   SET display_name = $2, name_pending = false
+		 WHERE id = $1
+		RETURNING id::text, email, display_name, ctrld_id, created_at, name_pending
+	`, id, displayName))
 }
 
 func (s *PostgresSessionStore) RevokeSession(
@@ -253,7 +272,8 @@ func scanUser(row pgx.Row) (User, error) {
 	var displayName string
 	var ctrldID string
 	var createdAt pgtype.Timestamptz
-	if err := row.Scan(&id, &email, &displayName, &ctrldID, &createdAt); errors.Is(err, pgx.ErrNoRows) {
+	var namePending bool
+	if err := row.Scan(&id, &email, &displayName, &ctrldID, &createdAt, &namePending); errors.Is(err, pgx.ErrNoRows) {
 		return User{}, ErrInvalidCredentials
 	} else if err != nil {
 		return User{}, fmt.Errorf("read identity user: %w", err)
@@ -262,7 +282,8 @@ func scanUser(row pgx.Row) (User, error) {
 	if err != nil {
 		return User{}, err
 	}
-	return user.WithCtrldID(ctrldID)
+	user, err = user.WithCtrldID(ctrldID)
+	return user.WithNamePending(namePending), err
 }
 
 func identityUUID(value string) (pgtype.UUID, error) {

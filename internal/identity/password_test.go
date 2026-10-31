@@ -26,11 +26,28 @@ func TestPasswordRegistrationCreatesCredentialAndSession(t *testing.T) {
 	if started.User.ID() != user.ID() || provisioner.email != "founder@example.com" {
 		t.Fatalf("started = %#v, provisioned email = %q", started, provisioner.email)
 	}
-	if provisioner.displayName != "Founder Name" {
-		t.Fatalf("provisioned display name = %q", provisioner.displayName)
+	if provisioner.displayName != "Founder Name" || provisioner.namePending {
+		t.Fatalf("provisioned display name = %q pending = %t", provisioner.displayName, provisioner.namePending)
 	}
 	if store.createdUserID != user.ID() || store.createdHash != "hashed:plain password" {
 		t.Fatalf("credential = %q/%q", store.createdUserID, store.createdHash)
+	}
+}
+
+func TestPasswordRegistrationWithoutNameUsesPlaceholder(t *testing.T) {
+	t.Parallel()
+
+	user := googleTestUser(t)
+	provisioner := &passwordProvisioner{user: user}
+	service := identity.NewPasswordAuthenticationService(
+		&passwordStore{}, provisioner, passwordHasher{}, &googleSessions{started: googleStartedSession(user)},
+	)
+
+	if _, err := service.Register(context.Background(), "Founder@Example.com", "plain password", "  "); err != nil {
+		t.Fatalf("Register() error = %v", err)
+	}
+	if provisioner.displayName != "founder" || !provisioner.namePending {
+		t.Fatalf("provisioned name = %q pending = %t, want placeholder founder pending", provisioner.displayName, provisioner.namePending)
 	}
 }
 
@@ -122,15 +139,18 @@ type passwordProvisioner struct {
 	user        identity.User
 	email       string
 	displayName string
+	namePending bool
 }
 
 func (p *passwordProvisioner) ProvisionPasswordUser(
 	_ context.Context,
 	email string,
 	displayName string,
+	namePending bool,
 ) (identity.User, error) {
 	p.email = email
 	p.displayName = displayName
+	p.namePending = namePending
 	return p.user, nil
 }
 

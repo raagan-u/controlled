@@ -31,10 +31,12 @@ func (p googleUserProvisioner) ProvisionPasswordUser(
 	ctx context.Context,
 	email string,
 	displayName string,
+	namePending bool,
 ) (identity.User, error) {
 	result, err := p.onboarding.Onboard(ctx, "password:"+email, wallet.OnboardingRequest{
 		Email:       email,
 		DisplayName: displayName,
+		NamePending: namePending,
 		Currency:    "USD",
 	})
 	if err != nil {
