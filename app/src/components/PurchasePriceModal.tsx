@@ -14,6 +14,10 @@ type Props = {
 
 export function PurchasePriceModal({ intendedAmountMinor, onClose, priceCheck, visible }: Props) {
   if (!priceCheck?.matched) return null;
+  const bestPriceMinor = priceCheck.bestPriceMinor ?? 0;
+  const userPriceIsLower = intendedAmountMinor < bestPriceMinor;
+  const offerPriceIsLower = bestPriceMinor < intendedAmountMinor;
+  const comparisonArrow = userPriceIsLower ? '←' : offerPriceIsLower ? '→' : '↔';
   const saving = priceCheck.verdict === 'better_price';
   const title = saving
     ? `You could save $${formatUSD(priceCheck.savingsMinor ?? 0)}`
@@ -50,9 +54,9 @@ export function PurchasePriceModal({ intendedAmountMinor, onClose, priceCheck, v
           </View>
 
           <View style={styles.comparison}>
-            <View><Text style={styles.priceLabel}>YOU’RE PAYING</Text><Text style={styles.intentPrice}>${formatUSD(intendedAmountMinor)}</Text></View>
-            <Text style={styles.arrow}>→</Text>
-            <View style={styles.bestPrice}><Text style={styles.priceLabel}>BEST FOUND</Text><Text style={styles.offerPrice}>${formatUSD(priceCheck.bestPriceMinor ?? 0)}</Text></View>
+            <View><Text style={styles.priceLabel}>YOU’RE PAYING</Text><Text style={[styles.price, userPriceIsLower && styles.lowerPrice]}>${formatUSD(intendedAmountMinor)}</Text></View>
+            <Text accessibilityLabel={userPriceIsLower ? 'Your price is lower' : offerPriceIsLower ? 'The found offer is lower' : 'The prices are equal'} style={styles.arrow}>{comparisonArrow}</Text>
+            <View style={styles.bestPrice}><Text style={styles.priceLabel}>BEST FOUND</Text><Text style={[styles.price, offerPriceIsLower && styles.lowerPrice]}>${formatUSD(bestPriceMinor)}</Text></View>
           </View>
 
           <Text style={styles.context}>{priceCheck.message} Prices and availability can change, so confirm the product and retailer before switching.</Text>
@@ -84,10 +88,10 @@ const styles = StyleSheet.create({
   productMeta: { color: colors.textMuted, fontFamily: fonts.medium, fontSize: 12, marginTop: 5 },
   comparison: { alignItems: 'center', backgroundColor: colors.blueTint, borderRadius: radii.lg, flexDirection: 'row', justifyContent: 'space-between', marginTop: 12, padding: 16 },
   priceLabel: { color: colors.textMuted, fontFamily: fonts.bold, fontSize: 9, letterSpacing: 1 },
-  intentPrice: { color: colors.navy, fontFamily: fonts.bold, fontSize: 22, marginTop: 3 },
+  price: { color: colors.navy, fontFamily: fonts.bold, fontSize: 22, marginTop: 3 },
+  lowerPrice: { color: colors.greenText },
   arrow: { color: colors.blue, fontFamily: fonts.medium, fontSize: 22 },
   bestPrice: { alignItems: 'flex-end' },
-  offerPrice: { color: colors.greenText, fontFamily: fonts.bold, fontSize: 22, marginTop: 3 },
   context: { color: colors.textMuted, fontFamily: fonts.medium, fontSize: 12, lineHeight: 18, marginHorizontal: 4, marginTop: 12 },
   actions: { gap: 9, marginTop: 18 },
 });
