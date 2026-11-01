@@ -5,6 +5,8 @@ import { FeatureScreen } from '@/components/FeatureScreen';
 import { InfoBox } from '@/components/InfoBox';
 import { PactCard } from '@/components/PactCard';
 import { SwipeConfirm } from '@/components/SwipeConfirm';
+import { GuidanceCard } from '@/components/GuidanceCard';
+import { getPactInsight, type Guidance } from '@/api/ai';
 import { cancelPact, getCircles, getPact, reservePactStake } from '@/api/pacts';
 import { apiErrorMessage, formatUSD, getRecipients, getWallet } from '@/api/wallet';
 import type { AccountabilityCircle, Pact, User, Wallet } from '@/api/types';
@@ -14,13 +16,14 @@ function shortDate(value: string) { return new Date(value).toLocaleString('en-US
 
 export default function PactDetailScreen() {
   const { created, id } = useLocalSearchParams<{ created?: string; id: string }>();
-  const [pact, setPact] = useState<Pact | null>(null); const [wallet, setWallet] = useState<Wallet | null>(null); const [circle, setCircle] = useState<AccountabilityCircle | null>(null); const [users, setUsers] = useState<User[]>([]); const [loading, setLoading] = useState(true); const [busy, setBusy] = useState(false); const [error, setError] = useState('');
+  const [pact, setPact] = useState<Pact | null>(null); const [wallet, setWallet] = useState<Wallet | null>(null); const [circle, setCircle] = useState<AccountabilityCircle | null>(null); const [users, setUsers] = useState<User[]>([]); const [guidance, setGuidance] = useState<Guidance | null>(null); const [guidanceLoading, setGuidanceLoading] = useState(true); const [loading, setLoading] = useState(true); const [busy, setBusy] = useState(false); const [error, setError] = useState('');
   const load = useCallback(async () => {
     if (!id) return;
     try {
       setError('');
       const [value, walletValue, circles, recipients] = await Promise.all([getPact(id), getWallet(), getCircles(), getRecipients()]);
       setPact(value); setWallet(walletValue.wallet); setCircle(circles.find((item) => item.id === value.terms.accountabilityCircleId) ?? null); setUsers(recipients.users);
+      setGuidanceLoading(true); void getPactInsight(id).then(setGuidance).catch(() => setGuidance(null)).finally(() => setGuidanceLoading(false));
     } catch (value) { setError(apiErrorMessage(value)); }
     finally { setLoading(false); }
   }, [id]);
@@ -50,7 +53,7 @@ export default function PactDetailScreen() {
       <Row label="If you break it" value="Stake → Commitment Reserve" />
     </View>
     {pact.progress.usage.length ? <><Text style={styles.kicker}>COUNTED TRANSACTIONS —</Text>{pact.progress.usage.map((usage) => <View key={`${usage.operationType}-${usage.operationId}`} style={styles.usage}><View style={styles.dot} /><View style={styles.usageCopy}><Text style={styles.usageTitle}>{usage.counterpartyName || (usage.destination ? `Withdraw to ${usage.destination}` : 'Wallet payment')}</Text><Text style={styles.muted}>{usage.operationType === 'WITHDRAWAL' ? 'Withdrawal' : usage.counterpartyCtrldId || 'Transfer'} · {shortDate(usage.countedAt)}</Text></View><Text style={[styles.usageAmount, usage.status === 'REVERSED' && styles.reversed]}>−${formatUSD(usage.amountMinor)}</Text></View>)}</> : null}
-    <View style={styles.insights}><Text style={styles.kicker}>INSIGHTS —</Text><Text style={styles.muted}>Reserved for contextual guidance on this pact.</Text></View>
+    <GuidanceCard guidance={guidance} loading={guidanceLoading} />
     {error ? <Text style={styles.errorText}>{error}</Text> : null}
     {pact.status === 'AWAITING_STAKE' ? <View style={styles.actions}>{shortage > 0 ? <Pressable onPress={() => router.push('/fund' as Href)} style={styles.primary}><Text style={styles.primaryText}>Add ${formatUSD(shortage)} to wallet</Text></Pressable> : <SwipeConfirm disabled={busy} label={`Swipe to reserve $${formatUSD(pact.terms.stake.amountMinor)}`} onConfirm={() => void reserve()} />}<Pressable disabled={busy} onPress={cancel}><Text style={styles.cancel}>Cancel pact</Text></Pressable></View> : null}
     {['DRAFT', 'SCHEDULED'].includes(pact.status) ? <Pressable disabled={busy} onPress={cancel}><Text style={styles.cancel}>Cancel pact</Text></Pressable> : null}
