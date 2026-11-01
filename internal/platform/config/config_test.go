@@ -101,6 +101,7 @@ func TestLoadRejectsInvalidConfiguration(t *testing.T) {
 		{name: "AI provider", values: map[string]string{"DATABASE_URL": "postgres://db", "CONTROLLED_AI_PROVIDER": "unknown"}, wantErr: ErrInvalidConfig},
 		{name: "missing AI configuration", values: map[string]string{"DATABASE_URL": "postgres://db", "CONTROLLED_AI_PROVIDER": "openai_compatible"}, wantErr: ErrInvalidConfig},
 		{name: "AI boolean", values: map[string]string{"DATABASE_URL": "postgres://db", "CONTROLLED_AI_REQUIRE_PARAMETERS": "sometimes"}, wantErr: ErrInvalidConfig},
+		{name: "AI timeout exceeds response window", values: map[string]string{"DATABASE_URL": "postgres://db", "CONTROLLED_AI_PROVIDER": "openai_compatible", "CONTROLLED_AI_MODEL": "model", "CONTROLLED_AI_API_KEY": "secret", "CONTROLLED_AI_TIMEOUT": "10s"}, wantErr: ErrInvalidConfig},
 	}
 
 	for _, test := range tests {

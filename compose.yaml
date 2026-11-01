@@ -38,6 +38,12 @@ services:
       PAYPAL_CLIENT_SECRET: ${PAYPAL_CLIENT_SECRET:-}
       PAYPAL_RETURN_URL: ${PAYPAL_RETURN_URL:-https://example.com/paypal/return}
       PAYPAL_CANCEL_URL: ${PAYPAL_CANCEL_URL:-https://example.com/paypal/cancel}
+      CONTROLLED_AI_PROVIDER: ${CONTROLLED_AI_PROVIDER:-disabled}
+      CONTROLLED_AI_BASE_URL: ${CONTROLLED_AI_BASE_URL:-https://openrouter.ai/api/v1}
+      CONTROLLED_AI_MODEL: ${CONTROLLED_AI_MODEL:-}
+      CONTROLLED_AI_API_KEY: ${CONTROLLED_AI_API_KEY:-}
+      CONTROLLED_AI_TIMEOUT: ${CONTROLLED_AI_TIMEOUT:-8s}
+      CONTROLLED_AI_REQUIRE_PARAMETERS: ${CONTROLLED_AI_REQUIRE_PARAMETERS:-true}
     depends_on:
       postgres:
         condition: service_healthy

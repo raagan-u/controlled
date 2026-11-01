@@ -121,6 +121,9 @@ func load(lookup lookupEnv) (Config, error) {
 	if aiProvider == AIProviderOpenAICompatible && (aiBaseURL == "" || aiModel == "" || aiAPIKey == "") {
 		return Config{}, fmt.Errorf("%w: AI base URL, model, and API key are required", ErrInvalidConfig)
 	}
+	if aiProvider == AIProviderOpenAICompatible && aiTimeout >= 10*time.Second {
+		return Config{}, fmt.Errorf("%w: CONTROLLED_AI_TIMEOUT must be below the HTTP write timeout", ErrInvalidConfig)
+	}
 
 	return Config{
 		HTTPAddress:         httpAddress,
