@@ -3,3 +3,6 @@
 !.env.example
 *firebase-service-account*.json
 *fcm-service-account*.json
+
+# Ignore all Mac system files
+.DS_Store
