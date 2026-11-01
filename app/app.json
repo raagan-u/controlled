@@ -45,7 +45,7 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/android-icon-monochrome.png",
+          "icon": "./assets/notification-icon-wordmark.png",
           "color": "#1754EB",
           "defaultChannel": "actions-v3"
         }
