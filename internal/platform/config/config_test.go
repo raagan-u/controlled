@@ -24,7 +24,11 @@ func TestLoadUsesValidatedDefaults(t *testing.T) {
 		configuration.DatabasePingTimeout != 5*time.Second ||
 		configuration.GoogleClientID != defaultGoogleClientID ||
 		configuration.CustodyProvider != CustodyProviderFake ||
-		configuration.PayPalAPIBase != "https://api-m.sandbox.paypal.com" {
+		configuration.PayPalAPIBase != "https://api-m.sandbox.paypal.com" ||
+		configuration.AIProvider != AIProviderDisabled ||
+		configuration.AIBaseURL != "https://openrouter.ai/api/v1" ||
+		configuration.AITimeout != 12*time.Second ||
+		!configuration.AIRequireParameters {
 		t.Fatalf("load() = %#v", configuration)
 	}
 }
@@ -33,20 +37,26 @@ func TestLoadReadsOverrides(t *testing.T) {
 	t.Parallel()
 
 	configuration, err := load(mapLookup(map[string]string{
-		"DATABASE_URL":                "postgres://localhost/controlled",
-		"CONTROLLED_HTTP_ADDR":        "127.0.0.1:9090",
-		"CONTROLLED_LOG_LEVEL":        "debug",
-		"CONTROLLED_SHUTDOWN_TIMEOUT": "3s",
-		"CONTROLLED_DB_PING_TIMEOUT":  "2s",
-		"CONTROLLED_DB_MAX_CONNS":     "20",
-		"CONTROLLED_DB_MIN_CONNS":     "4",
-		"CONTROLLED_GOOGLE_CLIENT_ID": "google-client-id",
-		"CONTROLLED_CUSTODY_PROVIDER": "paypal_sandbox",
-		"PAYPAL_API_BASE":             "https://sandbox.example.test/",
-		"PAYPAL_CLIENT_ID":            "paypal-client-id",
-		"PAYPAL_CLIENT_SECRET":        "paypal-secret",
-		"PAYPAL_RETURN_URL":           "controlled://paypal/return",
-		"PAYPAL_CANCEL_URL":           "controlled://paypal/cancel",
+		"DATABASE_URL":                     "postgres://localhost/controlled",
+		"CONTROLLED_HTTP_ADDR":             "127.0.0.1:9090",
+		"CONTROLLED_LOG_LEVEL":             "debug",
+		"CONTROLLED_SHUTDOWN_TIMEOUT":      "3s",
+		"CONTROLLED_DB_PING_TIMEOUT":       "2s",
+		"CONTROLLED_DB_MAX_CONNS":          "20",
+		"CONTROLLED_DB_MIN_CONNS":          "4",
+		"CONTROLLED_GOOGLE_CLIENT_ID":      "google-client-id",
+		"CONTROLLED_CUSTODY_PROVIDER":      "paypal_sandbox",
+		"PAYPAL_API_BASE":                  "https://sandbox.example.test/",
+		"PAYPAL_CLIENT_ID":                 "paypal-client-id",
+		"PAYPAL_CLIENT_SECRET":             "paypal-secret",
+		"PAYPAL_RETURN_URL":                "controlled://paypal/return",
+		"PAYPAL_CANCEL_URL":                "controlled://paypal/cancel",
+		"CONTROLLED_AI_PROVIDER":           "openai_compatible",
+		"CONTROLLED_AI_BASE_URL":           "https://models.example.test/v1/",
+		"CONTROLLED_AI_MODEL":              "example/model",
+		"CONTROLLED_AI_API_KEY":            "ai-secret",
+		"CONTROLLED_AI_TIMEOUT":            "8s",
+		"CONTROLLED_AI_REQUIRE_PARAMETERS": "false",
 	}))
 	if err != nil {
 		t.Fatalf("load() error = %v", err)
@@ -62,6 +72,12 @@ func TestLoadReadsOverrides(t *testing.T) {
 		configuration.PayPalAPIBase != "https://sandbox.example.test" ||
 		configuration.PayPalClientID != "paypal-client-id" {
 		t.Fatalf("load() = %#v", configuration)
+	}
+	if configuration.AIProvider != AIProviderOpenAICompatible ||
+		configuration.AIBaseURL != "https://models.example.test/v1" ||
+		configuration.AIModel != "example/model" || configuration.AIAPIKey != "ai-secret" ||
+		configuration.AITimeout != 8*time.Second || configuration.AIRequireParameters {
+		t.Fatalf("load() AI = %#v", configuration)
 	}
 }
 
@@ -82,6 +98,9 @@ func TestLoadRejectsInvalidConfiguration(t *testing.T) {
 		{name: "minimum exceeds maximum", values: map[string]string{"DATABASE_URL": "postgres://db", "CONTROLLED_DB_MAX_CONNS": "2", "CONTROLLED_DB_MIN_CONNS": "3"}, wantErr: ErrInvalidConfig},
 		{name: "custody provider", values: map[string]string{"DATABASE_URL": "postgres://db", "CONTROLLED_CUSTODY_PROVIDER": "unknown"}, wantErr: ErrInvalidConfig},
 		{name: "missing PayPal credentials", values: map[string]string{"DATABASE_URL": "postgres://db", "CONTROLLED_CUSTODY_PROVIDER": "paypal_sandbox"}, wantErr: ErrInvalidConfig},
+		{name: "AI provider", values: map[string]string{"DATABASE_URL": "postgres://db", "CONTROLLED_AI_PROVIDER": "unknown"}, wantErr: ErrInvalidConfig},
+		{name: "missing AI configuration", values: map[string]string{"DATABASE_URL": "postgres://db", "CONTROLLED_AI_PROVIDER": "openai_compatible"}, wantErr: ErrInvalidConfig},
+		{name: "AI boolean", values: map[string]string{"DATABASE_URL": "postgres://db", "CONTROLLED_AI_REQUIRE_PARAMETERS": "sometimes"}, wantErr: ErrInvalidConfig},
 	}
 
 	for _, test := range tests {

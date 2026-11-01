@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/raagan-u/controlled/internal/accountability"
+	controlledai "github.com/raagan-u/controlled/internal/ai"
 	"github.com/raagan-u/controlled/internal/custody"
 	"github.com/raagan-u/controlled/internal/identity"
 	"github.com/raagan-u/controlled/internal/ledger"
@@ -112,6 +113,12 @@ func run(ctx context.Context) error {
 		pact.NewPostgresRepository(database),
 	)
 	pactHandler := pact.NewHandler(pactService)
+	aiModel, err := configuredAIModel(configuration)
+	if err != nil {
+		return err
+	}
+	aiService := controlledai.NewService(platform.SystemClock{}, store, pactService, accountabilityService, aiModel)
+	aiHandler := controlledai.NewHandler(aiService)
 	paymentRequestService := paymentrequest.NewService(platform.NewUUIDGenerator(), platform.SystemClock{}, paymentrequest.NewPostgresRepository(database), walletOperations)
 	paymentRequestHandler := paymentrequest.NewHandler(paymentRequestService)
 	go runMaintenance(ctx, accountabilityService, pactService, paymentRequestService, walletOperations)
@@ -160,6 +167,9 @@ func run(ctx context.Context) error {
 	mux.Handle("POST /v1/pacts/{id}/confirm", identity.RequireSession(sessions, http.HandlerFunc(pactHandler.Confirm)))
 	mux.Handle("POST /v1/pacts/{id}/stake", identity.RequireSession(sessions, http.HandlerFunc(pactHandler.ReserveStake)))
 	mux.Handle("POST /v1/pacts/{id}/cancel", identity.RequireSession(sessions, http.HandlerFunc(pactHandler.Cancel)))
+	mux.Handle("POST /v1/ai/pact-suggestions", identity.RequireSession(sessions, http.HandlerFunc(aiHandler.SuggestPact)))
+	mux.Handle("GET /v1/ai/pacts/{id}/insight", identity.RequireSession(sessions, http.HandlerFunc(aiHandler.PactInsight)))
+	mux.Handle("GET /v1/ai/accountability/{id}/brief", identity.RequireSession(sessions, http.HandlerFunc(aiHandler.AccountabilityBrief)))
 	health := httpapi.NewHealthHandler(database, configuration.DatabasePingTimeout)
 	mux.HandleFunc("GET /healthz", health.Liveness)
 	mux.HandleFunc("GET /readyz", health.Readiness)
@@ -192,6 +202,17 @@ func run(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+func configuredAIModel(configuration config.Config) (controlledai.Model, error) {
+	if configuration.AIProvider == config.AIProviderDisabled {
+		return nil, nil
+	}
+	return controlledai.NewOpenAICompatibleModel(controlledai.OpenAICompatibleOptions{
+		BaseURL: configuration.AIBaseURL, Model: configuration.AIModel,
+		APIKey: configuration.AIAPIKey, Timeout: configuration.AITimeout,
+		RequireParameters: configuration.AIRequireParameters,
+	})
 }
 
 func configuredCustodyProvider(configuration config.Config) (custody.Provider, error) {

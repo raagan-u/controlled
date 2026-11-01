@@ -21,6 +21,8 @@ const defaultGoogleClientID = "376706277927-s4mest4okp2a4par7m6tl69b9ut3rl7c.app
 const (
 	CustodyProviderFake          = "fake"
 	CustodyProviderPayPalSandbox = "paypal_sandbox"
+	AIProviderDisabled           = "disabled"
+	AIProviderOpenAICompatible   = "openai_compatible"
 )
 
 type Config struct {
@@ -38,6 +40,12 @@ type Config struct {
 	PayPalClientSecret  string
 	PayPalReturnURL     string
 	PayPalCancelURL     string
+	AIProvider          string
+	AIBaseURL           string
+	AIModel             string
+	AIAPIKey            string
+	AITimeout           time.Duration
+	AIRequireParameters bool
 }
 
 func Load() (Config, error) {
@@ -95,6 +103,24 @@ func load(lookup lookupEnv) (Config, error) {
 	if custodyProvider == CustodyProviderPayPalSandbox && (payPalAPIBase == "" || payPalClientID == "" || payPalClientSecret == "" || payPalReturnURL == "" || payPalCancelURL == "") {
 		return Config{}, fmt.Errorf("%w: PayPal sandbox credentials and URLs are required", ErrInvalidConfig)
 	}
+	aiProvider := strings.ToLower(strings.TrimSpace(value(lookup, "CONTROLLED_AI_PROVIDER", AIProviderDisabled)))
+	if aiProvider != AIProviderDisabled && aiProvider != AIProviderOpenAICompatible {
+		return Config{}, fmt.Errorf("%w: CONTROLLED_AI_PROVIDER", ErrInvalidConfig)
+	}
+	aiBaseURL := strings.TrimRight(strings.TrimSpace(value(lookup, "CONTROLLED_AI_BASE_URL", "https://openrouter.ai/api/v1")), "/")
+	aiModel := strings.TrimSpace(value(lookup, "CONTROLLED_AI_MODEL", ""))
+	aiAPIKey := strings.TrimSpace(value(lookup, "CONTROLLED_AI_API_KEY", ""))
+	aiTimeout, err := parsePositiveDuration(lookup, "CONTROLLED_AI_TIMEOUT", 12*time.Second)
+	if err != nil {
+		return Config{}, err
+	}
+	aiRequireParameters, err := strconv.ParseBool(strings.TrimSpace(value(lookup, "CONTROLLED_AI_REQUIRE_PARAMETERS", "true")))
+	if err != nil {
+		return Config{}, fmt.Errorf("%w: CONTROLLED_AI_REQUIRE_PARAMETERS", ErrInvalidConfig)
+	}
+	if aiProvider == AIProviderOpenAICompatible && (aiBaseURL == "" || aiModel == "" || aiAPIKey == "") {
+		return Config{}, fmt.Errorf("%w: AI base URL, model, and API key are required", ErrInvalidConfig)
+	}
 
 	return Config{
 		HTTPAddress:         httpAddress,
@@ -111,6 +137,12 @@ func load(lookup lookupEnv) (Config, error) {
 		PayPalClientSecret:  payPalClientSecret,
 		PayPalReturnURL:     payPalReturnURL,
 		PayPalCancelURL:     payPalCancelURL,
+		AIProvider:          aiProvider,
+		AIBaseURL:           aiBaseURL,
+		AIModel:             aiModel,
+		AIAPIKey:            aiAPIKey,
+		AITimeout:           aiTimeout,
+		AIRequireParameters: aiRequireParameters,
 	}, nil
 }
 
