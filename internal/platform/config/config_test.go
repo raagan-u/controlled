@@ -27,7 +27,7 @@ func TestLoadUsesValidatedDefaults(t *testing.T) {
 		configuration.PayPalAPIBase != "https://api-m.sandbox.paypal.com" ||
 		configuration.AIProvider != AIProviderDisabled ||
 		configuration.AIBaseURL != "https://openrouter.ai/api/v1" ||
-		configuration.AITimeout != 12*time.Second ||
+		configuration.AITimeout != 8*time.Second ||
 		!configuration.AIRequireParameters {
 		t.Fatalf("load() = %#v", configuration)
 	}

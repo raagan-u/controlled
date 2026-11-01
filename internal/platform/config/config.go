@@ -110,7 +110,7 @@ func load(lookup lookupEnv) (Config, error) {
 	aiBaseURL := strings.TrimRight(strings.TrimSpace(value(lookup, "CONTROLLED_AI_BASE_URL", "https://openrouter.ai/api/v1")), "/")
 	aiModel := strings.TrimSpace(value(lookup, "CONTROLLED_AI_MODEL", ""))
 	aiAPIKey := strings.TrimSpace(value(lookup, "CONTROLLED_AI_API_KEY", ""))
-	aiTimeout, err := parsePositiveDuration(lookup, "CONTROLLED_AI_TIMEOUT", 12*time.Second)
+	aiTimeout, err := parsePositiveDuration(lookup, "CONTROLLED_AI_TIMEOUT", 8*time.Second)
 	if err != nil {
 		return Config{}, err
 	}
