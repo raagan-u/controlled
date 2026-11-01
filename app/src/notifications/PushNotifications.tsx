@@ -35,6 +35,7 @@ function notificationRoute(data: NotificationData): Href | null {
   if (data.type === 'PAYMENT_REQUEST' && id) return `/requests/${id}` as Href;
   if (data.type === 'ACCOUNTABILITY_REQUEST' && id) return `/accountability/${id}` as Href;
   if (data.type === 'ACCOUNTABILITY_INVITATION') return '/invitations';
+  if (data.type === 'MONEY_RECEIVED' && id) return `/transactions/${id}` as Href;
   return null;
 }
 
