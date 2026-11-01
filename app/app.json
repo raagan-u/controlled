@@ -34,7 +34,13 @@
           "iosUrlScheme": "com.googleusercontent.apps.376706277927-p59kimeh6k4qbvfmekj2je0uqom151br"
         }
       ],
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#FFFFFF"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
