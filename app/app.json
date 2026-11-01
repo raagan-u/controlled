@@ -47,7 +47,7 @@
         {
           "icon": "./assets/android-icon-monochrome.png",
           "color": "#1754EB",
-          "defaultChannel": "actions-v2"
+          "defaultChannel": "actions-v3"
         }
       ]
     ],

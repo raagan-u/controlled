@@ -31,7 +31,7 @@ func (s *ExpoSender) Send(ctx context.Context, tokens []string, message Message)
 	for index, token := range tokens {
 		payload[index] = expoMessage{
 			To: token, Title: message.Title, Body: message.Body, Sound: "default",
-			Priority: "high", ChannelID: "actions-v2",
+			Priority: "high", ChannelID: "actions-v3",
 			Data: map[string]string{"type": message.Kind, "entityId": message.EntityID},
 		}
 	}
