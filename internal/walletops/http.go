@@ -3,12 +3,14 @@ package walletops
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/raagan-u/controlled/internal/custody"
 	"github.com/raagan-u/controlled/internal/identity"
 	"github.com/raagan-u/controlled/internal/ledger"
+	"github.com/raagan-u/controlled/internal/notification"
 	"github.com/raagan-u/controlled/internal/platform/httpapi"
 )
 
@@ -27,11 +29,19 @@ type accountableCommander interface {
 }
 
 type Handler struct {
-	commands Commander
+	commands      Commander
+	notifications notification.Notifier
 }
 
 func NewHandler(commands Commander) *Handler {
 	return &Handler{commands: commands}
+}
+
+func (h *Handler) EnableNotifications(notifier notification.Notifier) *Handler {
+	if h != nil {
+		h.notifications = notifier
+	}
+	return h
 }
 
 func (h *Handler) CreateFunding(response http.ResponseWriter, request *http.Request) {
@@ -115,6 +125,9 @@ func (h *Handler) CreateTransfer(response http.ResponseWriter, request *http.Req
 		return
 	}
 	if review != nil {
+		if !review.Duplicate {
+			h.notify(review.AssignedPartnerID, notification.Message{Title: "Approval needed", Body: fmt.Sprintf("%s needs approval to send $%.2f", user.DisplayName(), float64(input.AmountMinor)/100), Kind: notification.KindAccountabilityRequest, EntityID: review.ID})
+		}
 		httpapi.WriteJSON(response, http.StatusAccepted, reviewRequestResponse(*review))
 		return
 	}
@@ -165,10 +178,19 @@ func (h *Handler) CreateWithdrawal(response http.ResponseWriter, request *http.R
 		return
 	}
 	if review != nil {
+		if !review.Duplicate {
+			h.notify(review.AssignedPartnerID, notification.Message{Title: "Approval needed", Body: fmt.Sprintf("%s needs approval to withdraw $%.2f", user.DisplayName(), float64(input.AmountMinor)/100), Kind: notification.KindAccountabilityRequest, EntityID: review.ID})
+		}
 		httpapi.WriteJSON(response, http.StatusAccepted, reviewRequestResponse(*review))
 		return
 	}
 	httpapi.WriteJSON(response, http.StatusAccepted, withdrawalResponse(withdrawal))
+}
+
+func (h *Handler) notify(recipient identity.UserID, message notification.Message) {
+	if h != nil && h.notifications != nil {
+		h.notifications.Notify(recipient, message)
+	}
 }
 
 func reviewRequestResponse(review ReviewRequest) struct {

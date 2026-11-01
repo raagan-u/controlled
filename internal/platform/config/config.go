@@ -46,6 +46,9 @@ type Config struct {
 	AIAPIKey            string
 	AITimeout           time.Duration
 	AIRequireParameters bool
+	ExpoPushURL         string
+	ExpoAccessToken     string
+	ExpoPushTimeout     time.Duration
 }
 
 func Load() (Config, error) {
@@ -124,6 +127,14 @@ func load(lookup lookupEnv) (Config, error) {
 	if aiProvider == AIProviderOpenAICompatible && aiTimeout >= 10*time.Second {
 		return Config{}, fmt.Errorf("%w: CONTROLLED_AI_TIMEOUT must be below the HTTP write timeout", ErrInvalidConfig)
 	}
+	expoPushURL := strings.TrimSpace(value(lookup, "CONTROLLED_EXPO_PUSH_URL", "https://exp.host/--/api/v2/push/send"))
+	if expoPushURL == "" {
+		return Config{}, fmt.Errorf("%w: CONTROLLED_EXPO_PUSH_URL", ErrInvalidConfig)
+	}
+	expoPushTimeout, err := parsePositiveDuration(lookup, "CONTROLLED_EXPO_PUSH_TIMEOUT", 5*time.Second)
+	if err != nil {
+		return Config{}, err
+	}
 
 	return Config{
 		HTTPAddress:         httpAddress,
@@ -146,6 +157,9 @@ func load(lookup lookupEnv) (Config, error) {
 		AIAPIKey:            aiAPIKey,
 		AITimeout:           aiTimeout,
 		AIRequireParameters: aiRequireParameters,
+		ExpoPushURL:         expoPushURL,
+		ExpoAccessToken:     strings.TrimSpace(value(lookup, "CONTROLLED_EXPO_ACCESS_TOKEN", "")),
+		ExpoPushTimeout:     expoPushTimeout,
 	}, nil
 }
 
