@@ -61,6 +61,12 @@ Defaults are intended only for local development. Override them through shell va
 | `CONTROLLED_DB_MAX_CONNS` | `10` | maximum connection-pool size |
 | `CONTROLLED_DB_MIN_CONNS` | `1` | minimum connection-pool size |
 | `CONTROLLED_GOOGLE_CLIENT_ID` | Controlled Web OAuth client ID | accepted audience for Google ID tokens |
+| `CONTROLLED_AI_PROVIDER` | `disabled` | `disabled` for deterministic guidance, or `openai_compatible` |
+| `CONTROLLED_AI_BASE_URL` | `https://openrouter.ai/api/v1` | OpenAI-compatible provider base URL |
+| `CONTROLLED_AI_MODEL` | empty | provider model identifier; required when AI is enabled |
+| `CONTROLLED_AI_API_KEY` | empty | provider secret; required when AI is enabled |
+| `CONTROLLED_AI_TIMEOUT` | `8s` | per-provider request timeout, below the API write timeout |
+| `CONTROLLED_AI_REQUIRE_PARAMETERS` | `true` | require an OpenRouter route that supports structured output parameters |
 
 If you change `POSTGRES_DB`, `POSTGRES_USER`, or `POSTGRES_PASSWORD`, also set a matching `DATABASE_URL`; its default is a literal URL using the default credentials.
 
@@ -106,6 +112,10 @@ Replace the database URL with credentials and TLS settings appropriate for the d
 For a remote deployment, terminate HTTPS at the platform load balancer or reverse proxy, inject `DATABASE_URL` from the platform's secret manager, keep PostgreSQL off the public network, and persist the database independently of the API container. The API image is stateless except for the current process-local fake custody provider described below.
 
 Google sign-in uses `POST /v1/auth/google`. The app sends a Google ID token; the API verifies its signature, issuer, expiry, verified email, and Web client-ID audience before issuing a Controlled session. OAuth client IDs are public configuration values—never add a Google client secret to the mobile app.
+
+AI guidance is optional and read-only. With `CONTROLLED_AI_PROVIDER=disabled`, the same endpoints return deterministic rule-based guidance so pact and accountability flows remain available. To enable an OpenAI-compatible provider such as OpenRouter, set the provider, model, and API key in the API process environment. The key must never be placed in the Expo app or an `EXPO_PUBLIC_*` variable.
+
+The backend sends only a curated financial snapshot, requires strict structured JSON, validates the response, and falls back to deterministic guidance on timeouts, rate limits, or invalid output. The model has no wallet-command, ledger, approval, or pact-lifecycle capability.
 
 Email/password registration and login use `POST /v1/auth/password/register` and `POST /v1/auth/password/login`. Passwords are bcrypt-hashed by the API and are never returned or stored by the mobile client. Email OTP verification is intentionally deferred during the current onboarding pass.
 
@@ -295,6 +305,12 @@ The backend is now ready. Continue with [API_INTEGRATION_SPEC.md](./API_INTEGRAT
 | `CONTROLLED_DB_PING_TIMEOUT` | no | `5s` | database connection/readiness timeout |
 | `CONTROLLED_DB_MAX_CONNS` | no | `10` | maximum PostgreSQL pool connections |
 | `CONTROLLED_DB_MIN_CONNS` | no | `1` | minimum PostgreSQL pool connections |
+| `CONTROLLED_AI_PROVIDER` | no | `disabled` | `disabled` or `openai_compatible` |
+| `CONTROLLED_AI_BASE_URL` | with AI | OpenRouter API | provider base URL |
+| `CONTROLLED_AI_MODEL` | with AI | none | structured-output-capable model ID |
+| `CONTROLLED_AI_API_KEY` | with AI | none | server-side provider credential |
+| `CONTROLLED_AI_TIMEOUT` | no | `8s` | provider request timeout |
+| `CONTROLLED_AI_REQUIRE_PARAMETERS` | no | `true` | require structured-output parameter support |
 
 Durations use Go duration syntax, such as `500ms`, `5s`, or `1m`. The minimum connection count cannot exceed the maximum.
 

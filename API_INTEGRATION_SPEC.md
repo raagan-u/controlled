@@ -129,6 +129,9 @@ Clients should branch on `error.code`, not the human-readable message.
 | `POST` | `/v1/pacts/{id}/confirm` | yes | no | `200` |
 | `POST` | `/v1/pacts/{id}/stake` | yes | required | `200` |
 | `POST` | `/v1/pacts/{id}/cancel` | yes | no | `200` |
+| `POST` | `/v1/ai/pact-suggestions` | yes | no | `200` |
+| `GET` | `/v1/ai/pacts/{id}/insight` | yes | no | `200` |
+| `GET` | `/v1/ai/accountability/{id}/brief` | yes | no | `200` |
 
 ## Complete external test flow
 
@@ -693,6 +696,23 @@ The request moves the stake from `available` to `staked` in the same database tr
 
 The API process runs lifecycle maintenance once at startup and once per minute. Scheduled pacts become active at their start time. At their end time, pending requests involving the pact are cancelled, the outcome becomes `KEPT` or `KEPT_WITH_EXCEPTIONS`, and the complete stake is released to available balance in the same database transaction.
 
+## Grounded guidance
+
+Pact creation guidance accepts the user's current goal and reason:
+
+```http
+POST /v1/ai/pact-suggestions
+Content-Type: application/json
+
+{"goal":"Keep weekends intentional","intent":"Protect the money set aside for travel"}
+```
+
+`GET /v1/ai/pacts/{id}/insight` returns contextual progress guidance for one owned pact. `GET /v1/ai/accountability/{id}/brief` returns a factual review brief for an accountability request visible to the authenticated user.
+
+Every response contains a `guidance` object with `headline`, `message`, `tone`, exact server-rendered `facts`, `source`, and `generatedAt`. Pact suggestions also contain `suggestedTerms` in USD minor units. `source` is `AI` only after a provider response passes the strict schema and deterministic validation; otherwise it is `RULES` and the endpoint remains usable.
+
+Guidance is read-only. These routes cannot create or update pacts, move wallet funds, approve requests, or call the ledger. Suggested terms still pass through the ordinary pact creation and explicit confirmation flow.
+
 ## Error reference
 
 | HTTP status | Code | Meaning |
@@ -727,6 +747,8 @@ The API process runs lifecycle maintenance once at startup and once per minute. 
 | `422` | `invalid_accountability_decision` | approval classification is not `EMERGENCY` or `CONSCIOUS_BREAK` |
 | `403` | `not_current_reviewer` | caller is not the request's current assigned partner |
 | `422` | `invalid_pact_terms` | invalid money, period, goal, intent, circle, or break consequence |
+| `422` | `invalid_guidance_input` | AI guidance input is incomplete or outside accepted lengths |
+| `500` | `guidance_unavailable` | verified source data could not be loaded; provider failures use rule fallback instead |
 | `502` | `custody_unavailable` | custody provider is unavailable |
 | `503` | `not_ready` | readiness check cannot reach PostgreSQL |
 | `500` | `internal_error` | unexpected server or persistence failure |
