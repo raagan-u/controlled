@@ -3,6 +3,7 @@ package ai
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -51,6 +52,15 @@ type accountabilityReaderStub struct {
 	err   error
 }
 
+type identityReaderStub struct {
+	value identity.User
+	err   error
+}
+
+func (s identityReaderStub) UserByID(context.Context, identity.UserID) (identity.User, error) {
+	return s.value, s.err
+}
+
 func (s accountabilityReaderStub) Request(context.Context, identity.UserID, string) (accountability.Request, error) {
 	return s.value, s.err
 }
@@ -80,7 +90,7 @@ func TestSuggestPactUsesDeterministicFallbackWithoutProvider(t *testing.T) {
 	service := NewService(fixedClock{testNow}, walletReaderStub{snapshot: snapshot, transactions: []wallet.Transaction{
 		testSpendingTransaction(t, 8_000, testNow.Add(-24*time.Hour)),
 		testSpendingTransaction(t, 2_000, testNow.Add(-31*24*time.Hour)),
-	}}, nil, nil, nil)
+	}}, nil, nil, nil, nil)
 
 	guidance, err := service.SuggestPact(context.Background(), "user-1", "Spend with intention", "Save for a trip")
 	if err != nil {
@@ -103,7 +113,7 @@ func TestSuggestPactRepairsInvalidModelOutputOnce(t *testing.T) {
 		{Headline: "Save $20", Message: "Try it", Tone: ToneNeutral, SuggestedLimitMinor: 5_000, SuggestedStakeMinor: 1_000, SuggestedDurationDays: 7},
 		{Headline: "Build a steady boundary", Message: "This starting point protects the goal without making ordinary spending impossible.", Tone: TonePositive, SuggestedLimitMinor: 5_000, SuggestedStakeMinor: 1_000, SuggestedDurationDays: 7},
 	}}
-	service := NewService(fixedClock{testNow}, walletReaderStub{snapshot: testWalletSnapshot(t, 10_000)}, nil, nil, model)
+	service := NewService(fixedClock{testNow}, walletReaderStub{snapshot: testWalletSnapshot(t, 10_000)}, nil, nil, nil, model)
 
 	guidance, err := service.SuggestPact(context.Background(), "user-1", "Weekend boundary", "Spend more deliberately")
 	if err != nil {
@@ -127,7 +137,7 @@ func TestPactInsightKeepsVerifiedNumbersOutOfModelNarrative(t *testing.T) {
 		t.Fatal(err)
 	}
 	model := &modelStub{drafts: []ModelDraft{{Headline: "Protect the remaining room", Message: "The next payment deserves an intentional pause.", Tone: ToneCaution}}}
-	service := NewService(fixedClock{testNow}, nil, pactReaderStub{value: value, progress: pact.Progress{UsedMinor: 8_500, RemainingMinor: 1_500}}, nil, model)
+	service := NewService(fixedClock{testNow}, nil, pactReaderStub{value: value, progress: pact.Progress{UsedMinor: 8_500, RemainingMinor: 1_500}}, nil, nil, model)
 
 	guidance, err := service.PactInsight(context.Background(), "user-1", "pact-1")
 	if err != nil {
@@ -145,20 +155,43 @@ func TestAccountabilityBriefFallsBackWhenProviderUnavailable(t *testing.T) {
 	t.Parallel()
 	model := &modelStub{errors: []error{ErrRateLimited}}
 	request := accountability.Request{ID: "request-1", OwnerID: "owner-1", AmountMinor: 2_500, Reason: "Unexpected travel", OperationType: "INTERNAL_TRANSFER", Pacts: []accountability.RequestPact{{Goal: "Travel fund", Intent: "Keep room for planned travel", LimitMinor: 10_000, UsedMinor: 9_000, OverageMinor: 1_500}}}
-	service := NewService(fixedClock{testNow}, nil, nil, accountabilityReaderStub{value: request}, model)
+	requester, _ := identity.NewUser("owner-1", "tarnished@example.test", "Tarnished", testNow.Add(-time.Hour))
+	service := NewService(fixedClock{testNow}, nil, nil, accountabilityReaderStub{value: request}, identityReaderStub{value: requester}, model)
 
 	guidance, err := service.AccountabilityBrief(context.Background(), "partner-1", "request-1")
 	if err != nil {
 		t.Fatalf("AccountabilityBrief() error = %v", err)
 	}
-	if guidance.Source != SourceRules || guidance.Facts[2].Value != "$15.00" {
+	if guidance.Source != SourceRules || guidance.Facts[1].Value != "Tarnished" || guidance.Facts[3].Value != "$15.00" || !strings.Contains(guidance.Message, "Tarnished") {
 		t.Fatalf("guidance = %#v", guidance)
+	}
+	if len(model.inputs) != 1 || model.inputs[0].RequesterName != "Tarnished" {
+		t.Fatalf("model inputs = %#v", model.inputs)
+	}
+}
+
+func TestAccountabilityBriefRepairsOutputThatDoesNotNameRequester(t *testing.T) {
+	t.Parallel()
+	request := accountability.Request{ID: "request-1", OwnerID: "owner-1", AmountMinor: 2_500, Reason: "Unexpected travel", OperationType: "INTERNAL_TRANSFER"}
+	requester, _ := identity.NewUser("owner-1", "tarnished@example.test", "Tarnished", testNow.Add(-time.Hour))
+	model := &modelStub{drafts: []ModelDraft{
+		{Headline: "Review the request", Message: "Consider whether this exception protects the pact.", Tone: ToneCaution},
+		{Headline: "Review Tarnished's request", Message: "Tarnished raised this request. Compare their reason with the pact they chose.", Tone: ToneCaution},
+	}}
+	service := NewService(fixedClock{testNow}, nil, nil, accountabilityReaderStub{value: request}, identityReaderStub{value: requester}, model)
+
+	guidance, err := service.AccountabilityBrief(context.Background(), "partner-1", "request-1")
+	if err != nil {
+		t.Fatalf("AccountabilityBrief() error = %v", err)
+	}
+	if guidance.Source != SourceAI || !strings.Contains(guidance.Message, "Tarnished") || len(model.inputs) != 2 || model.inputs[1].RejectedResponse == "" {
+		t.Fatalf("guidance = %#v, inputs = %#v", guidance, model.inputs)
 	}
 }
 
 func TestSuggestPactRejectsIncompleteInput(t *testing.T) {
 	t.Parallel()
-	service := NewService(fixedClock{testNow}, nil, nil, nil, nil)
+	service := NewService(fixedClock{testNow}, nil, nil, nil, nil, nil)
 	_, err := service.SuggestPact(context.Background(), "user-1", "", "reason")
 	if !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("error = %v", err)

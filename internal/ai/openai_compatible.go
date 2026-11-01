@@ -110,6 +110,7 @@ Return supportive, concise language without shame, diagnosis, certainty, or fina
 The headline and message must contain no digits, currency symbols, amounts, percentages, or dates; the application renders verified numeric facts separately.
 For PACT_CREATION, suggest conservative terms in integer USD minor units and a duration in whole days.
 For every other kind, all three suggested term fields must be zero.
+For ACCOUNTABILITY_BRIEF, requesterName is the person proposing the payment and the current reader is their reviewer. The message must begin exactly with: "<requesterName> raised this request." Continue in the third person and never imply that requesterName is reviewing or approving the request.
 Do not authorize, approve, execute, or imply that any money movement has occurred.`
 
 func guidanceSchema() map[string]any {

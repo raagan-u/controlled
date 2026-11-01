@@ -33,6 +33,17 @@ func (s *PostgresSessionStore) UserByEmail(ctx context.Context, email string) (U
 	`, email))
 }
 
+func (s *PostgresSessionStore) UserByID(ctx context.Context, userID UserID) (User, error) {
+	if s == nil || s.pool == nil || userID == "" {
+		return User{}, ErrSessionStore
+	}
+	return scanUser(s.pool.QueryRow(ctx, `
+		SELECT id::text, email, display_name, ctrld_id, created_at, name_pending
+		  FROM users
+		 WHERE id = $1::text::uuid
+	`, string(userID)))
+}
+
 func (s *PostgresSessionStore) Recipients(
 	ctx context.Context,
 	currentUserID UserID,

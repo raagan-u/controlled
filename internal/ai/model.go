@@ -38,6 +38,7 @@ type ModelInput struct {
 	Goal                    string       `json:"goal,omitempty"`
 	Intent                  string       `json:"intent,omitempty"`
 	Reason                  string       `json:"reason,omitempty"`
+	RequesterName           string       `json:"requesterName,omitempty"`
 	OperationType           string       `json:"operationType,omitempty"`
 	PactStatus              string       `json:"pactStatus,omitempty"`
 	AvailableMinor          int64        `json:"availableMinor"`

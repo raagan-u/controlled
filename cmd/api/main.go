@@ -117,7 +117,7 @@ func run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	aiService := controlledai.NewService(platform.SystemClock{}, store, pactService, accountabilityService, aiModel)
+	aiService := controlledai.NewService(platform.SystemClock{}, store, pactService, accountabilityService, identityStore, aiModel)
 	aiHandler := controlledai.NewHandler(aiService)
 	paymentRequestService := paymentrequest.NewService(platform.NewUUIDGenerator(), platform.SystemClock{}, paymentrequest.NewPostgresRepository(database), walletOperations)
 	paymentRequestHandler := paymentrequest.NewHandler(paymentRequestService)

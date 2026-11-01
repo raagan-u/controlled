@@ -36,6 +36,10 @@ type AccountabilityReader interface {
 	Request(context.Context, identity.UserID, string) (accountability.Request, error)
 }
 
+type IdentityReader interface {
+	UserByID(context.Context, identity.UserID) (identity.User, error)
+}
+
 type Source string
 
 const (
@@ -70,11 +74,12 @@ type Service struct {
 	wallets        WalletReader
 	pacts          PactReader
 	accountability AccountabilityReader
+	identities     IdentityReader
 	model          Model
 }
 
-func NewService(clock Clock, wallets WalletReader, pacts PactReader, accountability AccountabilityReader, model Model) *Service {
-	return &Service{clock: clock, wallets: wallets, pacts: pacts, accountability: accountability, model: model}
+func NewService(clock Clock, wallets WalletReader, pacts PactReader, accountability AccountabilityReader, identities IdentityReader, model Model) *Service {
+	return &Service{clock: clock, wallets: wallets, pacts: pacts, accountability: accountability, identities: identities, model: model}
 }
 
 func (s *Service) SuggestPact(ctx context.Context, userID identity.UserID, goal, intent string) (Guidance, error) {
@@ -125,8 +130,16 @@ func (s *Service) AccountabilityBrief(ctx context.Context, userID identity.UserI
 	if err != nil {
 		return Guidance{}, err
 	}
-	input := ModelInput{Kind: GuidanceAccountabilityBrief, Reason: request.Reason, OperationType: string(request.OperationType), ProposedMinor: request.AmountMinor}
-	facts := []Fact{{Label: "Requested", Value: usd(request.AmountMinor)}}
+	if s.identities == nil {
+		return Guidance{}, ErrUnavailable
+	}
+	requester, err := s.identities.UserByID(ctx, request.OwnerID)
+	if err != nil {
+		return Guidance{}, err
+	}
+	requesterName := requesterReference(requester.DisplayName())
+	input := ModelInput{Kind: GuidanceAccountabilityBrief, RequesterName: requesterName, Reason: request.Reason, OperationType: string(request.OperationType), ProposedMinor: request.AmountMinor}
+	facts := []Fact{{Label: "Requested", Value: usd(request.AmountMinor)}, {Label: "Requester", Value: requester.DisplayName()}}
 	if len(request.Pacts) > 0 {
 		blocking := request.Pacts[0]
 		for _, candidate := range request.Pacts[1:] {
@@ -219,6 +232,12 @@ func validateDraft(input ModelInput, draft ModelDraft) error {
 		if draft.SuggestedLimitMinor != 0 || draft.SuggestedStakeMinor != 0 || draft.SuggestedDurationDays != 0 {
 			return fmt.Errorf("%w: unexpected suggested terms", ErrInvalidResponse)
 		}
+		if input.Kind == GuidanceAccountabilityBrief {
+			requiredPrefix := strings.ToLower(input.RequesterName + " raised this request.")
+			if !strings.HasPrefix(strings.ToLower(draft.Message), requiredPrefix) {
+				return fmt.Errorf("%w: accountability brief must identify who raised the request", ErrInvalidResponse)
+			}
+		}
 		return nil
 	}
 	if draft.SuggestedLimitMinor < 100 || draft.SuggestedLimitMinor > 10_000_000 ||
@@ -264,8 +283,16 @@ func progressFallback(input ModelInput) ModelDraft {
 	}
 }
 
-func accountabilityFallback(ModelInput) ModelDraft {
-	return ModelDraft{Headline: "Review the trade-off", Message: "Compare the reason with the pact they chose to protect. Approve only if the exception matches the decision you are being asked to make.", Tone: ToneCaution}
+func accountabilityFallback(input ModelInput) ModelDraft {
+	return ModelDraft{Headline: "Review the trade-off", Message: fmt.Sprintf("%s raised this request. Review their reason against the pact they chose to protect, then decide whether the exception fits.", input.RequesterName), Tone: ToneCaution}
+}
+
+func requesterReference(displayName string) string {
+	value := strings.TrimSpace(displayName)
+	if value == "" || containsFinancialLiteral.MatchString(value) {
+		return "the requester"
+	}
+	return value
 }
 
 func (s *Service) now() time.Time {
