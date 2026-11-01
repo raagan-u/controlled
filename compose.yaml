@@ -47,6 +47,9 @@ services:
       CONTROLLED_EXPO_PUSH_URL: ${CONTROLLED_EXPO_PUSH_URL:-https://exp.host/--/api/v2/push/send}
       CONTROLLED_EXPO_ACCESS_TOKEN: ${CONTROLLED_EXPO_ACCESS_TOKEN:-}
       CONTROLLED_EXPO_PUSH_TIMEOUT: ${CONTROLLED_EXPO_PUSH_TIMEOUT:-5s}
+      CHANNEL3_API_BASE: ${CHANNEL3_API_BASE:-https://api.trychannel3.com/v1}
+      CHANNEL3_API_KEY: ${CHANNEL3_API_KEY:-}
+      CHANNEL3_TIMEOUT: ${CHANNEL3_TIMEOUT:-4s}
     depends_on:
       postgres:
         condition: service_healthy
