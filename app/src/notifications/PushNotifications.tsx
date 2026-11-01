@@ -1,6 +1,7 @@
 import { createContext, type PropsWithChildren, useCallback, useContext, useEffect, useMemo, useRef } from 'react';
 import Constants from 'expo-constants';
 import * as Device from 'expo-device';
+import { AndroidImportance } from 'expo-notifications';
 import * as Notifications from 'expo-notifications';
 import * as SecureStore from 'expo-secure-store';
 import { router, type Href, usePathname } from 'expo-router';
@@ -60,8 +61,8 @@ export function PushNotificationProvider({ children }: PropsWithChildren) {
     registering.current = true;
     try {
       if (Platform.OS === 'android') {
-        await Notifications.setNotificationChannelAsync('actions-v2', {
-          importance: 4,
+        await Notifications.setNotificationChannelAsync('actions-v3', {
+          importance: AndroidImportance.HIGH,
           lightColor: '#1754EB',
           name: 'Requests and approvals',
           vibrationPattern: [0, 220, 120, 220],
