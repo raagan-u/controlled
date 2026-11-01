@@ -22,6 +22,7 @@ import (
 	"github.com/raagan-u/controlled/internal/platform/config"
 	"github.com/raagan-u/controlled/internal/platform/httpapi"
 	platformpostgres "github.com/raagan-u/controlled/internal/platform/postgres"
+	"github.com/raagan-u/controlled/internal/shopping"
 	"github.com/raagan-u/controlled/internal/wallet"
 	"github.com/raagan-u/controlled/internal/walletops"
 )
@@ -130,6 +131,16 @@ func run(ctx context.Context) error {
 	}
 	aiService := controlledai.NewService(platform.SystemClock{}, store, pactService, accountabilityService, identityStore, aiModel)
 	aiHandler := controlledai.NewHandler(aiService)
+	var productCatalog shopping.Catalog
+	if configuration.Channel3APIKey != "" {
+		productCatalog, err = shopping.NewChannel3Catalog(shopping.Channel3Options{
+			APIBase: configuration.Channel3APIBase, APIKey: configuration.Channel3APIKey, Timeout: configuration.Channel3Timeout,
+		})
+		if err != nil {
+			return err
+		}
+	}
+	shoppingHandler := shopping.NewHandler(shopping.NewService(productCatalog))
 	paymentRequestService := paymentrequest.NewService(platform.NewUUIDGenerator(), platform.SystemClock{}, paymentrequest.NewPostgresRepository(database), walletOperations)
 	paymentRequestHandler := paymentrequest.NewHandler(paymentRequestService).EnableNotifications(pushService)
 	go runMaintenance(ctx, accountabilityService, pactService, paymentRequestService, walletOperations)
@@ -183,6 +194,7 @@ func run(ctx context.Context) error {
 	mux.Handle("POST /v1/ai/pact-suggestions", identity.RequireSession(sessions, http.HandlerFunc(aiHandler.SuggestPact)))
 	mux.Handle("GET /v1/ai/pacts/{id}/insight", identity.RequireSession(sessions, http.HandlerFunc(aiHandler.PactInsight)))
 	mux.Handle("GET /v1/ai/accountability/{id}/brief", identity.RequireSession(sessions, http.HandlerFunc(aiHandler.AccountabilityBrief)))
+	mux.Handle("POST /v1/shopping/price-checks", identity.RequireSession(sessions, http.HandlerFunc(shoppingHandler.CheckPrice)))
 	health := httpapi.NewHealthHandler(database, configuration.DatabasePingTimeout)
 	mux.HandleFunc("GET /healthz", health.Liveness)
 	mux.HandleFunc("GET /readyz", health.Readiness)
