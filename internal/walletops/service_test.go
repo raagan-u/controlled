@@ -77,14 +77,15 @@ func TestSuccessfulTransferNotifiesRecipient(t *testing.T) {
 	repo := &memoryRepository{}
 	notifier := &recordingNotifier{}
 	service := walletops.NewService(ids, fixedClock{}, repo, custody.NewFake(ids), walletops.AllowAllPolicy{}).
-		EnableNotifications(notifier)
+		EnableNotifications(notifier).EnableUserDirectory(userDirectoryStub{})
 
 	transfer, err := service.Transfer(t.Context(), "send-1", "user-1", "friend@example.com", 1250, "USD")
 	if err != nil {
 		t.Fatalf("Transfer() error = %v", err)
 	}
 	if notifier.recipient != transfer.RecipientID || notifier.message.Kind != notification.KindMoneyReceived ||
-		notifier.message.EntityID != string(transfer.LedgerTransactionID) || notifier.message.Title != "Money received" {
+		notifier.message.EntityID != string(transfer.LedgerTransactionID) || notifier.message.Title != "Money received" ||
+		notifier.message.Body != "Jason Bourne paid you $12.50" {
 		t.Fatalf("notification = (%q, %#v)", notifier.recipient, notifier.message)
 	}
 }
@@ -99,7 +100,7 @@ func TestApprovedTransferNotifiesRecipient(t *testing.T) {
 	ids := &sequenceIDs{}
 	notifier := &recordingNotifier{}
 	service := walletops.NewService(ids, fixedClock{}, &memoryRepository{}, custody.NewFake(ids), walletops.AllowAllPolicy{}).
-		EnableNotifications(notifier)
+		EnableNotifications(notifier).EnableUserDirectory(userDirectoryStub{})
 
 	_, err = service.ExecuteApproved(t.Context(), walletops.ApprovedDebit{
 		RequestID: "request-1", IntentID: "transfer-1", IdempotencyKey: "approved-1",
@@ -109,7 +110,8 @@ func TestApprovedTransferNotifiesRecipient(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExecuteApproved() error = %v", err)
 	}
-	if notifier.recipient != "user-2" || notifier.message.Kind != notification.KindMoneyReceived {
+	if notifier.recipient != "user-2" || notifier.message.Kind != notification.KindMoneyReceived ||
+		notifier.message.Body != "Jason Bourne paid you $15.00" {
 		t.Fatalf("notification = (%q, %#v)", notifier.recipient, notifier.message)
 	}
 }
@@ -134,6 +136,12 @@ type recordingPolicy struct {
 type recordingNotifier struct {
 	recipient identity.UserID
 	message   notification.Message
+}
+
+type userDirectoryStub struct{}
+
+func (userDirectoryStub) UserByID(_ context.Context, userID identity.UserID) (identity.User, error) {
+	return identity.NewUser(userID, "jason@example.com", "Jason Bourne", time.Now())
 }
 
 func (n *recordingNotifier) Notify(recipient identity.UserID, message notification.Message) {

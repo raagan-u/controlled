@@ -52,7 +52,7 @@ func (s *Service) ExecuteApproved(ctx context.Context, approved ApprovedDebit) (
 		if err != nil {
 			return "", err
 		}
-		s.notifyMoneyReceived(transfer)
+		s.notifyMoneyReceived(ctx, transfer)
 		return transfer.ID, nil
 	case DebitWithdrawal:
 		withdrawal, err := s.repo.ReserveWithdrawal(approvedContext, approved.IdempotencyKey, Withdrawal{
