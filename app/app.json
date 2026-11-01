@@ -45,7 +45,7 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/notification-icon-wordmark.png",
+          "icon": "./assets/notification-icon-ct.png",
           "color": "#1754EB",
           "defaultChannel": "actions-v3"
         }
