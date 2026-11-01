@@ -7,18 +7,21 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getCurrentUser, signOut } from '@/api/wallet';
 import type { User } from '@/api/types';
 import { colors, fonts } from '@/theme';
+import { type ActionCounts, useActionCounts } from '@/notifications/ActionCounts';
 
 // Distinct value per request so re-selecting Activity on Home re-triggers the expand.
 let activityRequests = 0;
 
-const destinations: { label: string; opensActivity?: boolean; route: Href }[] = [
+const destinations: { countKey?: keyof Pick<ActionCounts, 'accountability' | 'invitations' | 'paymentRequests'>; label: string; opensActivity?: boolean; route: Href }[] = [
   { label: 'Home', route: '/home' },
-  { label: 'Requests', route: '/requests' },
+  { countKey: 'paymentRequests', label: 'Payment requests', route: '/requests' },
   { label: 'Pacts', route: '/pacts' },
-  { label: 'Accountability', route: '/accountability' },
-  { label: 'Invitations', route: '/invitations' },
+  { countKey: 'accountability', label: 'Accountability', route: '/accountability' },
+  { countKey: 'invitations', label: 'Invitations', route: '/invitations' },
   { label: 'Activity', opensActivity: true, route: '/home' },
 ];
+
+const badgeLabel = (count: number) => count > 9 ? '9+' : String(count);
 
 export function AuthenticatedMenu({ initiallyOpen = false, style }: { initiallyOpen?: boolean; style?: StyleProp<ViewStyle> }) {
   const [open, setOpen] = useState(initiallyOpen);
@@ -28,6 +31,8 @@ export function AuthenticatedMenu({ initiallyOpen = false, style }: { initiallyO
   const { width } = useWindowDimensions();
   const progress = useSharedValue(0);
   const pathname = usePathname();
+  const { counts, refresh, reset } = useActionCounts();
+  useEffect(() => { void refresh(); }, [pathname, refresh]);
   useEffect(() => { if (open) progress.set(withTiming(1, { duration: 320, easing: Easing.out(Easing.cubic) })); }, [open, progress]);
   const hide = () => { progress.set(withTiming(0, { duration: 220, easing: Easing.in(Easing.cubic) }, (finished) => { if (finished) runOnJS(setOpen)(false); })); };
   const scrimStyle = useAnimatedStyle(() => ({ opacity: progress.value }));
@@ -50,6 +55,7 @@ export function AuthenticatedMenu({ initiallyOpen = false, style }: { initiallyO
   };
   const show = () => {
     setOpen(true);
+    void refresh();
     if (!user) void getCurrentUser().then((value) => setUser(value.user)).catch(() => undefined);
   };
   const navigate = (route: Href, opensActivity?: boolean) => {
@@ -60,7 +66,7 @@ export function AuthenticatedMenu({ initiallyOpen = false, style }: { initiallyO
     else if (route === '/home') router.replace(route); else router.push(route);
   };
   return <>
-    <PressableScale accessibilityLabel="Open menu" accessibilityRole="button" onPress={show} scaleTo={0.9} style={[styles.trigger, style]}><Text style={styles.menuIcon}>≡</Text></PressableScale>
+    <PressableScale accessibilityLabel={`Open menu${counts.total ? `, ${counts.total} actions pending` : ''}`} accessibilityRole="button" onPress={show} scaleTo={0.9} style={[styles.trigger, style]}><Text style={styles.menuIcon}>≡</Text>{counts.total ? <View style={styles.triggerBadge}><Text style={styles.triggerBadgeText}>{badgeLabel(counts.total)}</Text></View> : null}</PressableScale>
     <Modal animationType="none" onRequestClose={hide} transparent visible={open}>
       <View style={styles.modalRoot}>
         <Animated.View pointerEvents="none" style={[styles.scrimFill, scrimStyle]} />
@@ -69,8 +75,8 @@ export function AuthenticatedMenu({ initiallyOpen = false, style }: { initiallyO
           <Pressable accessibilityLabel="Close menu" onPress={hide} style={styles.close}><Text style={styles.closeText}>×</Text></Pressable>
           <View style={styles.profile}><View style={styles.profileAvatar}><Text style={styles.profileInitial}>{user?.displayName.charAt(0) ?? 'C'}</Text></View><View style={styles.profileCopy}><Text numberOfLines={1} style={styles.drawerName}>{user?.displayName ?? 'ctrld'}</Text><PressableScale accessibilityHint="Copies your ctrld ID" accessibilityLabel={`Copy ctrld ID ${user?.ctrldId ?? ''}`} accessibilityRole="button" hitSlop={8} onPress={() => void copyCtrldId()} scaleTo={0.94} style={styles.idButton}>{copied ? <Animated.Text entering={FadeIn.duration(150)} key="copied" style={[styles.drawerID, styles.copied]}>Copied ✓</Animated.Text> : <Text key="id" style={styles.drawerID}>{user?.ctrldId ?? ''}</Text>}</PressableScale><Text numberOfLines={1} style={styles.drawerEmail}>{user?.email ?? ''}</Text></View></View>
           <Text style={styles.drawerKicker}>MENU —</Text>
-          {destinations.map(({ label, opensActivity, route }, index) => { const active = opensActivity ? false : route === '/home' ? pathname === '/home' : pathname.startsWith(String(route)); return <PressableScale entering={FadeInRight.delay(120 + index * 45).duration(320)} key={label} onPress={() => navigate(route, opensActivity)} scaleTo={0.97} style={[styles.drawerItem, active && styles.drawerItemActive]}><Text style={[styles.drawerItemText, active && styles.drawerItemTextActive]}>{label}</Text></PressableScale>; })}
-          <View style={styles.drawerBottom}><Text style={styles.drawerSmall}>Settings</Text><Text style={styles.drawerSmall}>Help</Text><Text onPress={() => void signOut().finally(() => router.replace('/welcome'))} style={styles.signOut}>Sign out</Text></View>
+          {destinations.map(({ countKey, label, opensActivity, route }, index) => { const active = opensActivity ? false : route === '/home' ? pathname === '/home' : pathname.startsWith(String(route)); const count = countKey ? counts[countKey] : 0; return <PressableScale entering={FadeInRight.delay(120 + index * 45).duration(320)} key={label} onPress={() => navigate(route, opensActivity)} scaleTo={0.97} style={[styles.drawerItem, active && styles.drawerItemActive]}><Text adjustsFontSizeToFit minimumFontScale={0.78} numberOfLines={1} style={[styles.drawerItemText, active && styles.drawerItemTextActive]}>{label}</Text>{count ? <View style={styles.drawerBadge}><Text style={styles.drawerBadgeText}>{badgeLabel(count)}</Text></View> : null}</PressableScale>; })}
+          <View style={styles.drawerBottom}><Text style={styles.drawerSmall}>Settings</Text><Text style={styles.drawerSmall}>Help</Text><Text onPress={() => void signOut().finally(() => { reset(); router.replace('/welcome'); })} style={styles.signOut}>Sign out</Text></View>
         </Pressable></Animated.View>
         </Pressable>
       </View>
@@ -80,6 +86,8 @@ export function AuthenticatedMenu({ initiallyOpen = false, style }: { initiallyO
 
 const styles = StyleSheet.create({
   trigger: { alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.14)', borderRadius: 12, height: 44, justifyContent: 'center', width: 44 },
+  triggerBadge: { alignItems: 'center', backgroundColor: colors.red, borderColor: colors.blue, borderRadius: 10, borderWidth: 2, justifyContent: 'center', minHeight: 20, minWidth: 20, paddingHorizontal: 4, position: 'absolute', right: -6, top: -6 },
+  triggerBadgeText: { color: colors.white, fontFamily: fonts.bold, fontSize: 9 },
   menuIcon: { color: colors.white, fontFamily: fonts.bold, fontSize: 27, lineHeight: 29 },
   modalRoot: { flex: 1 },
   scrimFill: { backgroundColor: colors.scrim, ...StyleSheet.absoluteFill },
@@ -98,10 +106,12 @@ const styles = StyleSheet.create({
   copied: { color: colors.greenText },
   drawerID: { color: colors.blue, fontFamily: fonts.bold, fontSize: 14, marginTop: 3 },
   drawerEmail: { color: colors.textMuted, fontFamily: fonts.medium, fontSize: 13, marginTop: 3 },
-  drawerItem: { borderRadius: 12, marginVertical: 2, paddingHorizontal: 12, paddingVertical: 11 },
+  drawerItem: { alignItems: 'center', borderRadius: 12, flexDirection: 'row', marginVertical: 2, paddingHorizontal: 12, paddingVertical: 11 },
   drawerItemActive: { backgroundColor: colors.blueTint },
-  drawerItemText: { color: colors.navy, fontFamily: fonts.bold, fontSize: 25 },
+  drawerItemText: { color: colors.navy, flex: 1, fontFamily: fonts.bold, fontSize: 25 },
   drawerItemTextActive: { color: colors.blue },
+  drawerBadge: { alignItems: 'center', backgroundColor: colors.redTint, borderRadius: 12, justifyContent: 'center', minHeight: 24, minWidth: 24, paddingHorizontal: 6 },
+  drawerBadgeText: { color: colors.redText, fontFamily: fonts.bold, fontSize: 10 },
   drawerBottom: { bottom: 40, left: 24, position: 'absolute' },
   drawerSmall: { color: colors.textMuted, fontFamily: fonts.bold, fontSize: 17, paddingVertical: 7 },
   signOut: { color: colors.redText, fontFamily: fonts.bold, fontSize: 17, marginTop: 9 },
