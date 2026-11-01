@@ -124,11 +124,6 @@ func (h *Handler) Pay(w http.ResponseWriter, r *http.Request) {
 				Kind: notification.KindAccountabilityRequest, EntityID: result.Review.ID,
 			})
 		}
-	} else if result.Request.Status == "PAID" {
-		h.notify(result.Request.RequesterID, notification.Message{
-			Title: "Request paid", Body: fmt.Sprintf("%s paid your $%.2f request", user.DisplayName(), float64(result.Request.AmountMinor)/100),
-			Kind: notification.KindPaymentRequest, EntityID: result.Request.ID,
-		})
 	}
 	httpapi.WriteJSON(w, 200, payload)
 }

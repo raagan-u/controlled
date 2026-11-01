@@ -10,6 +10,7 @@ import (
 	"github.com/raagan-u/controlled/internal/identity"
 	"github.com/raagan-u/controlled/internal/ledger"
 	"github.com/raagan-u/controlled/internal/money"
+	"github.com/raagan-u/controlled/internal/notification"
 	"github.com/raagan-u/controlled/internal/walletops"
 )
 
@@ -69,6 +70,50 @@ func TestOutboundOperationsPassThroughPolicy(t *testing.T) {
 	}
 }
 
+func TestSuccessfulTransferNotifiesRecipient(t *testing.T) {
+	t.Parallel()
+
+	ids := &sequenceIDs{}
+	repo := &memoryRepository{}
+	notifier := &recordingNotifier{}
+	service := walletops.NewService(ids, fixedClock{}, repo, custody.NewFake(ids), walletops.AllowAllPolicy{}).
+		EnableNotifications(notifier)
+
+	transfer, err := service.Transfer(t.Context(), "send-1", "user-1", "friend@example.com", 1250, "USD")
+	if err != nil {
+		t.Fatalf("Transfer() error = %v", err)
+	}
+	if notifier.recipient != transfer.RecipientID || notifier.message.Kind != notification.KindMoneyReceived ||
+		notifier.message.EntityID != string(transfer.LedgerTransactionID) || notifier.message.Title != "Money received" {
+		t.Fatalf("notification = (%q, %#v)", notifier.recipient, notifier.message)
+	}
+}
+
+func TestApprovedTransferNotifiesRecipient(t *testing.T) {
+	t.Parallel()
+
+	amount, err := money.New(1500, "USD")
+	if err != nil {
+		t.Fatalf("money.New() error = %v", err)
+	}
+	ids := &sequenceIDs{}
+	notifier := &recordingNotifier{}
+	service := walletops.NewService(ids, fixedClock{}, &memoryRepository{}, custody.NewFake(ids), walletops.AllowAllPolicy{}).
+		EnableNotifications(notifier)
+
+	_, err = service.ExecuteApproved(t.Context(), walletops.ApprovedDebit{
+		RequestID: "request-1", IntentID: "transfer-1", IdempotencyKey: "approved-1",
+		OwnerID: "user-1", Kind: walletops.DebitInternalTransfer, Destination: "friend@example.com",
+		Amount: amount, Classification: "EMERGENCY", PactIDs: []string{"pact-1"},
+	})
+	if err != nil {
+		t.Fatalf("ExecuteApproved() error = %v", err)
+	}
+	if notifier.recipient != "user-2" || notifier.message.Kind != notification.KindMoneyReceived {
+		t.Fatalf("notification = (%q, %#v)", notifier.recipient, notifier.message)
+	}
+}
+
 type sequenceIDs struct{ next int }
 
 func (s *sequenceIDs) NewID() (string, error) {
@@ -84,6 +129,16 @@ func (fixedClock) Now() time.Time {
 
 type recordingPolicy struct {
 	requests []walletops.DebitRequest
+}
+
+type recordingNotifier struct {
+	recipient identity.UserID
+	message   notification.Message
+}
+
+func (n *recordingNotifier) Notify(recipient identity.UserID, message notification.Message) {
+	n.recipient = recipient
+	n.message = message
 }
 
 func (p *recordingPolicy) Authorize(_ context.Context, request walletops.DebitRequest) error {

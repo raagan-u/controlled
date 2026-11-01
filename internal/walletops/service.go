@@ -3,6 +3,7 @@ package walletops
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/raagan-u/controlled/internal/identity"
 	"github.com/raagan-u/controlled/internal/ledger"
 	"github.com/raagan-u/controlled/internal/money"
+	"github.com/raagan-u/controlled/internal/notification"
 )
 
 type IDGenerator interface {
@@ -40,6 +42,7 @@ type Service struct {
 	custody  custody.Provider
 	policy   Policy
 	requests RequestCoordinator
+	notifier notification.Notifier
 }
 
 type ReconciliationResult struct {
@@ -51,6 +54,13 @@ type ReconciliationResult struct {
 func (s *Service) EnableAccountability(requests RequestCoordinator) *Service {
 	if s != nil {
 		s.requests = requests
+	}
+	return s
+}
+
+func (s *Service) EnableNotifications(notifier notification.Notifier) *Service {
+	if s != nil {
+		s.notifier = notifier
 	}
 	return s
 }
@@ -213,6 +223,7 @@ func (s *Service) TransferWithReason(
 		RecipientEmail: recipientEmail, Amount: amount, CreatedAt: now,
 	}, ledger.JournalID(generated[1]))
 	if err == nil {
+		s.notifyMoneyReceived(transfer)
 		return DebitAttempt{Transfer: &transfer}, nil
 	}
 	var blocked *PolicyBlockedError
@@ -228,6 +239,18 @@ func (s *Service) TransferWithReason(
 		return DebitAttempt{}, requestErr
 	}
 	return DebitAttempt{Request: &request}, nil
+}
+
+func (s *Service) notifyMoneyReceived(transfer Transfer) {
+	if s == nil || s.notifier == nil || transfer.Duplicate || transfer.RecipientID == "" || transfer.LedgerTransactionID == "" {
+		return
+	}
+	s.notifier.Notify(transfer.RecipientID, notification.Message{
+		Title:    "Money received",
+		Body:     fmt.Sprintf("$%.2f was added to your ctrld balance", float64(transfer.Amount.AmountMinor())/100),
+		Kind:     notification.KindMoneyReceived,
+		EntityID: string(transfer.LedgerTransactionID),
+	})
 }
 
 func (s *Service) CreateWithdrawal(

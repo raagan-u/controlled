@@ -114,7 +114,7 @@ func run(ctx context.Context) error {
 		walletops.NewPostgresRepository(database, ledger.NewPostgresBook(database)),
 		custodyProvider,
 		walletops.AllowAllPolicy{},
-	).EnableAccountability(accountabilityService)
+	).EnableAccountability(accountabilityService).EnableNotifications(pushService)
 	accountabilityService.EnableExecutor(walletOperations)
 	walletOperationHandler := walletops.NewHandler(walletOperations).EnableNotifications(pushService)
 	accountabilityHandler := accountability.NewHandler(accountabilityService).EnableNotifications(pushService)

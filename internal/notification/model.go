@@ -6,6 +6,7 @@ const (
 	KindPaymentRequest        = "PAYMENT_REQUEST"
 	KindAccountabilityRequest = "ACCOUNTABILITY_REQUEST"
 	KindInvitation            = "ACCOUNTABILITY_INVITATION"
+	KindMoneyReceived         = "MONEY_RECEIVED"
 )
 
 type Message struct {
