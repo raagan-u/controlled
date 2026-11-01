@@ -15,6 +15,7 @@ import (
 	"github.com/raagan-u/controlled/internal/custody"
 	"github.com/raagan-u/controlled/internal/identity"
 	"github.com/raagan-u/controlled/internal/ledger"
+	"github.com/raagan-u/controlled/internal/notification"
 	"github.com/raagan-u/controlled/internal/pact"
 	"github.com/raagan-u/controlled/internal/paymentrequest"
 	"github.com/raagan-u/controlled/internal/platform"
@@ -87,6 +88,16 @@ func run(ctx context.Context) error {
 	passwordAuthenticationHandler := identity.NewPasswordAuthenticationHandler(passwordAuthentication)
 	recipientHandler := identity.NewRecipientHandler(identityStore)
 	profileHandler := identity.NewProfileHandler(identityStore)
+	pushSender, err := notification.NewExpoSender(
+		configuration.ExpoPushURL, configuration.ExpoAccessToken,
+		&http.Client{Timeout: configuration.ExpoPushTimeout},
+	)
+	if err != nil {
+		return err
+	}
+	pushService := notification.NewService(notification.NewPostgresRepository(database), pushSender)
+	pushHandler := notification.NewHandler(pushService)
+	go pushService.Run(ctx)
 	walletReadHandler := wallet.NewReadHandler(store)
 	custodyProvider, err := configuredCustodyProvider(configuration)
 	if err != nil {
@@ -105,8 +116,8 @@ func run(ctx context.Context) error {
 		walletops.AllowAllPolicy{},
 	).EnableAccountability(accountabilityService)
 	accountabilityService.EnableExecutor(walletOperations)
-	walletOperationHandler := walletops.NewHandler(walletOperations)
-	accountabilityHandler := accountability.NewHandler(accountabilityService)
+	walletOperationHandler := walletops.NewHandler(walletOperations).EnableNotifications(pushService)
+	accountabilityHandler := accountability.NewHandler(accountabilityService).EnableNotifications(pushService)
 	pactService := pact.NewService(
 		platform.NewUUIDGenerator(),
 		platform.SystemClock{},
@@ -120,7 +131,7 @@ func run(ctx context.Context) error {
 	aiService := controlledai.NewService(platform.SystemClock{}, store, pactService, accountabilityService, identityStore, aiModel)
 	aiHandler := controlledai.NewHandler(aiService)
 	paymentRequestService := paymentrequest.NewService(platform.NewUUIDGenerator(), platform.SystemClock{}, paymentrequest.NewPostgresRepository(database), walletOperations)
-	paymentRequestHandler := paymentrequest.NewHandler(paymentRequestService)
+	paymentRequestHandler := paymentrequest.NewHandler(paymentRequestService).EnableNotifications(pushService)
 	go runMaintenance(ctx, accountabilityService, pactService, paymentRequestService, walletOperations)
 
 	mux := http.NewServeMux()
@@ -133,6 +144,8 @@ func run(ctx context.Context) error {
 	mux.Handle("GET /v1/users/current", identity.RequireSession(sessions, http.HandlerFunc(identity.CurrentUserHandler)))
 	mux.Handle("PATCH /v1/users/current", identity.RequireSession(sessions, http.HandlerFunc(profileHandler.Update)))
 	mux.Handle("GET /v1/users/recipients", identity.RequireSession(sessions, http.HandlerFunc(recipientHandler.Recipients)))
+	mux.Handle("POST /v1/push-devices", identity.RequireSession(sessions, http.HandlerFunc(pushHandler.Register)))
+	mux.Handle("DELETE /v1/push-devices", identity.RequireSession(sessions, http.HandlerFunc(pushHandler.Unregister)))
 	mux.Handle("GET /v1/wallet", identity.RequireSession(sessions, http.HandlerFunc(walletReadHandler.Wallet)))
 	mux.Handle("GET /v1/wallet/transactions", identity.RequireSession(sessions, http.HandlerFunc(walletReadHandler.Transactions)))
 	mux.Handle("GET /v1/wallet/transactions/{id}", identity.RequireSession(sessions, http.HandlerFunc(walletReadHandler.Transaction)))

@@ -67,6 +67,9 @@ Defaults are intended only for local development. Override them through shell va
 | `CONTROLLED_AI_API_KEY` | empty | provider secret; required when AI is enabled |
 | `CONTROLLED_AI_TIMEOUT` | `8s` | per-provider request timeout, below the API write timeout |
 | `CONTROLLED_AI_REQUIRE_PARAMETERS` | `true` | require an OpenRouter route that supports structured output parameters |
+| `CONTROLLED_EXPO_PUSH_URL` | Expo Push API | push delivery endpoint |
+| `CONTROLLED_EXPO_ACCESS_TOKEN` | empty | optional Expo enhanced-push-security token |
+| `CONTROLLED_EXPO_PUSH_TIMEOUT` | `5s` | per-push request timeout |
 
 If you change `POSTGRES_DB`, `POSTGRES_USER`, or `POSTGRES_PASSWORD`, also set a matching `DATABASE_URL`; its default is a literal URL using the default credentials.
 
@@ -118,6 +121,12 @@ AI guidance is optional and read-only. With `CONTROLLED_AI_PROVIDER=disabled`, t
 The backend sends only a curated financial snapshot, requires strict structured JSON, validates the response, and falls back to deterministic guidance on timeouts, rate limits, or invalid output. The model has no wallet-command, ledger, approval, or pact-lifecycle capability.
 
 Email/password registration and login use `POST /v1/auth/password/register` and `POST /v1/auth/password/login`. Passwords are bcrypt-hashed by the API and are never returned or stored by the mobile client. Email OTP verification is intentionally deferred during the current onboarding pass.
+
+## System notifications
+
+Controlled uses Expo Push Service for Android system notifications. The API stores Expo push tokens by authenticated user and sends only actionable events: payment requests, accountability decisions, and accountability invitations. Tapping one opens the existing request, accountability, or invitation screen; there is intentionally no separate notification inbox.
+
+`CONTROLLED_EXPO_ACCESS_TOKEN` is only needed if enhanced push security is enabled for the Expo project. Keep that token on the API server. Notification delivery is best-effort and never blocks a wallet or approval operation; pending-action badges remain the source of truth.
 
 ## Current development boundary
 

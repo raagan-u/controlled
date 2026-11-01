@@ -28,7 +28,9 @@ func TestLoadUsesValidatedDefaults(t *testing.T) {
 		configuration.AIProvider != AIProviderDisabled ||
 		configuration.AIBaseURL != "https://openrouter.ai/api/v1" ||
 		configuration.AITimeout != 8*time.Second ||
-		!configuration.AIRequireParameters {
+		!configuration.AIRequireParameters ||
+		configuration.ExpoPushURL != "https://exp.host/--/api/v2/push/send" ||
+		configuration.ExpoPushTimeout != 5*time.Second {
 		t.Fatalf("load() = %#v", configuration)
 	}
 }
@@ -57,6 +59,9 @@ func TestLoadReadsOverrides(t *testing.T) {
 		"CONTROLLED_AI_API_KEY":            "ai-secret",
 		"CONTROLLED_AI_TIMEOUT":            "8s",
 		"CONTROLLED_AI_REQUIRE_PARAMETERS": "false",
+		"CONTROLLED_EXPO_PUSH_URL":         "https://push.example.test/send",
+		"CONTROLLED_EXPO_ACCESS_TOKEN":     "push-secret",
+		"CONTROLLED_EXPO_PUSH_TIMEOUT":     "4s",
 	}))
 	if err != nil {
 		t.Fatalf("load() error = %v", err)
@@ -78,6 +83,10 @@ func TestLoadReadsOverrides(t *testing.T) {
 		configuration.AIModel != "example/model" || configuration.AIAPIKey != "ai-secret" ||
 		configuration.AITimeout != 8*time.Second || configuration.AIRequireParameters {
 		t.Fatalf("load() AI = %#v", configuration)
+	}
+	if configuration.ExpoPushURL != "https://push.example.test/send" ||
+		configuration.ExpoAccessToken != "push-secret" || configuration.ExpoPushTimeout != 4*time.Second {
+		t.Fatalf("load() push = %#v", configuration)
 	}
 }
 
@@ -102,6 +111,8 @@ func TestLoadRejectsInvalidConfiguration(t *testing.T) {
 		{name: "missing AI configuration", values: map[string]string{"DATABASE_URL": "postgres://db", "CONTROLLED_AI_PROVIDER": "openai_compatible"}, wantErr: ErrInvalidConfig},
 		{name: "AI boolean", values: map[string]string{"DATABASE_URL": "postgres://db", "CONTROLLED_AI_REQUIRE_PARAMETERS": "sometimes"}, wantErr: ErrInvalidConfig},
 		{name: "AI timeout exceeds response window", values: map[string]string{"DATABASE_URL": "postgres://db", "CONTROLLED_AI_PROVIDER": "openai_compatible", "CONTROLLED_AI_MODEL": "model", "CONTROLLED_AI_API_KEY": "secret", "CONTROLLED_AI_TIMEOUT": "10s"}, wantErr: ErrInvalidConfig},
+		{name: "empty Expo push URL", values: map[string]string{"DATABASE_URL": "postgres://db", "CONTROLLED_EXPO_PUSH_URL": " "}, wantErr: ErrInvalidConfig},
+		{name: "invalid Expo push timeout", values: map[string]string{"DATABASE_URL": "postgres://db", "CONTROLLED_EXPO_PUSH_TIMEOUT": "0s"}, wantErr: ErrInvalidConfig},
 	}
 
 	for _, test := range tests {

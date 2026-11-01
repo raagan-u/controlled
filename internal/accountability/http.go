@@ -3,12 +3,15 @@ package accountability
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/raagan-u/controlled/internal/custody"
 	"github.com/raagan-u/controlled/internal/identity"
 	"github.com/raagan-u/controlled/internal/ledger"
+	"github.com/raagan-u/controlled/internal/notification"
 	"github.com/raagan-u/controlled/internal/platform/httpapi"
 	"github.com/raagan-u/controlled/internal/walletops"
 )
@@ -92,6 +95,7 @@ func (h *Handler) ApproveRequest(response http.ResponseWriter, request *http.Req
 		writeError(response, err)
 		return
 	}
+	h.notifyRequestDecision(user, item)
 	httpapi.WriteJSON(response, http.StatusOK, requestResponse(item))
 }
 
@@ -114,6 +118,7 @@ func (h *Handler) CancelRequest(response http.ResponseWriter, request *http.Requ
 		writeError(response, err)
 		return
 	}
+	h.notify(item.AssignedPartnerID, notification.Message{Title: "Request cancelled", Body: fmt.Sprintf("%s cancelled a $%.2f approval request", user.DisplayName(), float64(item.AmountMinor)/100), Kind: notification.KindAccountabilityRequest, EntityID: item.ID})
 	httpapi.WriteJSON(response, http.StatusOK, requestResponse(item))
 }
 
@@ -132,6 +137,7 @@ func (h *Handler) decideWithoutBody(response http.ResponseWriter, request *http.
 		writeError(response, err)
 		return
 	}
+	h.notifyRequestDecision(user, item)
 	httpapi.WriteJSON(response, http.StatusOK, requestResponse(item))
 }
 
@@ -174,11 +180,19 @@ func (h *Handler) Circles(response http.ResponseWriter, request *http.Request) {
 }
 
 type Handler struct {
-	commands Commander
+	commands      Commander
+	notifications notification.Notifier
 }
 
 func NewHandler(commands Commander) *Handler {
 	return &Handler{commands: commands}
+}
+
+func (h *Handler) EnableNotifications(notifier notification.Notifier) *Handler {
+	if h != nil {
+		h.notifications = notifier
+	}
+	return h
 }
 
 func (h *Handler) Invite(response http.ResponseWriter, request *http.Request) {
@@ -204,6 +218,9 @@ func (h *Handler) Invite(response http.ResponseWriter, request *http.Request) {
 	if duplicate {
 		status = http.StatusOK
 	}
+	if !duplicate {
+		h.notify(invitation.PartnerID(), notification.Message{Title: "Accountability invitation", Body: user.DisplayName() + " invited you to be an accountability partner", Kind: notification.KindInvitation, EntityID: string(invitation.ID())})
+	}
 	httpapi.WriteJSON(response, status, invitationEnvelope(invitation, duplicate))
 }
 
@@ -227,7 +244,28 @@ func (h *Handler) respond(response http.ResponseWriter, request *http.Request, a
 		writeError(response, err)
 		return
 	}
+	decision := "declined"
+	if accept {
+		decision = "accepted"
+	}
+	h.notify(invitation.OwnerID(), notification.Message{Title: "Invitation " + decision, Body: user.DisplayName() + " " + decision + " your accountability invitation", Kind: notification.KindInvitation, EntityID: string(invitation.ID())})
 	httpapi.WriteJSON(response, http.StatusOK, invitationEnvelope(invitation, false))
+}
+
+func (h *Handler) notifyRequestDecision(actor identity.User, item Request) {
+	if item.Status == "ASSIGNED" && item.AssignedPartnerID != "" && item.AssignedPartnerID != actor.ID() {
+		h.notify(item.AssignedPartnerID, notification.Message{Title: "Approval needed", Body: fmt.Sprintf("A $%.2f pact exception needs your decision", float64(item.AmountMinor)/100), Kind: notification.KindAccountabilityRequest, EntityID: item.ID})
+		return
+	}
+	if item.Status == "APPROVED" || item.Status == "DENIED" {
+		h.notify(item.OwnerID, notification.Message{Title: "Pact request " + strings.ToLower(item.Status), Body: fmt.Sprintf("Your $%.2f pact exception was %s", float64(item.AmountMinor)/100, strings.ToLower(item.Status)), Kind: notification.KindAccountabilityRequest, EntityID: item.ID})
+	}
+}
+
+func (h *Handler) notify(recipient identity.UserID, message notification.Message) {
+	if h != nil && h.notifications != nil && recipient != "" {
+		h.notifications.Notify(recipient, message)
+	}
 }
 
 func (h *Handler) CreateCircle(response http.ResponseWriter, request *http.Request) {

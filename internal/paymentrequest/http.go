@@ -3,11 +3,13 @@ package paymentrequest
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/raagan-u/controlled/internal/identity"
 	"github.com/raagan-u/controlled/internal/ledger"
+	"github.com/raagan-u/controlled/internal/notification"
 	"github.com/raagan-u/controlled/internal/platform/httpapi"
 	"github.com/raagan-u/controlled/internal/walletops"
 )
@@ -20,9 +22,19 @@ type Commands interface {
 	Decline(context.Context, identity.UserID, string) (Request, error)
 	Cancel(context.Context, identity.UserID, string) (Request, error)
 }
-type Handler struct{ commands Commands }
+type Handler struct {
+	commands      Commands
+	notifications notification.Notifier
+}
 
 func NewHandler(commands Commands) *Handler { return &Handler{commands: commands} }
+
+func (h *Handler) EnableNotifications(notifier notification.Notifier) *Handler {
+	if h != nil {
+		h.notifications = notifier
+	}
+	return h
+}
 
 func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	user, ok := identity.CurrentUser(r.Context())
@@ -48,6 +60,12 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	status := http.StatusCreated
 	if item.Duplicate {
 		status = http.StatusOK
+	}
+	if !item.Duplicate {
+		h.notify(item.RecipientID, notification.Message{
+			Title: "Payment request", Body: fmt.Sprintf("%s requested $%.2f", user.DisplayName(), float64(item.AmountMinor)/100),
+			Kind: notification.KindPaymentRequest, EntityID: item.ID,
+		})
 	}
 	writeItem(w, status, item)
 }
@@ -100,6 +118,17 @@ func (h *Handler) Pay(w http.ResponseWriter, r *http.Request) {
 	}{PaymentRequest: newResponse(result.Request)}
 	if result.Review != nil {
 		payload.AccountabilityRequest = &reviewResponse{ID: result.Review.ID, Status: result.Review.Status, ExpiresAt: result.Review.ExpiresAt}
+		if !result.Review.Duplicate {
+			h.notify(result.Review.AssignedPartnerID, notification.Message{
+				Title: "Approval needed", Body: fmt.Sprintf("%s needs approval to pay $%.2f", user.DisplayName(), float64(result.Request.AmountMinor)/100),
+				Kind: notification.KindAccountabilityRequest, EntityID: result.Review.ID,
+			})
+		}
+	} else if result.Request.Status == "PAID" {
+		h.notify(result.Request.RequesterID, notification.Message{
+			Title: "Request paid", Body: fmt.Sprintf("%s paid your $%.2f request", user.DisplayName(), float64(result.Request.AmountMinor)/100),
+			Kind: notification.KindPaymentRequest, EntityID: result.Request.ID,
+		})
 	}
 	httpapi.WriteJSON(w, 200, payload)
 }
@@ -122,7 +151,18 @@ func (h *Handler) resolve(w http.ResponseWriter, r *http.Request, cancel bool) {
 		writeError(w, err)
 		return
 	}
+	if cancel {
+		h.notify(item.RecipientID, notification.Message{Title: "Request cancelled", Body: fmt.Sprintf("%s cancelled a $%.2f request", user.DisplayName(), float64(item.AmountMinor)/100), Kind: notification.KindPaymentRequest, EntityID: item.ID})
+	} else {
+		h.notify(item.RequesterID, notification.Message{Title: "Request declined", Body: fmt.Sprintf("%s declined your $%.2f request", user.DisplayName(), float64(item.AmountMinor)/100), Kind: notification.KindPaymentRequest, EntityID: item.ID})
+	}
 	writeItem(w, 200, item)
+}
+
+func (h *Handler) notify(recipient identity.UserID, message notification.Message) {
+	if h != nil && h.notifications != nil {
+		h.notifications.Notify(recipient, message)
+	}
 }
 
 type partyResponse struct {
