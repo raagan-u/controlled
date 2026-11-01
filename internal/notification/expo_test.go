@@ -51,7 +51,7 @@ func TestExpoSenderBuildsActionNotification(t *testing.T) {
 		t.Fatalf("message count = %d, want 2", len(received))
 	}
 	if received[0].To != tokens[0] || received[0].Title != message.Title || received[0].Body != message.Body ||
-		received[0].ChannelID != "actions" || received[0].Data["type"] != message.Kind || received[0].Data["entityId"] != message.EntityID {
+		received[0].ChannelID != "actions-v2" || received[0].Data["type"] != message.Kind || received[0].Data["entityId"] != message.EntityID {
 		t.Fatalf("message = %#v", received[0])
 	}
 }

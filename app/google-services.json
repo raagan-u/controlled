@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "189837907675",
+    "project_id": "controlled-8af67",
+    "storage_bucket": "controlled-8af67.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:189837907675:android:b5f7c7ae5b6b687fb81efe",
+        "android_client_info": {
+          "package_name": "com.fromh.controlled"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAfqCM5Qbaq9Jooc45c0WsIqVPXp_6tBNY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
