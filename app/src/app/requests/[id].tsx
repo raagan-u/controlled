@@ -8,12 +8,14 @@ import { ActionButton } from '@/components/ActionButton';
 import { SheetScreen } from '@/components/SheetScreen';
 import { SwipeConfirm } from '@/components/SwipeConfirm';
 import { colors, fonts, radii } from '@/theme';
+import { useActionCounts } from '@/notifications/ActionCounts';
 
 export default function RequestDetailScreen(){
+  const {refresh:refreshActionCounts}=useActionCounts();
   const {id}=useLocalSearchParams<{id:string}>();const requestID=typeof id==='string'?id:'';
   const [item,setItem]=useState<PaymentRequest|null>(null);const [user,setUser]=useState<User|null>(null);const [loading,setLoading]=useState(true);const [acting,setActing]=useState(false);const [error,setError]=useState('');
   useEffect(()=>{if(!requestID)return;let active=true;void Promise.all([getPaymentRequest(requestID),getCurrentUser()]).then(([next,current])=>{if(active){setItem(next);setUser(current.user)}}).catch((cause)=>{if(active)setError(apiErrorMessage(cause))}).finally(()=>{if(active)setLoading(false)});return()=>{active=false}},[requestID]);
-  const action=async(kind:'pay'|'decline'|'cancel')=>{if(!item||acting)return;setActing(true);setError('');try{if(kind==='pay'){const result=await payPaymentRequest(item.id);setItem(result.paymentRequest)}else if(kind==='decline'){setItem(await declinePaymentRequest(item.id))}else{setItem(await cancelPaymentRequest(item.id))}}catch(cause){setError(apiErrorMessage(cause))}finally{setActing(false)}};
+  const action=async(kind:'pay'|'decline'|'cancel')=>{if(!item||acting)return;setActing(true);setError('');try{if(kind==='pay'){const result=await payPaymentRequest(item.id);setItem(result.paymentRequest)}else if(kind==='decline'){setItem(await declinePaymentRequest(item.id))}else{setItem(await cancelPaymentRequest(item.id))}await refreshActionCounts()}catch(cause){setError(apiErrorMessage(cause))}finally{setActing(false)}};
   if(loading&&!item)return <SheetScreen title="request"><ActivityIndicator color={colors.blue} style={styles.loading}/></SheetScreen>;
   if(!item)return <SheetScreen title="request"><Text style={styles.error}>{error||'Request not found.'}</Text></SheetScreen>;
   const incoming=item.recipient.id===user?.id;const pending=item.status==='PENDING';

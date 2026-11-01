@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { ActionCountProvider } from '@/notifications/ActionCounts';
 
 // Switching between sibling tabs (Send/Request, Fund/Withdraw) swaps in place with no screen transition.
 const swapScreens = ['send', 'request-money', 'fund', 'withdraw'];
@@ -26,7 +27,7 @@ export default function RootLayout() {
   }
 
   return (
-    <>
+    <ActionCountProvider>
       <Stack screenOptions={{ animation: 'slide_from_right', animationDuration: 320, gestureEnabled: true, headerShown: false }}>
         <Stack.Screen name="index" options={{ animation: 'fade' }} />
         <Stack.Screen name="home" options={{ animation: 'fade', animationDuration: 380 }} />
@@ -35,6 +36,6 @@ export default function RootLayout() {
         <Stack.Screen name="hello" options={{ animation: 'fade', gestureEnabled: false }} />
       </Stack>
       <StatusBar style="dark" />
-    </>
+    </ActionCountProvider>
   );
 }
