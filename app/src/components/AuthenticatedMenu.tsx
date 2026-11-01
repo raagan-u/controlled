@@ -8,6 +8,7 @@ import { getCurrentUser, signOut } from '@/api/wallet';
 import type { User } from '@/api/types';
 import { colors, fonts } from '@/theme';
 import { type ActionCounts, useActionCounts } from '@/notifications/ActionCounts';
+import { usePushNotifications } from '@/notifications/PushNotifications';
 
 // Distinct value per request so re-selecting Activity on Home re-triggers the expand.
 let activityRequests = 0;
@@ -32,6 +33,7 @@ export function AuthenticatedMenu({ initiallyOpen = false, style }: { initiallyO
   const progress = useSharedValue(0);
   const pathname = usePathname();
   const { counts, refresh, reset } = useActionCounts();
+  const { unregister } = usePushNotifications();
   useEffect(() => { void refresh(); }, [pathname, refresh]);
   useEffect(() => { if (open) progress.set(withTiming(1, { duration: 320, easing: Easing.out(Easing.cubic) })); }, [open, progress]);
   const hide = () => { progress.set(withTiming(0, { duration: 220, easing: Easing.in(Easing.cubic) }, (finished) => { if (finished) runOnJS(setOpen)(false); })); };
@@ -65,6 +67,12 @@ export function AuthenticatedMenu({ initiallyOpen = false, style }: { initiallyO
     if (opensActivity) router.replace({ pathname: '/home', params: { openActivity: String(++activityRequests) } });
     else if (route === '/home') router.replace(route); else router.push(route);
   };
+  const leave = async () => {
+    await unregister().catch(() => undefined);
+    await signOut();
+    reset();
+    router.replace('/welcome');
+  };
   return <>
     <PressableScale accessibilityLabel={`Open menu${counts.total ? `, ${counts.total} actions pending` : ''}`} accessibilityRole="button" onPress={show} scaleTo={0.9} style={[styles.trigger, style]}><Text style={styles.menuIcon}>≡</Text>{counts.total ? <View style={styles.triggerBadge}><Text style={styles.triggerBadgeText}>{badgeLabel(counts.total)}</Text></View> : null}</PressableScale>
     <Modal animationType="none" onRequestClose={hide} transparent visible={open}>
@@ -76,7 +84,7 @@ export function AuthenticatedMenu({ initiallyOpen = false, style }: { initiallyO
           <View style={styles.profile}><View style={styles.profileAvatar}><Text style={styles.profileInitial}>{user?.displayName.charAt(0) ?? 'C'}</Text></View><View style={styles.profileCopy}><Text numberOfLines={1} style={styles.drawerName}>{user?.displayName ?? 'ctrld'}</Text><PressableScale accessibilityHint="Copies your ctrld ID" accessibilityLabel={`Copy ctrld ID ${user?.ctrldId ?? ''}`} accessibilityRole="button" hitSlop={8} onPress={() => void copyCtrldId()} scaleTo={0.94} style={styles.idButton}>{copied ? <Animated.Text entering={FadeIn.duration(150)} key="copied" style={[styles.drawerID, styles.copied]}>Copied ✓</Animated.Text> : <Text key="id" style={styles.drawerID}>{user?.ctrldId ?? ''}</Text>}</PressableScale><Text numberOfLines={1} style={styles.drawerEmail}>{user?.email ?? ''}</Text></View></View>
           <Text style={styles.drawerKicker}>MENU —</Text>
           {destinations.map(({ countKey, label, opensActivity, route }, index) => { const active = opensActivity ? false : route === '/home' ? pathname === '/home' : pathname.startsWith(String(route)); const count = countKey ? counts[countKey] : 0; return <PressableScale entering={FadeInRight.delay(120 + index * 45).duration(320)} key={label} onPress={() => navigate(route, opensActivity)} scaleTo={0.97} style={[styles.drawerItem, active && styles.drawerItemActive]}><Text adjustsFontSizeToFit minimumFontScale={0.78} numberOfLines={1} style={[styles.drawerItemText, active && styles.drawerItemTextActive]}>{label}</Text>{count ? <View style={styles.drawerBadge}><Text style={styles.drawerBadgeText}>{badgeLabel(count)}</Text></View> : null}</PressableScale>; })}
-          <View style={styles.drawerBottom}><Text style={styles.drawerSmall}>Settings</Text><Text style={styles.drawerSmall}>Help</Text><Text onPress={() => void signOut().finally(() => { reset(); router.replace('/welcome'); })} style={styles.signOut}>Sign out</Text></View>
+          <View style={styles.drawerBottom}><Text style={styles.drawerSmall}>Settings</Text><Text style={styles.drawerSmall}>Help</Text><Text onPress={() => void leave()} style={styles.signOut}>Sign out</Text></View>
         </Pressable></Animated.View>
         </Pressable>
       </View>
