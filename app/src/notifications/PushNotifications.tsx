@@ -60,11 +60,10 @@ export function PushNotificationProvider({ children }: PropsWithChildren) {
     registering.current = true;
     try {
       if (Platform.OS === 'android') {
-        await Notifications.setNotificationChannelAsync('actions', {
+        await Notifications.setNotificationChannelAsync('actions-v2', {
           importance: 4,
           lightColor: '#1754EB',
           name: 'Requests and approvals',
-          sound: 'default',
           vibrationPattern: [0, 220, 120, 220],
         });
       }
