@@ -22,6 +22,10 @@ type Clock interface {
 	Now() time.Time
 }
 
+type UserDirectory interface {
+	UserByID(context.Context, identity.UserID) (identity.User, error)
+}
+
 type Repository interface {
 	CreateFunding(context.Context, string, FundingIntent) (FundingIntent, error)
 	AttachFundingOrder(context.Context, identity.UserID, OperationID, custody.FundingOrder, time.Time) (FundingIntent, error)
@@ -43,6 +47,7 @@ type Service struct {
 	policy   Policy
 	requests RequestCoordinator
 	notifier notification.Notifier
+	users    UserDirectory
 }
 
 type ReconciliationResult struct {
@@ -61,6 +66,13 @@ func (s *Service) EnableAccountability(requests RequestCoordinator) *Service {
 func (s *Service) EnableNotifications(notifier notification.Notifier) *Service {
 	if s != nil {
 		s.notifier = notifier
+	}
+	return s
+}
+
+func (s *Service) EnableUserDirectory(users UserDirectory) *Service {
+	if s != nil {
+		s.users = users
 	}
 	return s
 }
@@ -223,7 +235,7 @@ func (s *Service) TransferWithReason(
 		RecipientEmail: recipientEmail, Amount: amount, CreatedAt: now,
 	}, ledger.JournalID(generated[1]))
 	if err == nil {
-		s.notifyMoneyReceived(transfer)
+		s.notifyMoneyReceived(ctx, transfer)
 		return DebitAttempt{Transfer: &transfer}, nil
 	}
 	var blocked *PolicyBlockedError
@@ -241,13 +253,20 @@ func (s *Service) TransferWithReason(
 	return DebitAttempt{Request: &request}, nil
 }
 
-func (s *Service) notifyMoneyReceived(transfer Transfer) {
+func (s *Service) notifyMoneyReceived(ctx context.Context, transfer Transfer) {
 	if s == nil || s.notifier == nil || transfer.Duplicate || transfer.RecipientID == "" || transfer.LedgerTransactionID == "" {
 		return
 	}
+	amount := fmt.Sprintf("$%.2f", float64(transfer.Amount.AmountMinor())/100)
+	body := "You received " + amount
+	if s.users != nil {
+		if sender, err := s.users.UserByID(ctx, transfer.SenderID); err == nil && strings.TrimSpace(sender.DisplayName()) != "" {
+			body = sender.DisplayName() + " paid you " + amount
+		}
+	}
 	s.notifier.Notify(transfer.RecipientID, notification.Message{
 		Title:    "Money received",
-		Body:     fmt.Sprintf("$%.2f was added to your ctrld balance", float64(transfer.Amount.AmountMinor())/100),
+		Body:     body,
 		Kind:     notification.KindMoneyReceived,
 		EntityID: string(transfer.LedgerTransactionID),
 	})
