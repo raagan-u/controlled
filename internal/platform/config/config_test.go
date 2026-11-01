@@ -30,7 +30,9 @@ func TestLoadUsesValidatedDefaults(t *testing.T) {
 		configuration.AITimeout != 8*time.Second ||
 		!configuration.AIRequireParameters ||
 		configuration.ExpoPushURL != "https://exp.host/--/api/v2/push/send" ||
-		configuration.ExpoPushTimeout != 5*time.Second {
+		configuration.ExpoPushTimeout != 5*time.Second ||
+		configuration.Channel3APIBase != "https://api.trychannel3.com/v1" ||
+		configuration.Channel3Timeout != 4*time.Second {
 		t.Fatalf("load() = %#v", configuration)
 	}
 }
@@ -62,6 +64,9 @@ func TestLoadReadsOverrides(t *testing.T) {
 		"CONTROLLED_EXPO_PUSH_URL":         "https://push.example.test/send",
 		"CONTROLLED_EXPO_ACCESS_TOKEN":     "push-secret",
 		"CONTROLLED_EXPO_PUSH_TIMEOUT":     "4s",
+		"CHANNEL3_API_BASE":                "https://catalog.example.test/v1/",
+		"CHANNEL3_API_KEY":                 "channel3-secret",
+		"CHANNEL3_TIMEOUT":                 "3s",
 	}))
 	if err != nil {
 		t.Fatalf("load() error = %v", err)
@@ -88,6 +93,10 @@ func TestLoadReadsOverrides(t *testing.T) {
 		configuration.ExpoAccessToken != "push-secret" || configuration.ExpoPushTimeout != 4*time.Second {
 		t.Fatalf("load() push = %#v", configuration)
 	}
+	if configuration.Channel3APIBase != "https://catalog.example.test/v1" ||
+		configuration.Channel3APIKey != "channel3-secret" || configuration.Channel3Timeout != 3*time.Second {
+		t.Fatalf("load() Channel3 = %#v", configuration)
+	}
 }
 
 func TestLoadRejectsInvalidConfiguration(t *testing.T) {
@@ -113,6 +122,9 @@ func TestLoadRejectsInvalidConfiguration(t *testing.T) {
 		{name: "AI timeout exceeds response window", values: map[string]string{"DATABASE_URL": "postgres://db", "CONTROLLED_AI_PROVIDER": "openai_compatible", "CONTROLLED_AI_MODEL": "model", "CONTROLLED_AI_API_KEY": "secret", "CONTROLLED_AI_TIMEOUT": "10s"}, wantErr: ErrInvalidConfig},
 		{name: "empty Expo push URL", values: map[string]string{"DATABASE_URL": "postgres://db", "CONTROLLED_EXPO_PUSH_URL": " "}, wantErr: ErrInvalidConfig},
 		{name: "invalid Expo push timeout", values: map[string]string{"DATABASE_URL": "postgres://db", "CONTROLLED_EXPO_PUSH_TIMEOUT": "0s"}, wantErr: ErrInvalidConfig},
+		{name: "empty Channel3 API base", values: map[string]string{"DATABASE_URL": "postgres://db", "CHANNEL3_API_BASE": " "}, wantErr: ErrInvalidConfig},
+		{name: "invalid Channel3 timeout", values: map[string]string{"DATABASE_URL": "postgres://db", "CHANNEL3_TIMEOUT": "0s"}, wantErr: ErrInvalidConfig},
+		{name: "Channel3 timeout exceeds response window", values: map[string]string{"DATABASE_URL": "postgres://db", "CHANNEL3_TIMEOUT": "10s"}, wantErr: ErrInvalidConfig},
 	}
 
 	for _, test := range tests {

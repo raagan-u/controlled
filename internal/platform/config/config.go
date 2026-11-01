@@ -49,6 +49,9 @@ type Config struct {
 	ExpoPushURL         string
 	ExpoAccessToken     string
 	ExpoPushTimeout     time.Duration
+	Channel3APIBase     string
+	Channel3APIKey      string
+	Channel3Timeout     time.Duration
 }
 
 func Load() (Config, error) {
@@ -135,6 +138,17 @@ func load(lookup lookupEnv) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	channel3APIBase := strings.TrimRight(strings.TrimSpace(value(lookup, "CHANNEL3_API_BASE", "https://api.trychannel3.com/v1")), "/")
+	if channel3APIBase == "" {
+		return Config{}, fmt.Errorf("%w: CHANNEL3_API_BASE", ErrInvalidConfig)
+	}
+	channel3Timeout, err := parsePositiveDuration(lookup, "CHANNEL3_TIMEOUT", 4*time.Second)
+	if err != nil {
+		return Config{}, err
+	}
+	if channel3Timeout >= 10*time.Second {
+		return Config{}, fmt.Errorf("%w: CHANNEL3_TIMEOUT must be below the HTTP write timeout", ErrInvalidConfig)
+	}
 
 	return Config{
 		HTTPAddress:         httpAddress,
@@ -160,6 +174,9 @@ func load(lookup lookupEnv) (Config, error) {
 		ExpoPushURL:         expoPushURL,
 		ExpoAccessToken:     strings.TrimSpace(value(lookup, "CONTROLLED_EXPO_ACCESS_TOKEN", "")),
 		ExpoPushTimeout:     expoPushTimeout,
+		Channel3APIBase:     channel3APIBase,
+		Channel3APIKey:      strings.TrimSpace(value(lookup, "CHANNEL3_API_KEY", "")),
+		Channel3Timeout:     channel3Timeout,
 	}, nil
 }
 

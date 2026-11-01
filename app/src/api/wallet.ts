@@ -1,5 +1,5 @@
 import { apiRequest } from './client';
-import type { AccountabilityRequest, FundingIntent, PaymentRequest, Transaction, Transfer, User, Wallet, Withdrawal } from './types';
+import type { AccountabilityRequest, FundingIntent, PaymentRequest, PriceCheck, Transaction, Transfer, User, Wallet, Withdrawal } from './types';
 import { clearSession } from '@/auth/session';
 
 export const getCurrentUser = () => apiRequest<{ user: User }>('/v1/users/current');
@@ -11,6 +11,7 @@ export const getTransaction = (id: string) => apiRequest<{ transaction: Transact
 export const createFundingIntent = async (amountMinor: number) => (await apiRequest<{ fundingIntent: FundingIntent }>('/v1/wallet/funding-intents', { body: { amountMinor, currency: 'USD' }, idempotent: true, method: 'POST' })).fundingIntent;
 export const captureFunding = async (id: string) => (await apiRequest<{ fundingIntent: FundingIntent }>(`/v1/wallet/funding-intents/${encodeURIComponent(id)}/capture`, { body: {}, method: 'POST' })).fundingIntent;
 export const createTransfer = async (recipient: string, amountMinor: number, reason?: string) => apiRequest<{ accountabilityRequest: AccountabilityRequest } | { transfer: Transfer }>('/v1/wallet/internal-transfers', { body: { amountMinor, currency: 'USD', recipientEmail: recipient, ...(reason ? { reason } : {}) }, idempotent: true, method: 'POST' });
+export const checkPurchasePrice = async (query: string, amountMinor: number) => (await apiRequest<{ priceCheck: PriceCheck }>('/v1/shopping/price-checks', { body: { amountMinor, currency: 'USD', query }, method: 'POST' })).priceCheck;
 export const createPaymentRequest = async (recipientId: string, amountMinor: number, note?: string) => (await apiRequest<{ paymentRequest: PaymentRequest }>('/v1/wallet/payment-requests', { body: { amountMinor, currency: 'USD', recipientId, ...(note ? { note } : {}) }, idempotent: true, method: 'POST' })).paymentRequest;
 export const getPaymentRequests = async () => (await apiRequest<{ paymentRequests: PaymentRequest[] }>('/v1/wallet/payment-requests')).paymentRequests;
 export const getPaymentRequest = async (id: string) => (await apiRequest<{ paymentRequest: PaymentRequest }>(`/v1/wallet/payment-requests/${encodeURIComponent(id)}`)).paymentRequest;

@@ -34,6 +34,22 @@ export type Transfer = {
   recipientEmail: string;
   recipientId: string;
 };
+export type PriceCheck = {
+  bestPriceMinor?: number;
+  brand?: string;
+  currency: 'USD';
+  imageUrl?: string;
+  intendedAmountMinor: number;
+  matched: boolean;
+  merchant?: string;
+  message: string;
+  offerUrl?: string;
+  productId?: string;
+  productTitle?: string;
+  query: string;
+  savingsMinor?: number;
+  verdict?: 'better_price' | 'below_market' | 'competitive';
+};
 export type PaymentRequestParty = Pick<User, 'id' | 'ctrldId' | 'displayName' | 'email'>;
 export type PaymentRequest = {
   amountMinor: number;
