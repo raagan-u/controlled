@@ -58,6 +58,7 @@ export function AuthFormScreen({
 }: AuthFormScreenProps) {
   const [values, setValues] = useState<AuthValues>({});
   const [touched, setTouched] = useState<Set<string>>(new Set());
+  const [focusedField, setFocusedField] = useState<string | null>(null);
   const errors = useMemo(() => validate(values), [validate, values]);
   const isValid = Object.keys(errors).length === 0;
 
@@ -91,17 +92,23 @@ export function AuthFormScreen({
 
               return (
                 <Animated.View entering={rise(index, 120)} key={field.name} style={styles.field}><ShakeOnError error={error}>
+                  <Text style={[styles.fieldLabel, focusedField === field.name && styles.fieldLabelFocused]}>{field.label}</Text>
                   <TextInput
+                    accessibilityLabel={field.label}
                     autoCapitalize={field.autoCapitalize ?? 'none'}
                     autoComplete={field.autoComplete}
                     autoCorrect={false}
                     keyboardType={field.keyboardType}
-                    onBlur={() => setTouched((current) => new Set(current).add(field.name))}
+                    onBlur={() => {
+                      setFocusedField(null);
+                      setTouched((current) => new Set(current).add(field.name));
+                    }}
                     onChangeText={(value) => handleChange(field.name, value)}
-                    placeholder={field.label}
-                    placeholderTextColor={colors.ink}
+                    onFocus={() => setFocusedField(field.name)}
+                    placeholder={field.name === 'confirmPassword' ? 'Re-enter your password' : `Enter your ${field.label}`}
+                    placeholderTextColor={colors.textMuted}
                     secureTextEntry={field.secureTextEntry}
-                    style={[styles.input, error && styles.inputError]}
+                    style={[styles.input, focusedField === field.name && styles.inputFocused, error && styles.inputError]}
                     value={values[field.name] ?? ''}
                   />
                   </ShakeOnError>{error ? <Animated.Text entering={FadeInDown.duration(220)} style={styles.error}>{error}</Animated.Text> : null}
@@ -152,7 +159,7 @@ const styles = StyleSheet.create({
     textTransform: 'lowercase',
   },
   fields: {
-    gap: 28,
+    gap: 20,
     marginBottom: 33,
     width: '100%',
   },
@@ -160,19 +167,37 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   input: {
-    borderColor: colors.border,
-    borderRadius: 26,
-    borderWidth: 1.5,
+    backgroundColor: colors.surface,
+    borderColor: colors.divider,
+    borderRadius: 14,
+    borderWidth: 1,
     color: colors.ink,
-    fontFamily: fonts.bold,
-    fontSize: 17,
-    height: 66,
-    paddingHorizontal: 24,
-    textAlign: 'center',
+    fontFamily: fonts.medium,
+    fontSize: 16,
+    height: 58,
+    paddingHorizontal: 16,
+    textAlign: 'left',
     width: '100%',
+  },
+  inputFocused: {
+    backgroundColor: colors.white,
+    borderColor: colors.blue,
+    borderWidth: 1.5,
   },
   inputError: {
     borderColor: colors.error,
+  },
+  fieldLabel: {
+    color: colors.textMuted,
+    fontFamily: fonts.bold,
+    fontSize: 10,
+    letterSpacing: 1.3,
+    marginBottom: 7,
+    marginLeft: 3,
+    textTransform: 'uppercase',
+  },
+  fieldLabelFocused: {
+    color: colors.blue,
   },
   error: {
     color: colors.error,
