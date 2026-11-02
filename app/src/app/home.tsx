@@ -57,6 +57,8 @@ export default function HomeScreen() {
   const restingViewport = Math.max(1, fullViewport - collapsedOffset - sectionLift);
   const ready = slot !== null && sectionY !== null && fullViewport > 0;
   const activityCardHeight = ready ? Math.max(68, Math.min(94, (restingViewport - 16) / 2.25)) : undefined;
+  // Keep the upper few activity cards as an intuitive pull-down target, not just the title row.
+  const collapseGestureZone = Math.min(420, Math.max(260, fullViewport * 0.62));
   const y = useSharedValue(0);
   const listRef = useRef<ScrollViewInstance>(null);
   const geometry = useSharedValue({ full: 1, lift: 0, offset: 1, resting: 1 });
@@ -89,16 +91,16 @@ export default function HomeScreen() {
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => { settle(false); return true; });
     return () => subscription.remove();
   }, [expanded, settle]));
-  // Collapsed: drag up anywhere on the panel. Open: drag down from the header area at any scroll position,
-  // or from anywhere once the list is at its top.
+  // Collapsed: drag up anywhere on the panel. Open: drag down from the heading or upper activity cards
+  // at any scroll position, or from anywhere once the list is back at its top.
   const panelPan = useMemo(() => PanResponder.create({
     onMoveShouldSetPanResponder: (_, gesture) => !expanded && gesture.dy < -12 && Math.abs(gesture.dy) > Math.abs(gesture.dx),
-    onMoveShouldSetPanResponderCapture: (_, gesture) => expanded && (atTop || gesture.y0 - sheetTop < 96) && gesture.dy > 8 && gesture.dy > Math.abs(gesture.dx) * 1.5,
+    onMoveShouldSetPanResponderCapture: (_, gesture) => expanded && (atTop || gesture.y0 - sheetTop < collapseGestureZone) && gesture.dy > 8 && gesture.dy > Math.abs(gesture.dx) * 1.5,
     onPanResponderMove: (_, gesture) => y.set(Math.max(0, Math.min(collapsedOffset, expanded ? gesture.dy - 8 : collapsedOffset + gesture.dy + 12))),
     onPanResponderRelease: (_, gesture) => settle(expanded ? !(gesture.dy > 90 || gesture.vy > 0.7) : gesture.dy < -60 || gesture.vy < -0.6),
     onPanResponderTerminate: () => settle(expanded),
     onPanResponderTerminationRequest: () => false,
-  }), [atTop, collapsedOffset, expanded, settle, sheetTop, y]);
+  }), [atTop, collapseGestureZone, collapsedOffset, expanded, settle, sheetTop, y]);
   return <View style={styles.root}>
     <View style={[styles.hero, { paddingTop: Math.max(insets.top + 10, 28) }]}>
       <HeroShapes />
