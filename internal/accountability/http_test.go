@@ -10,6 +10,7 @@ import (
 
 	"github.com/raagan-u/controlled/internal/accountability"
 	"github.com/raagan-u/controlled/internal/identity"
+	"github.com/raagan-u/controlled/internal/notification"
 )
 
 func TestAccountabilityHandlers(t *testing.T) {
@@ -55,6 +56,40 @@ func TestAccountabilityHandlers(t *testing.T) {
 	}
 }
 
+func TestDenialNotifiesOwnerBeforeRequestMovesToNextPartner(t *testing.T) {
+	t.Parallel()
+
+	reviewer, err := identity.NewUser("reviewer", "reviewer@example.com", "Riley", time.Now())
+	if err != nil {
+		t.Fatalf("new reviewer: %v", err)
+	}
+	notifier := &recordingAccountabilityNotifier{}
+	handler := accountability.NewHandler(stubAccountabilityCommands{now: time.Now()}).EnableNotifications(notifier)
+	mux := http.NewServeMux()
+	mux.Handle("POST /v1/accountability/requests/{id}/deny", identity.RequireSession(accountabilitySessionManager{user: reviewer}, http.HandlerFunc(handler.DenyRequest)))
+	request := httptest.NewRequest(http.MethodPost, "/v1/accountability/requests/request-1/deny", strings.NewReader(`{"reason":"Not necessary right now"}`))
+	request.Header.Set("Authorization", "Bearer token")
+	response := httptest.NewRecorder()
+
+	mux.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d; body = %s", response.Code, response.Body.String())
+	}
+	if len(notifier.deliveries) != 2 {
+		t.Fatalf("notifications = %#v", notifier.deliveries)
+	}
+	owner := notifier.deliveries[0]
+	if owner.recipient != "owner" || owner.message.Title != "Approval request denied" ||
+		owner.message.Kind != notification.KindAccountabilityRequest || owner.message.EntityID != "request-1" ||
+		!strings.Contains(owner.message.Body, "Riley denied") || !strings.Contains(owner.message.Body, "sent to another") {
+		t.Fatalf("owner notification = %#v", owner)
+	}
+	if next := notifier.deliveries[1]; next.recipient != "next-reviewer" || next.message.Title != "Approval needed" {
+		t.Fatalf("next reviewer notification = %#v", next)
+	}
+}
+
 func (s stubAccountabilityCommands) Invitations(context.Context, identity.UserID) ([]accountability.Invitation, error) {
 	invitation, err := accountability.NewInvitation("invite", "owner", "partner", s.now)
 	return []accountability.Invitation{invitation}, err
@@ -88,6 +123,35 @@ func (s stubAccountabilityCommands) Respond(_ context.Context, actor identity.Us
 func (s stubAccountabilityCommands) CreateCircle(_ context.Context, _ string, owner identity.UserID, name string, partners []identity.UserID) (accountability.Circle, bool, error) {
 	circle, err := accountability.NewCircle("circle", owner, name, partners, s.now)
 	return circle, false, err
+}
+
+func (s stubAccountabilityCommands) Requests(context.Context, identity.UserID) ([]accountability.Request, error) {
+	return nil, nil
+}
+
+func (s stubAccountabilityCommands) Request(context.Context, identity.UserID, string) (accountability.Request, error) {
+	return accountability.Request{}, nil
+}
+
+func (s stubAccountabilityCommands) Decide(_ context.Context, _ identity.UserID, requestID string, _ bool, _, _ string) (accountability.Request, error) {
+	return accountability.Request{
+		ID: requestID, OwnerID: "owner", AmountMinor: 1250, Currency: "USD", Status: "ASSIGNED", AssignedPartnerID: "next-reviewer",
+	}, nil
+}
+
+func (s stubAccountabilityCommands) CancelRequest(context.Context, identity.UserID, string) (accountability.Request, error) {
+	return accountability.Request{}, nil
+}
+
+type accountabilityDelivery struct {
+	recipient identity.UserID
+	message   notification.Message
+}
+
+type recordingAccountabilityNotifier struct{ deliveries []accountabilityDelivery }
+
+func (notifier *recordingAccountabilityNotifier) Notify(recipient identity.UserID, message notification.Message) {
+	notifier.deliveries = append(notifier.deliveries, accountabilityDelivery{recipient: recipient, message: message})
 }
 
 type accountabilitySessionManager struct{ user identity.User }
