@@ -2,9 +2,10 @@ package config
 
 import (
 	"errors"
-	"log/slog"
 	"testing"
 	"time"
+
+	"go.uber.org/zap/zapcore"
 )
 
 func TestLoadUsesValidatedDefaults(t *testing.T) {
@@ -17,7 +18,7 @@ func TestLoadUsesValidatedDefaults(t *testing.T) {
 		t.Fatalf("load() error = %v", err)
 	}
 	if configuration.HTTPAddress != ":8080" ||
-		configuration.LogLevel != slog.LevelInfo ||
+		configuration.LogLevel != zapcore.InfoLevel ||
 		configuration.ShutdownTimeout != 10*time.Second ||
 		configuration.DatabaseMaxConns != 10 ||
 		configuration.DatabaseMinConns != 1 ||
@@ -72,7 +73,7 @@ func TestLoadReadsOverrides(t *testing.T) {
 		t.Fatalf("load() error = %v", err)
 	}
 	if configuration.HTTPAddress != "127.0.0.1:9090" ||
-		configuration.LogLevel != slog.LevelDebug ||
+		configuration.LogLevel != zapcore.DebugLevel ||
 		configuration.ShutdownTimeout != 3*time.Second ||
 		configuration.DatabasePingTimeout != 2*time.Second ||
 		configuration.DatabaseMaxConns != 20 ||

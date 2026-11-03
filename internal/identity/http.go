@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/raagan-u/controlled/internal/platform/httpapi"
+	"go.uber.org/zap"
 )
 
 const SessionCookieName = "controlled_session"
@@ -110,6 +111,7 @@ func RequireSession(sessions SessionManager, next http.Handler) http.Handler {
 			return
 		}
 		ctx := context.WithValue(request.Context(), userContextKey{}, user)
+		ctx = httpapi.WithFields(ctx, zap.String("user_id", string(user.ID())))
 		next.ServeHTTP(response, request.WithContext(ctx))
 	})
 }

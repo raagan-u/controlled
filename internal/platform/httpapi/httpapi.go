@@ -6,6 +6,8 @@ import (
 	"errors"
 	"io"
 	"net/http"
+
+	"go.uber.org/zap"
 )
 
 const DefaultMaxBodyBytes int64 = 1 << 20
@@ -29,6 +31,7 @@ func ReadJSON(response http.ResponseWriter, request *http.Request, destination a
 	decoder := json.NewDecoder(request.Body)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(destination); err != nil {
+		Logger(request.Context()).Info("HTTP request JSON rejected", zap.Error(err))
 		return errors.Join(ErrInvalidJSON, err)
 	}
 
@@ -37,12 +40,16 @@ func ReadJSON(response http.ResponseWriter, request *http.Request, destination a
 		if err == nil {
 			err = errors.New("unexpected trailing JSON")
 		}
+		Logger(request.Context()).Info("HTTP request JSON rejected", zap.Error(err))
 		return errors.Join(ErrInvalidJSON, err)
 	}
 	return nil
 }
 
 func WriteError(response http.ResponseWriter, status int, code, message string) {
+	if recorder, ok := response.(interface{ recordAPIError(string) }); ok {
+		recorder.recordAPIError(code)
+	}
 	WriteJSON(response, status, ErrorBody{Error: ErrorDetail{Code: code, Message: message}})
 }
 

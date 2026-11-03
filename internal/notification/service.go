@@ -3,11 +3,11 @@ package notification
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/raagan-u/controlled/internal/identity"
+	"go.uber.org/zap"
 )
 
 var (
@@ -72,7 +72,7 @@ func (s *Service) Notify(recipient identity.UserID, message Message) {
 	select {
 	case s.queue <- delivery{recipient: recipient, message: message}:
 	default:
-		slog.Warn("Push notification queue full", "recipient", recipient, "kind", message.Kind)
+		zap.L().Warn("Push notification queue full", zap.String("recipient_id", string(recipient)), zap.String("notification_kind", message.Kind))
 	}
 }
 
@@ -80,6 +80,8 @@ func (s *Service) Run(ctx context.Context) {
 	if s == nil || s.repository == nil || s.sender == nil {
 		return
 	}
+	zap.L().Info("Push notification worker started")
+	defer zap.L().Info("Push notification worker stopped")
 	for {
 		select {
 		case <-ctx.Done():
@@ -94,18 +96,19 @@ func (s *Service) deliver(ctx context.Context, item delivery) {
 	tokens, err := s.repository.Tokens(ctx, item.recipient)
 	if err != nil || len(tokens) == 0 {
 		if err != nil {
-			slog.Error("Read push devices", "error", err, "recipient", item.recipient)
+			zap.L().Error("Read push devices", zap.Error(err), zap.String("recipient_id", string(item.recipient)))
 		}
 		return
 	}
 	invalid, err := s.sender.Send(ctx, tokens, item.message)
 	if err != nil {
-		slog.Error("Send push notification", "error", err, "recipient", item.recipient, "kind", item.message.Kind)
+		zap.L().Error("Send push notification", zap.Error(err), zap.String("recipient_id", string(item.recipient)), zap.String("notification_kind", item.message.Kind), zap.Int("device_count", len(tokens)))
 		return
 	}
+	zap.L().Info("Push notification delivered", zap.String("recipient_id", string(item.recipient)), zap.String("notification_kind", item.message.Kind), zap.Int("device_count", len(tokens)), zap.Int("invalid_device_count", len(invalid)))
 	if len(invalid) > 0 {
 		if err := s.repository.RemoveTokens(ctx, invalid); err != nil {
-			slog.Error("Remove invalid push devices", "error", err)
+			zap.L().Error("Remove invalid push devices", zap.Error(err), zap.Int("device_count", len(invalid)))
 		}
 	}
 }

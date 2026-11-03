@@ -6,6 +6,9 @@ import (
 	"sort"
 	"strings"
 	"unicode"
+
+	"github.com/raagan-u/controlled/internal/platform/httpapi"
+	"go.uber.org/zap"
 )
 
 var ErrInvalidInput = errors.New("invalid purchase price check input")
@@ -39,8 +42,15 @@ func (service *Service) CheckPrice(ctx context.Context, userID, query string, in
 	if service.catalog == nil {
 		return PriceCheck{}, ErrProviderUnavailable
 	}
+	logger := httpapi.Logger(ctx).With(
+		zap.Int("query_length", len(query)),
+		zap.Int64("intended_amount_minor", intendedMinor),
+		zap.String("currency", currency),
+	)
+	logger.Info("Purchase price check started")
 	products, err := service.catalog.Search(ctx, userID, query, 5)
 	if err != nil {
+		logger.Error("Purchase catalog search failed", zap.Error(err))
 		return PriceCheck{}, err
 	}
 	result := PriceCheck{Query: query, IntendedAmountMinor: intendedMinor, Currency: currency}
@@ -70,9 +80,11 @@ func (service *Service) CheckPrice(ctx context.Context, userID, query string, in
 			result.Verdict = "competitive"
 			result.Message = "Your intended payment is close to the best matching offer we found."
 		}
+		logger.Info("Purchase price check completed", zap.Bool("matched", true), zap.String("verdict", result.Verdict), zap.Int64("best_price_minor", result.BestPriceMinor), zap.Int64("savings_minor", result.SavingsMinor))
 		return result, nil
 	}
 	result.Message = "We could not confidently match that description to an exact product."
+	logger.Info("Purchase price check completed", zap.Bool("matched", false), zap.Int("catalog_results", len(products)))
 	return result, nil
 }
 
