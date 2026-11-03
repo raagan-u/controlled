@@ -1,6 +1,6 @@
-import type { PropsWithChildren, ReactNode } from 'react';
+import { useEffect, useRef, type PropsWithChildren, type ReactNode } from 'react';
 import { router } from 'expo-router';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, type ScrollViewInstance, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, fonts, radii } from '@/theme';
 import { AuthenticatedMenu } from './AuthenticatedMenu';
@@ -10,16 +10,25 @@ type Props = PropsWithChildren<{
   footer?: ReactNode;
   onBack?: () => void;
   scroll?: boolean;
+	scrollToEnd?: boolean;
   title: string;
 }>;
 
-export function FeatureScreen({ children, footer, onBack, scroll = true, title }: Props) {
+export function FeatureScreen({ children, footer, onBack, scroll = true, scrollToEnd = false, title }: Props) {
   const insets = useSafeAreaInsets();
+	const scrollRef = useRef<ScrollViewInstance>(null);
+	useEffect(() => {
+		if (!scrollToEnd) return;
+		const revealBottom = () => requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: true }));
+		revealBottom();
+		const subscription = Keyboard.addListener('keyboardDidShow', revealBottom);
+		return () => subscription.remove();
+	}, [scrollToEnd]);
   const body = scroll
-    ? <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>{children}</ScrollView>
+    ? <ScrollView automaticallyAdjustKeyboardInsets contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" ref={scrollRef} showsVerticalScrollIndicator={false}>{children}</ScrollView>
     : <View style={styles.body}>{children}</View>;
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.root}>
+    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.root}>
       <View style={[styles.header, { paddingTop: Math.max(insets.top + 8, 24) }]}>
         <HeroShapes />
         <Pressable accessibilityLabel="Go back" onPress={onBack ?? (() => router.back())} style={styles.icon}><Text style={styles.back}>‹</Text></Pressable>
