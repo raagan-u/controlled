@@ -1,5 +1,4 @@
 import { useCallback, useRef, useState } from 'react';
-import { useFocusEffect } from 'expo-router';
 import type { Transaction, User, Wallet } from '@/api/types';
 import { apiErrorMessage, getCurrentUser, getTransactions, getWallet } from '@/api/wallet';
 
@@ -28,11 +27,6 @@ export function useWalletOverview() {
       if (request.current === current) setLoading(false);
     }
   }, []);
-
-  useFocusEffect(useCallback(() => {
-    void refresh();
-    return () => { request.current += 1; };
-  }, [refresh]));
 
   return { data, error, loading, refresh };
 }

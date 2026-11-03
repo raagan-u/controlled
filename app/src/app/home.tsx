@@ -1,6 +1,6 @@
 import { router, type Href, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, BackHandler, PanResponder, Platform, ScrollView, type ScrollViewInstance, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, AppState, BackHandler, PanResponder, Platform, ScrollView, type ScrollViewInstance, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeIn, FadeInDown, interpolate, useAnimatedStyle, useDerivedValue, useSharedValue, withSpring } from 'react-native-reanimated';
 import { PressableScale, rise, useCountUp } from '@/motion';
@@ -15,6 +15,7 @@ import { getPacts } from '@/api/pacts';
 import type { Pact } from '@/api/types';
 
 const HERO_HEIGHT = 294;
+const HOME_REFRESH_INTERVAL_MS = 10_000;
 
 export default function HomeScreen() {
   const { openActivity, openMenu } = useLocalSearchParams<{ openActivity?: string; openMenu?: string }>();
@@ -41,7 +42,43 @@ export default function HomeScreen() {
   }, [data]);
   const [pacts, setPacts] = useState<Pact[]>([]);
   const [pactWidth, setPactWidth] = useState(0);
-  useFocusEffect(useCallback(() => { void getPacts().then((items) => setPacts(items.filter((pact) => pact.status === 'ACTIVE' || pact.status === 'SCHEDULED'))).catch(() => setPacts([])); }, []));
+  const refreshPacts = useCallback(async () => {
+    const items = await getPacts();
+    setPacts(items.filter((pact) => pact.status === 'ACTIVE' || pact.status === 'SCHEDULED'));
+  }, []);
+  const refreshingHome = useRef(false);
+  const refreshHomeAgain = useRef(false);
+  const refreshHome = useCallback(async () => {
+    if (refreshingHome.current) {
+      refreshHomeAgain.current = true;
+      return;
+    }
+    refreshingHome.current = true;
+    try {
+      do {
+        refreshHomeAgain.current = false;
+        await Promise.allSettled([refresh(), refreshPacts()]);
+      } while (refreshHomeAgain.current);
+    } finally {
+      refreshingHome.current = false;
+    }
+  }, [refresh, refreshPacts]);
+  // Home can remain mounted underneath a sheet while money or approval state changes. Refresh on every
+  // return/foreground, and poll only while this screen is focused and the app is active so remotely
+  // approved transactions and time-based pact transitions appear without a manual reload.
+  useFocusEffect(useCallback(() => {
+    void refreshHome();
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void refreshHome();
+    });
+    const timer = setInterval(() => {
+      if (AppState.currentState === 'active') void refreshHome();
+    }, HOME_REFRESH_INTERVAL_MS);
+    return () => {
+      clearInterval(timer);
+      subscription.remove();
+    };
+  }, [refreshHome]));
   const insets = useSafeAreaInsets();
   // The panel is an absolute layer that rests over the "slot" the old in-flow panel occupied, and
   // slides up over the hero as one surface. `y` is its translateY: collapsedOffset (resting) .. 0 (open).
