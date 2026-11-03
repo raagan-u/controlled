@@ -1,211 +1,209 @@
-# Controlled — MVP Product Specification
+# Controlled — Product specification
 
-Status: Locked foundation for backend implementation
+Status: implemented hackathon MVP
 
-## Product
+## 1. Product
 
-Controlled is a PayPal-powered wallet that enforces financial commitments before money leaves. A user funds a dedicated Controlled balance, states a financial goal and spending intent, chooses one total limit for a fixed pact period, and backs the commitment with an additional stake. Users layer daily, weekly, monthly, or custom-period limits by creating multiple pacts.
+Controlled is a mobile USD wallet that enforces financial commitments before money leaves. Users can fund a wallet, send or request money, withdraw to a PayPal destination, and create time-bound spending pacts backed by a financial stake and trusted accountability partners.
 
-Without an active pact, the wallet can send, receive, spend, and withdraw freely. While one or more pacts are active, every outgoing transaction is evaluated against all of them.
+Without an active pact, outgoing transactions follow ordinary balance and validation rules. With one or more active pacts, every outgoing transaction is evaluated against all of them. Incoming funds never consume pact capacity.
 
-The MVP uses an internal wallet ledger backed by PayPal Sandbox. It is a proof of concept, not a production bank or custodial-wallet service.
+The MVP is a sandbox proof of concept. It is not a bank, production custodial wallet, investment product, or money-transmission service.
 
-## MVP goal
+## 2. User experience
 
-Demonstrate one complete non-AI flow:
+### Authentication and onboarding
 
-1. Onboard a user and create a Controlled wallet.
-2. Fund the wallet through PayPal Sandbox.
-3. Create a goal-based spending pact.
-4. Select Commitment Reserve as the break consequence.
-5. Add at least one accountability partner.
-6. Lock the stake from the wallet's available balance.
-7. Attempt an outgoing transaction that exceeds an active limit.
-8. Route an approval request through the pact's ordered accountability circle.
-9. Approve or deny the transaction.
-10. Preserve the stake after an emergency or move it to Commitment Reserve after a conscious break.
-11. Record an auditable timeline of the entire flow.
+- Users register or sign in with email/password or native Google sign-in.
+- Google ID tokens are verified by the backend before a Controlled session is issued.
+- New users whose sign-up identity does not provide a chosen name complete a short name step.
+- Sessions are stored in the device secure store and sent as bearer tokens.
+- Password reset and email verification are not implemented in this MVP.
 
-## Wallet
+### Home
 
-Every onboarded user receives one internal Controlled wallet with:
+The Home screen shows:
 
-- Available balance
-- Pending balance
-- Active stake allocations
-- Commitment Reserve balance
+- current available balance;
+- shortcuts to fund, send/request, and withdraw;
+- recent recipients;
+- scheduled and active pact cards with distinct visual states and live progress; and
+- recent transaction activity.
 
-Actual sandbox backing funds sit in a PayPal account. The internal double-entry ledger records ownership and availability.
+Balance, activity, recipients, and pact state refresh together when Home regains focus, when the app returns to the foreground, and every ten seconds while Home is focused and the app is active. Existing data remains visible during background refreshes.
 
-Every outgoing path passes through Controlled policy:
+### Send money
 
-- Internal sends between Controlled users
-- External sends
-- Merchant payments in the controlled demo
-- Withdrawals
-- Provider and platform fees included in the debit
+The user selects an existing Controlled recipient, enters an amount, and may add a remark. The remark is persisted and shown in transaction details.
 
-Incoming money is unrestricted. Money outside Controlled is outside its enforcement boundary.
+The user can mark the transfer as a purchase. In purchase mode:
 
-## Pact
+- the remark field asks for a specific product name/model;
+- after both amount and product description are available, the client requests a Channel3-backed price check;
+- a price check is skipped when the amount exceeds available balance;
+- a matched result may show the best offer, merchant, product, savings, and verdict; and
+- provider failure never blocks the payment.
+
+The purchase toggle affects guidance only; the transfer itself remains the same wallet operation.
+
+### Request money
+
+A requester selects another Controlled user, amount, and optional note. Requests expire after seven days. The recipient may pay or decline; the requester may cancel. Paying is an ordinary outgoing transfer and therefore passes through the payer's balance and active-pact policy.
+
+If payment requires accountability approval, the payment request moves to `AWAITING_APPROVAL` and links to the resulting accountability request. It becomes paid only after the approved transfer executes.
+
+### Fund and withdraw
+
+Funding creates a provider order. The fake provider supports deterministic local confirmation; PayPal Sandbox returns an approval URL and captures the approved order through the API.
+
+Withdrawal reserves available funds into pending balance before provider payout. Successful settlement consumes the pending amount. Failed settlement releases it back to available and reverses corresponding pact usage. PayPal payouts can be reconciled by the API.
+
+### Transaction details
+
+Details show the ledger description, amount, time, parties, persisted transfer remark, and reversal state. If the transaction was executed through accountability approval, details also show that it was pact-breaking, whether it was an emergency or conscious break, the owner's reason, and the approving partner.
+
+## 3. Wallet and ledger
+
+Every user has one USD wallet with four balance categories:
+
+- **Available** — spendable now
+- **Pending** — reserved for in-flight withdrawal settlement
+- **Staked** — reserved for scheduled or active pacts
+- **Commitment Reserve** — user-owned funds retained after a conscious break and unavailable for spending, sending, or withdrawal
+
+All state-changing wallet operations use balanced double-entry journal transactions. Money is represented as positive integer minor units; floating-point values are not used for authoritative amounts.
+
+## 4. Pacts
 
 A pact contains:
 
-- Owner
-- Financial goal
-- Spending intent
-- Total spending limit for the complete pact period
-- Stake amount
-- Start and end timestamps
-- Accountability circle
-- Break consequence
-- Status and version
-
-The only enabled MVP break consequence is:
-
-```text
-COMMITMENT_RESERVE
-```
-
-Neutral fund, goal vault, and split consequences may appear in the interface as disabled future options.
+- owner;
+- goal and spending intent;
+- one total spending limit for the full period;
+- positive stake amount;
+- start and end timestamps;
+- ordered accountability circle;
+- `COMMITMENT_RESERVE` break consequence;
+- status, outcome, version, progress, and emergency count.
 
 Pact lifecycle:
 
 ```text
-DRAFT
-  -> AWAITING_STAKE
-  -> SCHEDULED
-  -> ACTIVE
-  -> RESOLVED
-
-DRAFT | AWAITING_STAKE | SCHEDULED -> CANCELLED
+DRAFT -> AWAITING_STAKE -> SCHEDULED -> ACTIVE -> RESOLVED
+   |          |               |
+   +----------+---------------+-> CANCELLED
 ```
 
-Resolved outcomes:
+- Draft terms can be edited.
+- Confirmation validates the accountability circle and freezes terms.
+- Stake reservation atomically moves funds from available to staked.
+- A future start produces `SCHEDULED`; an arrived start produces `ACTIVE`.
+- Scheduled pacts activate automatically.
+- Active pacts resolve at their end as `KEPT` or `KEPT_WITH_EXCEPTIONS`, then release the stake.
+- Draft, awaiting-stake, and scheduled pacts can be cancelled. Cancelling a scheduled pact releases its stake.
+- Active pacts cannot be directly cancelled.
+- A conscious break resolves the affected pact as `BROKEN` and moves the complete stake to Commitment Reserve.
 
-- `KEPT`
-- `KEPT_WITH_EXCEPTIONS`
-- `BROKEN`
+The app saves an in-progress pact draft locally so the flow can be resumed. After successful creation it provides a direct route back Home.
 
-Active pact terms are immutable.
+## 5. Pact progress and overlapping policy
 
-Times are entered and displayed in the user's local timezone and stored as UTC. A pact period includes its start timestamp and excludes its end timestamp. A confirmed pact becomes active immediately when its start has arrived, or remains scheduled until automatic activation.
+Successful internal transfers, payment-request payments, and withdrawal reservations consume pact capacity. Failed/reversed debits reverse their usage. Funding, incoming transfers, stake movement, and Commitment Reserve movement do not consume limits.
 
-The MVP is USD-only. Limits and stakes use positive integer cents. A stake may be any amount greater than zero up to the owner's available balance; configurable product caps are deferred.
+When multiple active pacts overlap:
 
-## Multiple active pacts
+- the transaction is checked against every active pact;
+- one successful debit counts against every applicable pact;
+- every pact must permit the debit;
+- one accountability request snapshots every blocking pact; and
+- an approval applies the selected outcome independently to each blocking pact.
 
-- A user may have more than one active pact.
-- Every outgoing transaction is evaluated against every active pact.
-- The same transaction consumes capacity in every applicable pact.
-- Every active pact must permit the transaction.
-- An approval request references all pacts blocking that transaction.
-- Each affected pact records its own exception or break outcome.
+The API returns used, remaining, and overage amounts plus the contributing usage records. The mobile app displays this progress on Home and pact details.
 
-## Stake Vault and Commitment Reserve
+## 6. Accountability
 
-Stake movement is internal ledger movement, not a separate PayPal purchase:
+### Relationships and circles
 
-```text
-Pact activation:   available -> Stake Vault
-Pact success:      Stake Vault -> available
-Emergency:         stake remains in Stake Vault
-Conscious break:   Stake Vault -> Commitment Reserve
-```
+- An owner invites existing Controlled users.
+- The invited user accepts or declines.
+- A circle contains one or more distinct accepted partners in explicit order.
+- The owner cannot include themselves.
+- Circles are immutable; a membership/order change requires a new circle.
 
-The global Stake Vault stores separate allocations by user and pact. Commitment Reserve remains owned by the user but cannot be spent, sent, or withdrawn.
+### Over-limit requests
 
-Commitment Reserve remains user-owned but unavailable indefinitely in the MVP. The product may show a `Start recovery pact` entry point, but no release or recovery-qualification rules exist yet.
+An otherwise valid outgoing transaction that exceeds at least one active pact can create an accountability request when the owner provides a reason. No wallet funds or pact capacity are reserved while it waits.
 
-PYUSD and rewards are outside the initial MVP. Future versions may explore responsible ways for locked stakes to create user value, but the MVP promises no yield or return.
+Each request records:
 
-## Accountability
+- exact operation type, destination, amount, and owner reason;
+- snapshots of every blocking pact;
+- ordered reviewer assignments and decisions;
+- required denial reasons;
+- final classification, status, and executed operation ID.
 
-A circle contains `n` distinct partners who accepted the owner's invitation, where `n >= 1`. The owner cannot be a member of their own circle. Partners may participate in multiple circles and pacts.
+One partner is active at a time. Each assignment lasts six hours; the overall request lasts 24 hours. A denial or timeout advances to the next eligible partner. If all partners deny, the request ends denied. The owner may cancel while pending.
 
-- The owner explicitly sets the partner order.
-- The ordered circle is immutable after pact confirmation.
-- One partner receives each request at a time.
-- The owner cannot select the reviewer.
-- Each assignment lasts six hours and the complete request expires after 24 hours.
-- Denial or non-response advances to the next eligible partner.
-- If every partner denies, the request and transaction are cancelled.
-- If nobody eligible remains without every partner denying, the request waits until expiry.
-- Only the active assignment can resolve the request.
-- The owner may cancel a pending request, which also cancels that transaction attempt.
-- A request requires the owner's reason and exposes verified transaction and pact facts.
+| Decision | Transaction | Pact | Stake |
+| --- | --- | --- | --- |
+| Deny | remains blocked; may advance | continues | remains staked |
+| Emergency | exact transaction executes | continues with exception | remains staked |
+| Conscious break | exact transaction executes | resolves `BROKEN` | moves to Commitment Reserve |
+| Expiry/cancel | cancelled | continues | remains staked |
 
-## Over-limit requests
+Approval is single-use and scoped to the exact saved transaction. Before execution, Controlled atomically rechecks available balance and current pact state. An approval cannot override insufficient funds or unrelated/new policy blocks.
 
-An otherwise valid over-limit transaction remains blocked while its request is unresolved. Insufficient funds cannot be overridden and do not create an accountability request.
+## 7. Guidance and price intelligence
 
-| Decision | Classification | Transaction | Pact | Stake |
-|---|---|---|---|---|
-| Deny | — | Blocked | Continues | Remains locked |
-| Approve | Emergency | Allowed | Continues with exception | Remains locked |
-| Approve | Conscious break | Allowed | Resolves as broken | Moves to Commitment Reserve |
-| Timeout | — | Cancelled or reassigned | Continues | Remains locked |
+The guidance layer supports:
 
-An approval is scoped to the exact transaction type, amount, destination, and set of blocking pacts. It is single-use and not a general increase to the spending limit. Approval immediately attempts execution after atomically rechecking the balance and every currently active pact. A failed execution requires a new transaction attempt.
+- pact term suggestions from the user's goal, intent, balance, and history;
+- pact progress insights; and
+- factual accountability briefs.
 
-## Transaction policy
+With AI disabled or unavailable, endpoints return deterministic rule-based guidance. With an OpenAI-compatible provider enabled, the backend sends a curated snapshot, requires structured JSON, validates the response, and falls back to rules on timeout, rate limiting, invalid output, or provider failure.
 
-- A blocked transaction does not reserve wallet funds or pact capacity while awaiting approval.
-- Successful internal transfers count immediately; withdrawals count when their funds are reserved for settlement.
-- Failed or reversed debits remove their amount from pact usage.
-- A completed debit continues counting unless that debit itself is reversed; a separate repayment is simply incoming money.
-- Multiple pending requests may exist, but approval always performs a fresh atomic policy and balance check.
-- Incoming transfers do not consume pact limits.
-- Incoming funds do not increase a fixed pact limit.
-- Funding, stake movements, and Commitment Reserve movements do not consume pact limits.
-- An active pact cannot be cancelled directly; exit requires the conscious-break flow.
-- At pact expiry, pending requests are cancelled and the pact resolves as `KEPT` or `KEPT_WITH_EXCEPTIONS`.
+AI can explain and suggest. It cannot create/confirm a pact, move money, post ledger entries, classify an exception, select a reviewer, or approve a request.
 
-## AI after the non-AI MVP
+Channel3 product search is optional. It is used only for purchase price checks and never participates in payment authorization.
 
-The deterministic wallet must work without AI. Later additions are:
+## 8. Notifications and action state
 
-- AI Pact Planner grounded in wallet history and the user's goal
-- AI Accountability Brief grounded in verified transaction and pact facts
+The app registers an Expo push token after authentication. The backend sends best-effort notifications for:
 
-AI may propose terms, explain activity, draft an accountability reason, and summarize verified facts. It may not authorize a debit, classify an emergency, approve a request, change active terms, override policy, post ledger entries, or call PayPal directly.
+- payment requests, cancellation, and decline;
+- accountability invitations and responses;
+- new approval assignments;
+- approval, denial, reassignment, and cancellation; and
+- money received.
 
-## Business model
+Notification taps deep-link to the relevant existing screen. There is no separate inbox. In-app badges and refreshed server state remain the source of truth if push delivery fails.
 
-Controlled may charge a small fee when a pact activates. The fee must be:
+## 9. Product invariants
 
-- Disclosed before activation
-- Separate from the stake
-- Independent of success or failure
-- Refunded if activation fails
-- Unrelated to Commitment Reserve balances
+1. Journal transactions balance.
+2. Available balance cannot become negative.
+3. Insufficient balance cannot be approved away.
+4. A pact cannot schedule/activate until its full stake is reserved.
+5. Confirmed pact terms are immutable.
+6. Every active pact must permit an outgoing transaction.
+7. Only the current assigned partner may decide an accountability request.
+8. Denial requires a reason; approval requires a valid classification.
+9. One approval grants only its exact saved operation.
+10. A pact resolves once and a debit is counted once per pact.
+11. Public money commands and create commands are idempotent.
+12. Controlled never receives a broken pact's stake.
+13. Provider, AI, shopping, and notification failures must not bypass ledger/policy rules.
+14. All authoritative money is USD integer cents.
 
-## Core invariants
+## 10. Explicit MVP boundaries
 
-1. Internal journal transactions must balance.
-2. Available wallet balances cannot become negative.
-3. A pact cannot activate until its stake is reserved from the owner's wallet.
-4. The owner cannot belong to their own accountability circle.
-5. A circle must have at least one distinct accepted partner.
-6. Active pact terms cannot be edited.
-7. Every active pact must permit an outgoing transaction.
-8. Only an active assignment can resolve an approval request.
-9. One approval grants only its referenced transaction and amount.
-10. A pact can resolve only once.
-11. Payment, webhook, ledger, and public command retries must be idempotent.
-12. Emergency exceptions are recorded without being treated as absolute failure.
-13. Controlled never receives a broken pact's stake.
-14. Every consequential state change creates an audit event.
-15. All monetary values are USD integer cents; floating-point money is forbidden.
-16. Public commands, partner decisions, and transaction execution are idempotent.
-
-## Out of scope
-
-- Production custody or money-transmission claims
-- PYUSD, yield, or investment returns
-- Physical or virtual cards
-- Monitoring spending outside Controlled
-- Lending or credit
-- Partial Commitment Reserve allocation
-- Production identity verification and compliance
-- AI in the initial deterministic backend milestone
+- USD only
+- PayPal Sandbox, not PayPal production
+- No password recovery or email verification
+- No production KYC/compliance or custody claims
+- No cards, credit, lending, PYUSD, rewards, yield, or investment return
+- No monitoring of spending outside Controlled
+- No release/recovery flow for Commitment Reserve
+- No notification inbox
+- No pagination in the mobile activity experience

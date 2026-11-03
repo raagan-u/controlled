@@ -1,568 +1,305 @@
-# Controlled Backend Specification
+# Controlled — Backend specification
 
-Status: Foundation aligned for hackathon MVP
+Status: implemented hackathon backend
 
-Language: Go
+## 1. Responsibilities
 
-Architecture: Modular monolith
+The backend is the authority for identity, sessions, wallet balances, ledger history, custody operations, pacts, policy enforcement, accountability, payment requests, provider integrations, notifications, and audit state.
 
-API: JSON over HTTP
+The mobile client renders state and submits commands. It does not calculate authoritative balances, pact outcomes, reviewer eligibility, or transaction authorization.
 
-Database: PostgreSQL
+## 2. Architecture
 
-External payment system: PayPal Sandbox
-
-## 1. Responsibility
-
-The backend is authoritative for:
-
-- User and wallet creation
-- Double-entry ledger accounting
-- Wallet funding, transfers, and withdrawals
-- Pact lifecycle and immutable terms
-- Account-wide outgoing transaction policy
-- Stake Vault and Commitment Reserve movement
-- Accountability assignment and decisions
-- PayPal orchestration and webhook processing
-- Timeouts, retries, reconciliation, and scheduled completion
-- Immutable audit history
-
-The frontend contains no balance, authorization, or lifecycle rules.
-
-## 2. System boundary
+Controlled is a Go modular monolith served by `cmd/api`.
 
 ```text
-Web client ─────────────┐
-Background worker ──────┼──> Go application services
-Integration tests ──────┘             │
-                                      ├──> PostgreSQL
-                                      ├──> PayPal Sandbox
-                                      └──> AI provider later
+HTTP transport and session middleware
+  |
+  +-- identity            users, Google/password auth, sessions, recipients
+  +-- wallet              provisioning and read models
+  +-- ledger              double-entry accounts and journals
+  +-- walletops           funding, transfer, withdrawal, policy integration
+  +-- paymentrequest      request/pay/decline/cancel lifecycle
+  +-- pact                terms, stake, progress, lifecycle
+  +-- accountability      invitations, circles, review, execution recovery
+  +-- ai                  grounded guidance with deterministic fallback
+  +-- shopping            Channel3-backed price checks
+  +-- notification        device registry and Expo delivery worker
+  +-- platform            config, PostgreSQL, migrations, HTTP, logging
 ```
 
-Actual sandbox funds are held in a PayPal account. PostgreSQL records the users to whom those funds belong and whether they are available, pending, staked, or reserved.
+Domain services own validation and lifecycle rules. PostgreSQL repositories own atomic persistence. HTTP handlers decode strict JSON, map domain errors to stable error codes, and never implement financial policy themselves.
 
-Money outside Controlled is outside the enforcement boundary.
+## 3. Runtime stack
 
-## 3. Project structure
+- Go `1.27.2`
+- standard-library `net/http` method/path routing
+- PostgreSQL 17 through `pgx/v5`
+- embedded SQL migrations with advisory locking and checksum validation
+- Zap structured logging
+- Expo Push Service
+- selectable fake or PayPal Sandbox custody
+- optional OpenAI-compatible AI provider
+- optional Channel3 catalog provider
+- Expo React Native client using bearer sessions
 
-```text
-cmd/api/                    API process
-internal/identity/          Users and demo sessions
-internal/ledger/            Accounts, journals, entries, balances
-internal/wallet/            Funding, sends, receives, withdrawals
-internal/pact/              Terms, lifecycle, outcomes
-internal/policy/            Evaluation of outgoing transactions
-internal/transaction/       Transaction intents and execution state
-internal/accountability/    Circles, assignments, decisions, scores
-internal/stake/             Stake Vault and Commitment Reserve
-internal/payments/          Custody and PayPal orchestration
-internal/jobs/              Outbox, retries, timeouts, schedules
-internal/audit/             Product audit timeline
-internal/ai/                Post-MVP AI orchestration
-internal/platform/          HTTP, PostgreSQL, config, clock, IDs
-migrations/                 PostgreSQL migrations
-sql/                        Queries if sqlc is adopted
-openapi/                    HTTP contract
-```
+## 4. Startup and shutdown
 
-Keep each module pragmatic. Prefer module-owned files such as `domain.go`, `service.go`, `repository.go`, and `http.go` over deep ceremonial layering.
+Startup performs the following in order:
 
-No module updates another module's tables directly. Cross-module state changes use application services inside one database transaction. External side effects use an outbox.
+1. load and validate configuration;
+2. create the configured Zap logger;
+3. open and ping the PostgreSQL pool;
+4. verify/apply embedded migrations;
+5. initialize identity, wallet, providers, pacts, accountability, payment requests, AI, shopping, and push services;
+6. log an explicit enabled/disabled provider status for each feature;
+7. start the notification worker and lifecycle maintenance loop; and
+8. listen for HTTP traffic.
 
-## 4. Technical stack
+The server exposes `/healthz` for process liveness and `/readyz` for database readiness. `SIGINT`/`SIGTERM` trigger graceful HTTP shutdown within `CONTROLLED_SHUTDOWN_TIMEOUT`.
 
-- Go 1.27.2
-- `net/http` with a small router such as `chi`
-- PostgreSQL
-- `pgx`
-- SQL migrations
-- Standard `net/http` client for PayPal REST APIs
-- `slog` for structured logs
-- OpenAPI for the public contract
+## 5. HTTP conventions
 
-Redis, Kafka, microservices, and PYUSD are out of scope for the MVP.
+- JSON request bodies are limited to 1 MiB.
+- Unknown fields, multiple JSON values, and malformed input are rejected.
+- Protected routes accept `Authorization: Bearer <token>` or the `controlled_session` cookie.
+- Session lifetime is 24 hours.
+- IDs are opaque UUID strings.
+- Timestamps are RFC 3339 UTC values.
+- Authoritative money uses integer minor units and a three-letter currency code; public product flows require USD.
+- Errors use `{ "error": { "code": "...", "message": "..." } }`.
+- Create/money commands use `Idempotency-Key`; replay with identical semantic input returns the original resource, while conflicting reuse returns `409`.
 
-## 5. Data conventions
+## 6. Identity and sessions
 
-- IDs are UUIDs.
-- Timestamps are UTC `timestamptz`.
-- Money uses integer minor units and an ISO currency code.
-- Floating point must never represent money.
-- JSON uses `camelCase`; SQL uses `snake_case`.
-- State values are uppercase strings.
-- Mutable aggregates use integer versions for optimistic concurrency.
-- Ledger and audit records are append-only.
+Supported authentication:
 
-```json
-{
-  "amountMinor": 2500,
-  "currency": "USD"
-}
-```
+- **Google:** verifies signature, issuer, expiry, verified email, and configured Web client-ID audience. A valid identity provisions a user/wallet when needed and issues a Controlled session.
+- **Password:** registration provisions the user/wallet and stores a bcrypt hash; login verifies it and issues a session.
+- **Demo:** creates users and starts cookie sessions for local integration testing only.
 
-## 6. Identity and wallet onboarding
+Users have a UUID, unique email, unique human-facing `ctrldId`, display name, `namePending` flag, and creation time. The current user can update their display name and search up to 50 other recipients by name, email, or Controlled ID.
 
-Creating a user atomically creates:
+Password reset and email verification do not exist yet.
 
-- One Controlled wallet
-- Available ledger account
-- Pending ledger account
-- Commitment Reserve ledger account
+## 7. Ledger and wallet
 
-The wallet starts with a zero balance. A PayPal identity or payment method may be connected later, but it is not the Controlled wallet itself.
+Each wallet owns ledger accounts for:
 
-Initial demo endpoints:
+- `AVAILABLE`
+- `PENDING`
+- `COMMITMENT_RESERVE`
 
-```text
-POST   /v1/demo/users
-POST   /v1/demo/sessions
-DELETE /v1/sessions/current
-GET    /v1/users/current
-GET    /v1/wallet
-GET    /v1/wallet/transactions
-```
+Stakes are posted to the system USD `STAKE_VAULT` account and attributed back to users/pacts through `stake_allocations`. Wallet reads expose the user's allocated total as the computed `staked` balance.
 
-## 7. Double-entry ledger
+Journal transactions contain balanced debit/credit entries. Database constraints and repository transactions prevent unbalanced postings, cross-currency movement, duplicate references, and negative available balances.
 
-The ledger is the monetary source of truth.
+Wallet read models return account IDs and computed balances. Transaction read models include reference metadata, entries, reversal state, transfer parties/remarks, payment-request linkage, and pact-approval details when applicable.
 
-Core records:
+## 8. Funding and custody
 
-- Ledger account
-- Journal transaction
-- Debit entry
-- Credit entry
-- Currency
-- Reference type and ID
-- Idempotency key
-- Posted or reversed status
+`CONTROLLED_CUSTODY_PROVIDER` selects:
 
-Minimum tables:
-
-```text
-ledger_accounts
-ledger_transactions
-ledger_entries
-idempotency_keys
-```
-
-Invariants:
-
-1. Every posted journal balances.
-2. A journal contains one currency.
-3. Posted entries are immutable.
-4. A reversal creates a new journal.
-5. An idempotency key posts at most once.
-6. Available balances cannot become negative.
-7. No application code edits a stored balance directly.
-
-A cached balance projection is permitted but must reconcile to entries.
-
-## 8. Wallet funding and custody
+- `fake` — deterministic, process-local orders and payouts for local development;
+- `paypal_sandbox` — PayPal Orders v2 for funding and Payouts v1 for withdrawals.
 
 Funding flow:
 
-```text
-Create funding intent
--> obtain PayPal approval
--> PayPal capture succeeds
--> verify provider result or webhook
--> credit user's available ledger account
-```
+1. create a provider order and persist a funding intent;
+2. return its approval URL when applicable;
+3. capture/confirm the order;
+4. credit the provider-reported net amount to available balance once; and
+5. retain gross/net/provider identifiers for audit and idempotency.
 
-The browser redirect is never authoritative.
+Withdrawal flow:
 
-Internal sends between Controlled users use only ledger movement. External sends and withdrawals reserve funds internally, call the provider asynchronously, and then settle or release the reservation.
+1. validate balance and pact policy;
+2. reserve available funds into pending and count pact usage;
+3. create the provider payout;
+4. reconcile provider status; and
+5. on success consume pending, or on failure release pending and reverse pact usage.
 
-All outgoing wallet operations pass through pact policy, including withdrawal.
+Provider calls use bounded HTTP timeouts and idempotency/request identifiers. Provider failure cannot create ledger movement without the corresponding durable operation state.
 
-Custody adapter:
+## 9. Internal transfers and payment requests
 
-```go
-type Custody interface {
-    CreateFundingOrder(context.Context, CreateFundingOrder) (FundingOrder, error)
-    CaptureFundingOrder(context.Context, CaptureFundingOrder) (FundingCapture, error)
-    CreatePayout(context.Context, CreatePayout) (Payout, error)
-    GetPayout(context.Context, string) (Payout, error)
-    VerifyWebhook(context.Context, WebhookRequest) (VerifiedEvent, error)
-}
-```
+An internal transfer atomically debits the sender's available account and credits the recipient's available account. Self-transfer, unknown recipient, non-USD input, non-positive amount, and insufficient balance are rejected. Optional remarks are persisted and returned with the transaction.
 
-Implementations:
-
-- `FakeCustody` for deterministic application and integration tests
-- `PayPalCustody` after the full fake-provider flow works
-
-## 9. Pact domain
-
-A pact contains:
-
-- Owner ID
-- Financial goal
-- Spending intent
-- Spending limit
-- Stake amount
-- Start and end timestamps
-- Accountability circle ID
-- Break consequence
-- Status, outcome, and version
-- Internal stake reservation ID after activation
-
-The only valid MVP break consequence is:
+Payment requests are seven-day resources between two distinct users. States are:
 
 ```text
-COMMITMENT_RESERVE
+PENDING -> PROCESSING -> PAID
+                    \-> AWAITING_APPROVAL -> PAID
+PENDING -> DECLINED | CANCELLED | EXPIRED
 ```
 
-Lifecycle:
+The recipient pays through the same transfer/pact pipeline as a direct send. The note becomes the accountability reason when review is required. Repository transitions prevent duplicate payment and release a failed processing attempt back to a retryable state.
 
-```text
-DRAFT
-  -> AWAITING_STAKE
-  -> SCHEDULED
-  -> ACTIVE
-  -> RESOLVED
+## 10. Pact domain
 
-DRAFT | AWAITING_STAKE | SCHEDULED -> CANCELLED
-```
+Terms contain goal, intent, spending limit, stake, period, circle ID, and `COMMITMENT_RESERVE` consequence. Public amounts are positive USD cents. Confirmed terms cannot be edited.
+
+Statuses:
+
+- `DRAFT`
+- `AWAITING_STAKE`
+- `SCHEDULED`
+- `ACTIVE`
+- `RESOLVED`
+- `CANCELLED`
 
 Outcomes:
 
-```text
-NONE
-KEPT
-KEPT_WITH_EXCEPTIONS
-BROKEN
-CANCELLED
-```
-
-Terms are immutable after confirmation.
-
-Each pact has one total USD spending limit across its complete start-to-end period. Daily, weekly, monthly, and other layered limits are separate overlapping pacts. Timestamps are accepted with the user's local timezone context, stored in UTC, and evaluated with an inclusive start and exclusive end.
-
-Limits and stakes are positive integer USD cents. A stake has no product-level minimum or maximum beyond being greater than zero and no greater than the owner's available balance.
-
-## 10. Stake Vault and Commitment Reserve
-
-The Stake Vault is one global internal ledger account with an allocation record for each pact.
-
-Minimum stake data:
-
-```text
-stake_allocations
-  id
-  owner_id
-  pact_id
-  amount_minor
-  currency
-  ledger_transaction_id
-  status
-  created_at
-  resolved_at
-```
-
-Ledger movement:
-
-```text
-Pact activation:   user available -> Stake Vault
-Pact success:      Stake Vault -> user available
-Scheduled cancel:  Stake Vault -> user available
-Emergency:         no stake movement
-Conscious break:   Stake Vault -> user Commitment Reserve
-```
-
-The ledger journal and pact transition must commit in the same database transaction.
-
-Commitment Reserve is user-owned but unavailable indefinitely for the MVP. `Start recovery pact` is only an entry point; no reserve-release policy is implemented until recovery qualification is explicitly designed.
-
-## 11. Accountability
-
-A circle contains `n` accepted partners where `n >= 1`. An invitation must be accepted before membership becomes eligible.
-
-Rules:
-
-- Every partner is distinct.
-- The owner cannot be a partner.
-- The owner defines stable partner positions, which become immutable at pact confirmation.
-- A partner may participate in multiple circles and pacts.
-- Each request has one active assignment.
-- The owner cannot select the reviewer.
-- Only the current assignment can resolve a request.
-- A late response to a superseded assignment is rejected.
-- Denial immediately advances to the next eligible partner.
-- Non-response advances after a six-hour assignment timeout.
-- The entire request expires after 24 hours.
-- If every partner denies, the request and transaction are cancelled.
-- If no eligible partner remains without unanimous denial, the request waits until expiry.
-- The owner may cancel a pending request and its transaction attempt.
-- Decisions are final and idempotent.
-
-Core states:
-
-```text
-Request:     REQUESTED -> ASSIGNED -> APPROVED | DENIED | EXPIRED
-Assignment:  ACTIVE -> ACKNOWLEDGED -> RESPONDED | TIMED_OUT | SUPERSEDED
-```
-
-An approved response must classify the request as:
-
-- `EMERGENCY`
-- `CONSCIOUS_BREAK`
-
-## 12. Transaction intents and policy
-
-Every outgoing operation begins as a transaction intent:
-
-```text
-CREATED
-  -> CHECKING_POLICY
-  -> AUTHORIZED
-  -> APPROVAL_REQUIRED
-  -> APPROVED
-  -> EXECUTING
-  -> COMPLETED
-
-Any non-terminal state -> FAILED | CANCELLED | EXPIRED
-```
-
-Policy evaluation:
-
-1. Load every active pact for the owner.
-2. Calculate completed or settlement-reserved consumption for each pact.
-3. Evaluate the proposed total debit against each pact.
-4. Return every blocking pact.
-5. Authorize immediately only if every pact permits the transaction.
-6. Otherwise create one accountability request referencing all blocking pacts.
-
-Rules:
-
-- The same outgoing transaction consumes capacity in every active pact.
-- Transactions awaiting accountability do not reserve wallet funds or pact capacity.
-- Internal transfers count when completed; withdrawals count when reserved for settlement.
-- Failed or reversed debits remove their usage.
-- A completed debit continues counting unless that debit itself is reversed; a separate incoming repayment does not alter usage.
-- Incoming funds do not consume or increase fixed pact limits.
-- Funding, stake movements, and Commitment Reserve movements do not consume pact limits.
-- Insufficient balance cannot be overridden and does not create a request.
-- A request includes an owner reason and verified transaction, limit, usage, and overage facts.
-- An approval applies only to the exact transaction type, amount, destination, and blocking pacts.
-- Approval is single-use and immediately attempts execution after atomically rechecking balance and all active pacts.
-- Multiple requests may be pending, but concurrent approvals cannot bypass policy.
-- Failed execution requires a new transaction attempt.
-- Pact expiry cancels its pending requests before resolving the pact.
-
-Resolution effects:
-
-| Partner decision | Transaction | Pact effect | Stake effect |
-|---|---|---|---|
-| Deny | Blocked | Continues | Remains locked |
-| Approve emergency | Allowed | Records exception | Remains locked |
-| Approve conscious break | Allowed | Resolves as broken | Moves to Commitment Reserve |
-| Timeout | Cancelled or reassigned | Continues | Remains locked |
-
-## 13. Database model
-
-Initial target tables:
-
-```text
-users
-sessions
-wallets
-ledger_accounts
-ledger_transactions
-ledger_entries
-idempotency_keys
-pacts
-circles
-circle_members
-stake_allocations
-transaction_intents
-pact_transaction_evaluations
-approval_requests
-assignments
-partner_responses
-funding_intents
-payouts
-processed_webhooks
-outbox_events
-scheduled_jobs
-audit_events
-```
+- `NONE`
+- `KEPT`
+- `KEPT_WITH_EXCEPTIONS`
+- `BROKEN`
+- `CANCELLED`
 
-Use foreign keys, positive-amount checks, valid-time checks, unique provider IDs, unique idempotency keys, and a partial unique index enforcing one active assignment per request.
-
-## 14. Transactions and external calls
-
-Every state-changing application command runs in a database transaction.
-
-Never hold a database transaction open while calling PayPal:
-
-1. Validate and reserve internally.
-2. Commit state and an outbox event.
-3. Call the provider outside the database transaction.
-4. Persist the result in a new transaction.
-5. Settle or release the reservation.
-
-Use row locks or optimistic versions for wallet debits, pact transitions, assignment resolution, stake movement, and webhook application.
-
-## 15. Idempotency
-
-State-changing public endpoints accept `Idempotency-Key`.
-
-Store:
-
-- Caller identity
-- Command name
-- Idempotency key
-- Request hash
-- Final response
-
-Reusing a key with a different request returns a conflict.
-
-Use stable PayPal request IDs, and enforce uniqueness for orders, captures, payouts, ledger references, and webhook event IDs.
-
-## 16. Outbox and background jobs
-
-PostgreSQL is the MVP job queue. Workers claim work using row locking and leases.
-
-Jobs include:
-
-- Start scheduled pact
-- Complete active pact
-- Expire or reassign partner assignment
-- Send notification
-- Execute funding capture
-- Execute external payout
-- Reconcile provider transaction
-- Deliver audit or notification event
-
-Jobs must be safe to run more than once. Retry transient failures with bounded backoff and expose permanent failures in the audit timeline.
-
-## 17. PayPal webhooks
-
-```text
-POST /v1/webhooks/paypal
-```
-
-The handler must:
-
-1. Preserve the original body.
-2. Verify authenticity.
-3. insert the event ID under a unique constraint.
-4. Return success for an already processed event.
-5. Apply the state change transactionally.
-6. Return failure only when a retry is useful.
-
-## 18. Audit timeline
-
-Record every consequential fact:
-
-- User and wallet creation
-- Funding initiated and completed
-- Pact created, confirmed, scheduled, started, and resolved
-- Stake reserved, released, or moved to Commitment Reserve
-- Transaction created, authorized, blocked, approved, denied, and completed
-- Partner assigned, acknowledged, timed out, and responded
-- External payout initiated and settled
-- Provider webhook applied
-
-Audit events are append-only and contain actor, aggregate, timestamp, correlation ID, and safe metadata.
-
-## 19. AI boundary
-
-AI is not required for the first backend milestone.
-
-Later, AI may:
-
-- Propose pact terms using wallet history and user intent
-- Produce a factual partner brief from verified records
-
-AI may not:
-
-- Calculate authoritative balances
-- Post ledger entries
-- Authorize transactions
-- Approve or classify a request
-- Change active pact terms
-- Call PayPal
-
-## 20. Error format
-
-```json
-{
-  "error": {
-    "code": "PACT_INVALID_TRANSITION",
-    "message": "The requested pact transition is not allowed.",
-    "requestId": "6dd8dc79-34d4-4f97-8926-469578d32545",
-    "details": {}
-  }
-}
-```
-
-Expected domain failures return `4xx`. Unexpected failures return `500` without exposing credentials or raw provider responses.
-
-## 21. Test strategy
-
-### Unit tests
-
-- Ledger balance and immutability rules
-- Pact transitions and terms
-- Stake consequence decisions
-- Policy evaluation across multiple pacts
-- Round-robin assignment
-- Ordered assignment, denial reassignment, and timeout behavior
-
-### PostgreSQL integration tests
-
-- Concurrent debits
-- Atomic stake and pact transitions
-- Idempotency conflicts
-- Outbox claiming
-- Webhook replay
-- One-active-assignment constraint
-
-### Provider contract tests
-
-Run the same wallet application scenarios against `FakeCustody` and PayPal Sandbox adapters where practical.
-
-### End-to-end non-AI flow
-
-```text
-create user
--> create wallet
--> fund wallet
--> create circle and pact
--> reserve stake
--> attempt over-limit withdrawal
--> approve conscious break
--> execute withdrawal
--> move stake to Commitment Reserve
--> inspect audit timeline
-```
-
-## 22. Security baseline
-
-- Keep provider credentials server-side.
-- Store session cookies as secure, HTTP-only, and same-site.
-- Hash single-purpose review tokens.
-- Verify every webhook.
-- Rate-limit authentication, funding, payout, and partner-decision endpoints.
-- Never log secrets, full tokens, or unnecessarily sensitive financial payloads.
-- Require authenticated ownership checks on every wallet and pact command.
-- Validate money, currency, state, and references at every boundary.
-
-## 23. MVP completion criteria
-
-The deterministic backend is complete when APIs can demonstrate:
-
-1. User onboarding creates a wallet and ledger accounts.
-2. Fake custody and PayPal Sandbox can fund that wallet.
-3. Internal sends preserve ledger balance.
-4. Pacts reserve stakes from wallet funds.
-5. Every outgoing debit is checked against all active pacts.
-6. Accountability can approve emergencies or conscious breaks.
-7. Conscious breaks move stakes into Commitment Reserve.
-8. Commitment Reserve remains unavailable while exposing the future recovery-pact entry point.
-9. Retries do not duplicate money or decisions.
-10. The audit timeline explains every consequential action.
+Stake reservation, cancellation release, successful completion release, and conscious-break movement are ledger postings performed in the same database transaction as the pact transition.
+
+Progress is derived from `pact_transaction_usage`. Successful applicable debits add usage once per pact. Reversed/failed withdrawal reservations mark usage reversed. Progress returns used, remaining, overage, and contributing operations.
+
+## 11. Policy enforcement
+
+Before an outgoing transfer or withdrawal is persisted, the PostgreSQL policy repository locks/rechecks the wallet and all active pacts.
+
+- Insufficient available balance fails immediately.
+- A debit within every active limit executes normally.
+- A debit exceeding any active limit returns the blocking-pact snapshot.
+- With a valid owner reason, the pending intent and one accountability request are persisted.
+- Pending review does not reserve funds or capacity.
+
+Approved execution re-runs the full check atomically. The approval authorizes only the stored operation type, destination, amount, currency, and blocking context. New balance failure or an unrelated pact block makes the approval stale/failed rather than bypassing policy.
+
+## 12. Accountability
+
+Invitations establish owner/partner relationships. A circle is an immutable ordered set of accepted partners owned by the pact owner.
+
+An accountability request persists:
+
+- transaction intent;
+- blocking-pact snapshots;
+- reviewer order;
+- current assignment;
+- owner reason;
+- per-reviewer decision and denial reason;
+- classification and terminal execution result; and
+- controlled audit events.
+
+Only the active reviewer can decide. Approval requires `EMERGENCY` or `CONSCIOUS_BREAK`; denial requires a non-empty reason. Each assignment expires after six hours and the whole request after 24 hours. Denial/timeout advances in circle order. Approval executes immediately when possible; maintenance recovers approved-but-not-executed requests after interruption.
+
+Emergency increments each affected pact's exception count and retains stake. Conscious break resolves each affected pact as broken and moves each full stake allocation to Commitment Reserve before executing the debit.
+
+## 13. Guidance and shopping
+
+AI endpoints read verified server state and return a stable `guidance` schema. With `CONTROLLED_AI_PROVIDER=disabled`, rules generate the response. With `openai_compatible`, the model receives only a curated snapshot and must return strict structured output. The backend validates all output and falls back to rules on provider error.
+
+AI has no command interface to wallet, ledger, pact, or accountability services.
+
+The shopping endpoint validates a specific 3–160 character USD product query and positive intended amount. When `CHANNEL3_API_KEY` is configured, it searches up to five products, performs a lexical-confidence check, filters to in-stock new USD offers, and returns the lowest eligible price. Shopping failure returns a service error and never affects payment policy.
+
+## 14. Notifications
+
+Authenticated users register Expo tokens by platform. Notifications are queued in a bounded in-memory channel and delivered asynchronously; wallet and review commands never wait for push delivery. Invalid Expo tokens are removed.
+
+Kinds are:
+
+- `PAYMENT_REQUEST`
+- `ACCOUNTABILITY_REQUEST`
+- `ACCOUNTABILITY_INVITATION`
+- `MONEY_RECEIVED`
+
+Delivery covers new requests, money received, invitation responses, reviewer assignment, denial/reassignment, approval, cancellation, and payment-request decline/cancellation. Persistent domain state and action counts remain authoritative.
+
+## 15. Maintenance
+
+Maintenance runs once at startup and once per minute:
+
+- activates scheduled pacts;
+- completes ended pacts and releases stake;
+- cancels affected pending requests when pact periods end;
+- advances timed-out accountability assignments;
+- expires accountability requests;
+- recovers approved debits not yet marked executed; and
+- expires payment requests.
+
+The operations are retry-safe and use database locking/terminal-state checks.
+
+## 16. Persistence model
+
+The migration set currently creates or evolves:
+
+- `users`, `oauth_identities`, `password_credentials`, `sessions`
+- `wallets`, `ledger_accounts`, `ledger_transactions`, `ledger_entries`
+- `funding_intents`, `internal_transfers`, `withdrawals`, `idempotency_keys`
+- `accountability_invitations`, `accountability_circles`, `accountability_circle_members`
+- `pacts`, `stake_allocations`, `pact_transaction_usage`
+- `transaction_intents`, `accountability_requests`, request pact/reviewer/assignment tables
+- `payment_requests`
+- `push_devices`
+- `controlled_audit_events`
+
+Later migrations add Controlled IDs, payment-request lifecycle fields, provider net funding amounts, pending-name state, transfer remarks, and accountability denial reasons.
+
+Applied migrations are immutable. The runner stores checksums and refuses startup if a previously applied migration changes.
+
+## 17. Transactions and external calls
+
+Database transactions never remain open across PayPal, AI, Channel3, or Expo network calls. Provider workflows use durable intermediate states and reconciliation. Ledger and policy transitions that must agree are committed together.
+
+Critical lock order is stable: wallet/available account, relevant operation, active pacts/stake allocations, then derived usage/request state. The implementation relies on unique constraints and row locks in addition to domain validation.
+
+## 18. Logging and observability
+
+Zap emits structured JSON at configurable `DEBUG`, `INFO`, `WARN`, or `ERROR` levels. Logs cover:
+
+- startup configuration without secrets;
+- database connection/migration state;
+- loaded/disabled providers and feature availability;
+- HTTP method/path/status/duration;
+- identity, wallet, pact, accountability, notification, AI, and shopping operations;
+- provider failures and fallback decisions; and
+- graceful maintenance/shutdown events.
+
+Secrets, raw passwords, session tokens, Google ID tokens, and provider credentials must never be logged.
+
+## 19. Security baseline
+
+- bcrypt password hashing
+- Google token verification on the server
+- bearer/cookie session validation and revocation
+- strict JSON decoding and body limits
+- parameterized SQL
+- secrets supplied through server environment only
+- non-root, read-only API container with `no-new-privileges`
+- PostgreSQL not exposed by the Compose stack
+- bounded provider timeouts
+- owner/reviewer authorization at repository/service boundaries
+
+The MVP does not claim production KYC, compliance, custody, rate limiting, fraud detection, password recovery, or webhook-grade PayPal reconciliation.
+
+## 20. Testing
+
+The repository includes:
+
+- unit tests for money, ledger, domain transitions, handlers, providers, logging, and config;
+- PostgreSQL integration tests for wallet, identity, ledger, pact, accountability, and wallet-operation atomicity;
+- fake provider tests;
+- PayPal, OpenAI-compatible, Channel3, and Expo HTTP contract tests; and
+- race-detector-compatible Go tests.
+
+Run `go test ./...` for the standard suite. Set `CONTROLLED_TEST_DATABASE_URL` to include PostgreSQL integration tests.
+
+## 21. Non-negotiable invariants
+
+1. Every journal transaction balances.
+2. Available balance cannot be negative.
+3. Provider retries and public commands cannot duplicate money movement.
+4. Pact stake and pact state change atomically.
+5. All active pacts are evaluated for every outgoing debit.
+6. Pending approval reserves neither funds nor pact capacity.
+7. Only the current reviewer can decide, and denial reasons persist.
+8. Approved execution rechecks balance and policy.
+9. A conscious break never transfers stake ownership to Controlled.
+10. Optional providers cannot weaken deterministic authorization.
