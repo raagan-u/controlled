@@ -4,11 +4,12 @@ package config
 import (
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"strconv"
 	"strings"
 	"time"
+
+	"go.uber.org/zap/zapcore"
 )
 
 var (
@@ -28,7 +29,7 @@ const (
 type Config struct {
 	HTTPAddress         string
 	DatabaseURL         string
-	LogLevel            slog.Level
+	LogLevel            zapcore.Level
 	ShutdownTimeout     time.Duration
 	DatabaseMaxConns    int32
 	DatabaseMinConns    int32
@@ -187,16 +188,16 @@ func value(lookup lookupEnv, key, fallback string) string {
 	return fallback
 }
 
-func parseLogLevel(raw string) (slog.Level, error) {
+func parseLogLevel(raw string) (zapcore.Level, error) {
 	switch strings.ToUpper(strings.TrimSpace(raw)) {
 	case "DEBUG":
-		return slog.LevelDebug, nil
+		return zapcore.DebugLevel, nil
 	case "INFO":
-		return slog.LevelInfo, nil
+		return zapcore.InfoLevel, nil
 	case "WARN":
-		return slog.LevelWarn, nil
+		return zapcore.WarnLevel, nil
 	case "ERROR":
-		return slog.LevelError, nil
+		return zapcore.ErrorLevel, nil
 	default:
 		return 0, fmt.Errorf("%w: CONTROLLED_LOG_LEVEL", ErrInvalidConfig)
 	}

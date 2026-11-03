@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/http"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 type Pinger interface {
@@ -32,6 +34,7 @@ func (h *HealthHandler) Readiness(response http.ResponseWriter, request *http.Re
 	ctx, cancel := context.WithTimeout(request.Context(), h.timeout)
 	defer cancel()
 	if err := h.database.Ping(ctx); err != nil {
+		Logger(request.Context()).Error("Readiness database ping failed", zap.Error(err))
 		WriteError(response, http.StatusServiceUnavailable, "not_ready", "Controlled cannot reach its database.")
 		return
 	}

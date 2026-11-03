@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -21,18 +20,24 @@ import (
 	"github.com/raagan-u/controlled/internal/platform"
 	"github.com/raagan-u/controlled/internal/platform/config"
 	"github.com/raagan-u/controlled/internal/platform/httpapi"
+	platformlogging "github.com/raagan-u/controlled/internal/platform/logging"
 	platformpostgres "github.com/raagan-u/controlled/internal/platform/postgres"
 	"github.com/raagan-u/controlled/internal/shopping"
 	"github.com/raagan-u/controlled/internal/wallet"
 	"github.com/raagan-u/controlled/internal/walletops"
+	"go.uber.org/zap"
 )
 
 func main() {
+	bootstrapLogger, _ := zap.NewProduction()
+	zap.ReplaceGlobals(bootstrapLogger)
+	defer func() { _ = bootstrapLogger.Sync() }()
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	if err := run(ctx); err != nil {
-		slog.Error("Controlled API stopped", "error", err)
+		zap.L().Error("Controlled API stopped", zap.Error(err))
 		os.Exit(1)
 	}
 }
@@ -42,7 +47,19 @@ func run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: configuration.LogLevel})))
+	logger, err := platformlogging.New(configuration.LogLevel)
+	if err != nil {
+		return err
+	}
+	zap.ReplaceGlobals(logger)
+	defer func() { _ = logger.Sync() }()
+	logger.Info("Controlled API starting",
+		zap.String("address", configuration.HTTPAddress),
+		zap.String("log_level", configuration.LogLevel.String()),
+		zap.String("custody_provider", configuration.CustodyProvider),
+		zap.String("ai_provider", configuration.AIProvider),
+		zap.Bool("shopping_enabled", configuration.Channel3APIKey != ""),
+	)
 
 	database, err := platformpostgres.Open(ctx, platformpostgres.Options{
 		URL:         configuration.DatabaseURL,
@@ -54,9 +71,15 @@ func run(ctx context.Context) error {
 		return err
 	}
 	defer database.Close()
+	logger.Info("Database connection established",
+		zap.Int32("max_connections", configuration.DatabaseMaxConns),
+		zap.Int32("min_connections", configuration.DatabaseMinConns),
+	)
+	logFeatureStatus(logger, "database", "postgres", true)
 	if err := platformpostgres.Migrate(ctx, database); err != nil {
 		return err
 	}
+	logger.Info("Database migrations completed")
 
 	store := wallet.NewPostgresProvisioningStore(database)
 	onboarding := wallet.NewOnboardingService(
@@ -87,6 +110,9 @@ func run(ctx context.Context) error {
 		sessions,
 	)
 	passwordAuthenticationHandler := identity.NewPasswordAuthenticationHandler(passwordAuthentication)
+	logFeatureStatus(logger, "authentication.google", "google", true)
+	logFeatureStatus(logger, "authentication.password", "bcrypt", true)
+	logFeatureStatus(logger, "authentication.demo_sessions", "internal", true)
 	recipientHandler := identity.NewRecipientHandler(identityStore)
 	profileHandler := identity.NewProfileHandler(identityStore)
 	pushSender, err := notification.NewExpoSender(
@@ -98,12 +124,17 @@ func run(ctx context.Context) error {
 	}
 	pushService := notification.NewService(notification.NewPostgresRepository(database), pushSender)
 	pushHandler := notification.NewHandler(pushService)
+	logFeatureStatus(logger, "push_notifications", "expo", true,
+		zap.Bool("authenticated", configuration.ExpoAccessToken != ""),
+		zap.Duration("timeout", configuration.ExpoPushTimeout),
+	)
 	go pushService.Run(ctx)
 	walletReadHandler := wallet.NewReadHandler(store)
 	custodyProvider, err := configuredCustodyProvider(configuration)
 	if err != nil {
 		return err
 	}
+	logFeatureStatus(logger, "custody", configuration.CustodyProvider, true)
 	accountabilityService := accountability.NewService(
 		platform.NewUUIDGenerator(),
 		platform.SystemClock{},
@@ -125,10 +156,16 @@ func run(ctx context.Context) error {
 		pact.NewPostgresRepository(database),
 	)
 	pactHandler := pact.NewHandler(pactService)
+	logFeatureStatus(logger, "accountability", "internal", true)
+	logFeatureStatus(logger, "pacts", "internal", true)
 	aiModel, err := configuredAIModel(configuration)
 	if err != nil {
 		return err
 	}
+	logFeatureStatus(logger, "ai", configuration.AIProvider, aiModel != nil,
+		zap.String("model", configuration.AIModel),
+		zap.Duration("timeout", configuration.AITimeout),
+	)
 	aiService := controlledai.NewService(platform.SystemClock{}, store, pactService, accountabilityService, identityStore, aiModel)
 	aiHandler := controlledai.NewHandler(aiService)
 	var productCatalog shopping.Catalog
@@ -140,9 +177,14 @@ func run(ctx context.Context) error {
 			return err
 		}
 	}
+	logFeatureStatus(logger, "shopping.price_checks", "channel3", productCatalog != nil,
+		zap.Duration("timeout", configuration.Channel3Timeout),
+	)
 	shoppingHandler := shopping.NewHandler(shopping.NewService(productCatalog))
 	paymentRequestService := paymentrequest.NewService(platform.NewUUIDGenerator(), platform.SystemClock{}, paymentrequest.NewPostgresRepository(database), walletOperations)
 	paymentRequestHandler := paymentrequest.NewHandler(paymentRequestService).EnableNotifications(pushService)
+	logFeatureStatus(logger, "payment_requests", "internal", true)
+	logger.Info("Backend features initialized")
 	go runMaintenance(ctx, accountabilityService, pactService, paymentRequestService, walletOperations)
 
 	mux := http.NewServeMux()
@@ -201,7 +243,7 @@ func run(ctx context.Context) error {
 
 	server := &http.Server{
 		Addr:              configuration.HTTPAddress,
-		Handler:           mux,
+		Handler:           httpapi.LogRequests(logger, mux),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      10 * time.Second,
@@ -210,7 +252,7 @@ func run(ctx context.Context) error {
 
 	serverErrors := make(chan error, 1)
 	go func() {
-		slog.Info("Controlled API listening", "address", configuration.HTTPAddress)
+		logger.Info("Controlled API listening", zap.String("address", configuration.HTTPAddress))
 		serverErrors <- server.ListenAndServe()
 	}()
 
@@ -220,11 +262,13 @@ func run(ctx context.Context) error {
 			return err
 		}
 	case <-ctx.Done():
+		logger.Info("Controlled API shutdown started")
 		shutdownContext, cancel := context.WithTimeout(context.Background(), configuration.ShutdownTimeout)
 		defer cancel()
 		if err := server.Shutdown(shutdownContext); err != nil {
 			return err
 		}
+		logger.Info("Controlled API shutdown completed")
 	}
 	return nil
 }
@@ -238,6 +282,16 @@ func configuredAIModel(configuration config.Config) (controlledai.Model, error) 
 		APIKey: configuration.AIAPIKey, Timeout: configuration.AITimeout,
 		RequireParameters: configuration.AIRequireParameters,
 	})
+}
+
+func logFeatureStatus(logger *zap.Logger, feature, provider string, enabled bool, fields ...zap.Field) {
+	fields = append([]zap.Field{
+		zap.String("feature", feature),
+		zap.String("provider", provider),
+		zap.Bool("enabled", enabled),
+		zap.Bool("loaded", enabled),
+	}, fields...)
+	logger.Info("Backend feature status", fields...)
 }
 
 func configuredCustodyProvider(configuration config.Config) (custody.Provider, error) {
@@ -254,22 +308,22 @@ func configuredCustodyProvider(configuration config.Config) (custody.Provider, e
 func runMaintenance(ctx context.Context, accountabilityService *accountability.Service, pactService *pact.Service, paymentRequests *paymentrequest.Service, walletOperations *walletops.Service) {
 	run := func() {
 		if result, err := accountabilityService.RunMaintenance(ctx); err != nil && !errors.Is(err, context.Canceled) {
-			slog.Error("Accountability maintenance failed", "error", err)
+			zap.L().Error("Accountability maintenance failed", zap.Error(err))
 		} else if result.TimedOut > 0 || result.Expired > 0 || result.Recovered > 0 {
-			slog.Info("Accountability maintenance completed", "timedOut", result.TimedOut, "expired", result.Expired, "recovered", result.Recovered)
+			zap.L().Info("Accountability maintenance completed", zap.Int("timed_out", result.TimedOut), zap.Int("expired", result.Expired), zap.Int("recovered", result.Recovered))
 		}
 		if result, err := pactService.RunMaintenance(ctx); err != nil && !errors.Is(err, context.Canceled) {
-			slog.Error("Pact maintenance failed", "error", err)
+			zap.L().Error("Pact maintenance failed", zap.Error(err))
 		} else if result.Started > 0 || result.Completed > 0 {
-			slog.Info("Pact maintenance completed", "started", result.Started, "completed", result.Completed)
+			zap.L().Info("Pact maintenance completed", zap.Int("started", result.Started), zap.Int("completed", result.Completed))
 		}
 		if err := paymentRequests.Maintain(ctx); err != nil && !errors.Is(err, context.Canceled) {
-			slog.Error("Payment request maintenance failed", "error", err)
+			zap.L().Error("Payment request maintenance failed", zap.Error(err))
 		}
 		if result, err := walletOperations.ReconcilePendingWithdrawals(ctx, 100); err != nil && !errors.Is(err, context.Canceled) {
-			slog.Error("Withdrawal reconciliation failed", "error", err)
+			zap.L().Error("Withdrawal reconciliation failed", zap.Error(err))
 		} else if result.Completed > 0 || result.Failed > 0 {
-			slog.Info("Withdrawal reconciliation completed", "completed", result.Completed, "failed", result.Failed, "pending", result.Pending)
+			zap.L().Info("Withdrawal reconciliation completed", zap.Int("completed", result.Completed), zap.Int("failed", result.Failed), zap.Int("pending", result.Pending))
 		}
 	}
 	run()
