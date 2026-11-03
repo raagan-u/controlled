@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -244,14 +245,20 @@ func (s *PostgresProvisioningStore) TransactionsByUser(
 	}
 	rows.Close()
 	for index := range transactions {
-		if transactions[index].Reference.Type != "INTERNAL_TRANSFER" {
-			continue
+		if transactions[index].Reference.Type == "INTERNAL_TRANSFER" {
+			transfer, err := s.transferDetails(ctx, transactions[index].Reference.ID)
+			if err != nil {
+				return nil, err
+			}
+			transactions[index].Transfer = &transfer
 		}
-		transfer, err := s.transferDetails(ctx, transactions[index].Reference.ID)
-		if err != nil {
-			return nil, err
+		if transactions[index].Reference.Type == "INTERNAL_TRANSFER" || strings.HasPrefix(transactions[index].Reference.Type, "WITHDRAWAL_") {
+			approval, err := s.approvalDetails(ctx, transactions[index].Reference.ID)
+			if err != nil {
+				return nil, err
+			}
+			transactions[index].Approval = approval
 		}
-		transactions[index].Transfer = &transfer
 	}
 	return transactions, nil
 }
@@ -334,7 +341,40 @@ func (s *PostgresProvisioningStore) TransactionByUser(
 		}
 		result.Transfer = &transfer
 	}
+	if result.Reference.Type == "INTERNAL_TRANSFER" || strings.HasPrefix(result.Reference.Type, "WITHDRAWAL_") {
+		approval, err := s.approvalDetails(ctx, result.Reference.ID)
+		if err != nil {
+			return Transaction{}, err
+		}
+		result.Approval = approval
+	}
 	return result, nil
+}
+
+func (s *PostgresProvisioningStore) approvalDetails(ctx context.Context, operationID string) (*ApprovalDetails, error) {
+	var result ApprovalDetails
+	err := s.pool.QueryRow(ctx, `
+		SELECT request.id::text, request.owner_reason, request.classification,
+		       reviewer.id::text, reviewer.ctrld_id, reviewer.email, reviewer.display_name
+		  FROM transaction_intents AS intent
+		  JOIN accountability_requests AS request ON request.intent_id = intent.id
+		  JOIN accountability_assignments AS assignment
+		    ON assignment.request_id = request.id
+		   AND assignment.status = 'RESPONDED'
+		   AND assignment.decision IN ('APPROVE_EMERGENCY', 'APPROVE_CONSCIOUS_BREAK')
+		  JOIN users AS reviewer ON reviewer.id = assignment.partner_id
+		 WHERE intent.executed_operation_id = $1::text::uuid
+	`, operationID).Scan(
+		&result.RequestID, &result.Reason, &result.Classification,
+		&result.ApprovedBy.ID, &result.ApprovedBy.CtrldID, &result.ApprovedBy.Email, &result.ApprovedBy.DisplayName,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read transaction approval details: %w", err)
+	}
+	return &result, nil
 }
 
 func (s *PostgresProvisioningStore) transferDetails(ctx context.Context, transferID string) (TransferDetails, error) {
@@ -342,7 +382,7 @@ func (s *PostgresProvisioningStore) transferDetails(ctx context.Context, transfe
 	err := s.pool.QueryRow(ctx, `
 		SELECT sender.id::text, sender.ctrld_id, sender.email, sender.display_name,
 		       recipient.id::text, recipient.ctrld_id, recipient.email, recipient.display_name,
-		       COALESCE(request.note, ''), COALESCE(request.id::text, '')
+		       COALESCE(NULLIF(transfer.remark, ''), request.note, ''), COALESCE(request.id::text, '')
 		  FROM internal_transfers AS transfer
 		  JOIN wallets AS sender_wallet ON sender_wallet.id = transfer.sender_wallet_id
 		  JOIN users AS sender ON sender.id = sender_wallet.owner_id

@@ -94,6 +94,13 @@ func transactionResponse(transaction Transaction) transactionAPIResponse {
 			Remark:    transaction.Transfer.Remark, PaymentRequestID: transaction.Transfer.PaymentRequestID,
 		}
 	}
+	if transaction.Approval != nil {
+		item.Approval = &approvalDetailsAPIResponse{
+			RequestID: transaction.Approval.RequestID, Reason: transaction.Approval.Reason,
+			Classification: transaction.Approval.Classification,
+			ApprovedBy:     partyAPIResponse{ID: string(transaction.Approval.ApprovedBy.ID), CtrldID: transaction.Approval.ApprovedBy.CtrldID, Email: transaction.Approval.ApprovedBy.Email, DisplayName: transaction.Approval.ApprovedBy.DisplayName},
+		}
+	}
 	for _, entry := range transaction.Entries {
 		item.Entries = append(item.Entries, transactionEntryAPIResponse{
 			AccountID: string(entry.AccountID), AccountKind: string(entry.AccountKind), Side: string(entry.Side),
@@ -112,6 +119,14 @@ type transactionAPIResponse struct {
 	Reversed    bool                            `json:"reversed"`
 	Entries     []transactionEntryAPIResponse   `json:"entries"`
 	Transfer    *transferDetailsAPIResponse     `json:"transferDetails,omitempty"`
+	Approval    *approvalDetailsAPIResponse     `json:"approvalDetails,omitempty"`
+}
+
+type approvalDetailsAPIResponse struct {
+	RequestID      string           `json:"requestId"`
+	Reason         string           `json:"reason"`
+	Classification string           `json:"classification"`
+	ApprovedBy     partyAPIResponse `json:"approvedBy"`
 }
 
 type partyAPIResponse struct {

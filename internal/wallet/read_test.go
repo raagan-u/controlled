@@ -142,6 +142,10 @@ func TestWalletTransactionHandler(t *testing.T) {
 			Recipient: wallet.TransactionParty{ID: "user-2", CtrldID: "ctrld00002", DisplayName: "Friend", Email: "friend@example.com"},
 			Remark:    "Dinner", PaymentRequestID: "request-1",
 		},
+		Approval: &wallet.ApprovalDetails{
+			RequestID: "approval-1", Reason: "Family emergency", Classification: "EMERGENCY",
+			ApprovedBy: wallet.TransactionParty{ID: "user-3", CtrldID: "ctrld00003", DisplayName: "Partner", Email: "partner@example.com"},
+		},
 	}}
 	handler := wallet.NewReadHandler(reader)
 	protected := identity.RequireSession(walletSessionManager{user: user}, http.HandlerFunc(handler.Transaction))
@@ -156,6 +160,13 @@ func TestWalletTransactionHandler(t *testing.T) {
 	var payload struct {
 		Transaction struct {
 			ID              string `json:"id"`
+			ApprovalDetails struct {
+				Classification string `json:"classification"`
+				Reason         string `json:"reason"`
+				ApprovedBy     struct {
+					DisplayName string `json:"displayName"`
+				} `json:"approvedBy"`
+			} `json:"approvalDetails"`
 			TransferDetails struct {
 				Remark string `json:"remark"`
 				Sender struct {
@@ -169,6 +180,9 @@ func TestWalletTransactionHandler(t *testing.T) {
 	}
 	if payload.Transaction.TransferDetails.Remark != "Dinner" || payload.Transaction.TransferDetails.Sender.DisplayName != "Raagan" {
 		t.Fatalf("transfer details = %#v", payload.Transaction.TransferDetails)
+	}
+	if payload.Transaction.ApprovalDetails.Classification != "EMERGENCY" || payload.Transaction.ApprovalDetails.Reason != "Family emergency" || payload.Transaction.ApprovalDetails.ApprovedBy.DisplayName != "Partner" {
+		t.Fatalf("approval details = %#v", payload.Transaction.ApprovalDetails)
 	}
 }
 

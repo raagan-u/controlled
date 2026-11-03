@@ -47,7 +47,7 @@ func (s *Service) ExecuteApproved(ctx context.Context, approved ApprovedDebit) (
 	case DebitInternalTransfer:
 		transfer, err := s.repo.CreateTransfer(approvedContext, approved.IdempotencyKey, Transfer{
 			ID: approved.IntentID, SenderID: approved.OwnerID, RecipientEmail: normalizedEmail(approved.Destination),
-			Amount: approved.Amount, CreatedAt: now,
+			Amount: approved.Amount, Remark: strings.TrimSpace(approved.Reason), CreatedAt: now,
 		}, ledger.JournalID(generated[0]))
 		if err != nil {
 			return "", err

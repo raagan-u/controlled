@@ -224,7 +224,7 @@ func (s *Service) Decide(
 	executedID, executionErr := s.executor.ExecuteApproved(ctx, walletops.ApprovedDebit{
 		RequestID: item.ID, IntentID: item.IntentID, IdempotencyKey: item.IdempotencyKey,
 		OwnerID: item.OwnerID, Kind: item.OperationType, Destination: item.Destination,
-		Amount: amount, Classification: item.Classification, PactIDs: pactIDs,
+		Amount: amount, Classification: item.Classification, Reason: item.Reason, PactIDs: pactIDs,
 	})
 	executionRepository, ok := s.repository.(ExecutionRepository)
 	if !ok {

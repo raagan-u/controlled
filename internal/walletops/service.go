@@ -232,7 +232,7 @@ func (s *Service) TransferWithReason(
 	now := s.clock.Now().UTC()
 	transfer, err := s.repo.CreateTransfer(ctx, key, Transfer{
 		ID: OperationID(generated[0]), SenderID: senderID,
-		RecipientEmail: recipientEmail, Amount: amount, CreatedAt: now,
+		RecipientEmail: recipientEmail, Amount: amount, Remark: strings.TrimSpace(reason), CreatedAt: now,
 	}, ledger.JournalID(generated[1]))
 	if err == nil {
 		s.notifyMoneyReceived(ctx, transfer)
