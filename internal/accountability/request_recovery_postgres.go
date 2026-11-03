@@ -16,7 +16,7 @@ func (r *PostgresRepository) ApprovedDebits(ctx context.Context) ([]walletops.Ap
 	rows, err := r.pool.Query(ctx, `
 		SELECT request.id::text, intent.id::text, intent.idempotency_key,
 		       intent.owner_id::text, intent.operation_type, intent.destination,
-		       intent.amount_minor, intent.currency, request.classification
+		       intent.amount_minor, intent.currency, request.classification, request.owner_reason
 		  FROM accountability_requests AS request
 		  JOIN transaction_intents AS intent ON intent.id = request.intent_id
 		 WHERE request.status = 'APPROVED' AND intent.status IN ('APPROVED', 'FAILED')
@@ -32,7 +32,7 @@ func (r *PostgresRepository) ApprovedDebits(ctx context.Context) ([]walletops.Ap
 		var amountMinor int64
 		if err := rows.Scan(
 			&debit.RequestID, &debit.IntentID, &debit.IdempotencyKey,
-			&ownerID, &kind, &debit.Destination, &amountMinor, &currency, &debit.Classification,
+			&ownerID, &kind, &debit.Destination, &amountMinor, &currency, &debit.Classification, &debit.Reason,
 		); err != nil {
 			rows.Close()
 			return nil, err

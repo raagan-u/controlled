@@ -29,6 +29,8 @@ export default function TransactionDetailScreen() {
   const item = transactionToActivity(data.transaction, data.wallet);
   const date = new Date(data.transaction.occurredAt).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' });
   const transfer = data.transaction.transferDetails;
+	const approval = data.transaction.approvalDetails;
+	const remark = transfer?.remark || approval?.reason;
 	const transactionType = transfer?.paymentRequestId
 		? 'Money request payment'
 		: data.transaction.reference.type === 'INTERNAL_TRANSFER'
@@ -37,7 +39,12 @@ export default function TransactionDetailScreen() {
   const details = [
 	['Status', item.status],
 	...(transfer ? [['Paid by', `${transfer.sender.displayName} · ${transfer.sender.ctrldId}`], ['Received by', `${transfer.recipient.displayName} · ${transfer.recipient.ctrldId}`]] : []),
-	...(transfer?.remark ? [['Remark', transfer.remark]] : []),
+	...(remark ? [['Remark', remark]] : []),
+	...(approval ? [
+		['Pact breaking', 'Yes'],
+		['Approval type', approval.classification === 'EMERGENCY' ? 'Emergency' : 'Normal pact break'],
+		['Approved by', `${approval.approvedBy.displayName} · ${approval.approvedBy.ctrldId}`],
+	] : []),
 	['Date', date],
 	['Transaction ID', data.transaction.id],
 	['Type', transactionType],

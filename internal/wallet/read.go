@@ -57,6 +57,14 @@ type Transaction struct {
 	Reversed    bool
 	Entries     []TransactionEntry
 	Transfer    *TransferDetails
+	Approval    *ApprovalDetails
+}
+
+type ApprovalDetails struct {
+	RequestID      string
+	Reason         string
+	Classification string
+	ApprovedBy     TransactionParty
 }
 
 type TransactionParty struct {

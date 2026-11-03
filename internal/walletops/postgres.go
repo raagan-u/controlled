@@ -250,7 +250,7 @@ func (r *PostgresRepository) CreateTransfer(
 		if matchErr != nil {
 			return Transfer{}, matchErr
 		}
-		if !matches || !existing.Amount.Equal(candidate.Amount) {
+		if !matches || !existing.Amount.Equal(candidate.Amount) || existing.Remark != candidate.Remark {
 			return Transfer{}, ErrIdempotencyConflict
 		}
 		existing.Duplicate = true
@@ -340,9 +340,9 @@ func (r *PostgresRepository) CreateTransfer(
 	_, err = tx.Exec(ctx, `
 		INSERT INTO internal_transfers (
 			id, sender_wallet_id, recipient_wallet_id, idempotency_key,
-			amount_minor, currency, ledger_transaction_id, created_at
-		) VALUES ($1, $2::text::uuid, $3::text::uuid, $4, $5, $6, $7::text::uuid, $8)
-	`, parsedID, senderWallet, recipientWallet, key, candidate.Amount.AmountMinor(), currency, string(posted.JournalID), candidate.CreatedAt)
+			amount_minor, currency, ledger_transaction_id, created_at, remark
+		) VALUES ($1, $2::text::uuid, $3::text::uuid, $4, $5, $6, $7::text::uuid, $8, $9)
+	`, parsedID, senderWallet, recipientWallet, key, candidate.Amount.AmountMinor(), currency, string(posted.JournalID), candidate.CreatedAt, candidate.Remark)
 	if err != nil {
 		return Transfer{}, mapOperationError(err)
 	}
@@ -844,7 +844,8 @@ func loadTransferByKey(
 		       transfer.amount_minor,
 		       transfer.currency,
 		       transfer.ledger_transaction_id::text,
-		       transfer.created_at
+		       transfer.created_at,
+		       transfer.remark
 		  FROM internal_transfers AS transfer
 		  JOIN wallets AS sender ON sender.id = transfer.sender_wallet_id
 		  JOIN wallets AS recipient ON recipient.id = transfer.recipient_wallet_id
@@ -853,7 +854,7 @@ func loadTransferByKey(
 		 FOR UPDATE OF transfer
 	`, string(senderID), key).Scan(
 		&id, &storedSenderID, &recipientID, &result.RecipientEmail,
-		&amountMinor, &currency, &result.LedgerTransactionID, &createdAt,
+		&amountMinor, &currency, &result.LedgerTransactionID, &createdAt, &result.Remark,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Transfer{}, ErrOperationNotFound

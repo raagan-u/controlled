@@ -59,6 +59,7 @@ type Transfer struct {
 	RecipientID         identity.UserID
 	RecipientEmail      string
 	Amount              money.Money
+	Remark              string
 	LedgerTransactionID ledger.JournalID
 	CreatedAt           time.Time
 	Duplicate           bool
@@ -164,6 +165,7 @@ type ApprovedDebit struct {
 	Destination    string
 	Amount         money.Money
 	Classification string
+	Reason         string
 	PactIDs        []string
 }
 
