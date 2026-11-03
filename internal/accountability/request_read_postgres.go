@@ -127,6 +127,7 @@ func (r *PostgresRepository) RequestForUser(ctx context.Context, userID identity
 	reviewerRows, err := r.pool.Query(ctx, `
 		SELECT reviewer.partner_id::text, reviewer.position,
 		       COALESCE(assignment.status, 'WAITING'), COALESCE(assignment.decision, ''),
+		       COALESCE(assignment.decision_reason, ''),
 		       assignment.assigned_at, assignment.expires_at, assignment.responded_at
 		  FROM accountability_request_reviewers AS reviewer
 		  LEFT JOIN accountability_assignments AS assignment
@@ -143,7 +144,7 @@ func (r *PostgresRepository) RequestForUser(ctx context.Context, userID identity
 		var reviewer RequestReviewer
 		var assignedAt, expiresAt, respondedAt pgtype.Timestamptz
 		if err := reviewerRows.Scan(
-			&reviewer.PartnerID, &reviewer.Position, &reviewer.Status, &reviewer.Decision,
+			&reviewer.PartnerID, &reviewer.Position, &reviewer.Status, &reviewer.Decision, &reviewer.DecisionReason,
 			&assignedAt, &expiresAt, &respondedAt,
 		); err != nil {
 			return Request{}, fmt.Errorf("scan accountability reviewer: %w", err)

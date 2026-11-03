@@ -100,6 +100,7 @@ export type AccountabilityRequestPact = {
 export type AccountabilityReviewer = {
   assignedAt?: string;
   decision?: 'APPROVE_EMERGENCY' | 'APPROVE_CONSCIOUS_BREAK' | 'DENY';
+	decisionReason?: string;
   expiresAt?: string;
   partnerId: string;
   position: number;

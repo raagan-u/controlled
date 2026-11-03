@@ -24,6 +24,7 @@ var (
 	ErrUnavailable         = errors.New("accountability dependencies are unavailable")
 	ErrPersistenceID       = errors.New("accountability persistence requires UUID identifiers")
 	ErrMissingReason       = errors.New("accountability request reason is required")
+	ErrMissingDenialReason = errors.New("accountability denial reason is required")
 	ErrRequestNotFound     = errors.New("accountability request was not found")
 	ErrRequestFinal        = errors.New("accountability request is already resolved")
 	ErrWrongReviewer       = errors.New("only the current assigned partner can decide the request")

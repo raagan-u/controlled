@@ -16,6 +16,7 @@ func (r *PostgresRepository) DecideRequest(
 	requestID string,
 	approve bool,
 	classification string,
+	reason string,
 	nextAssignmentID string,
 	now time.Time,
 ) error {
@@ -68,9 +69,10 @@ func (r *PostgresRepository) DecideRequest(
 	}
 	_, err = tx.Exec(ctx, `
 		UPDATE accountability_assignments
-		   SET status = 'RESPONDED', responded_at = $2, decision = $3
+		   SET status = 'RESPONDED', responded_at = $2, decision = $3,
+		       decision_reason = NULLIF($4, '')
 		 WHERE id = $1::text::uuid AND status = 'ACTIVE'
-	`, assignmentID, now, decision)
+	`, assignmentID, now, decision, reason)
 	if err != nil {
 		return fmt.Errorf("record accountability decision: %w", err)
 	}
@@ -133,8 +135,8 @@ func (r *PostgresRepository) DecideRequest(
 	_, err = tx.Exec(ctx, `
 		INSERT INTO controlled_audit_events (actor_id, aggregate_type, aggregate_id, event_type, facts, occurred_at)
 		VALUES ($1::text::uuid, 'ACCOUNTABILITY_REQUEST', $2::text::uuid, $3,
-		        jsonb_build_object('decision', $4::text), $5)
-	`, string(actorID), requestID, "PARTNER_DECIDED", decision, now)
+		        jsonb_strip_nulls(jsonb_build_object('decision', $4::text, 'reason', NULLIF($5, ''))), $6)
+	`, string(actorID), requestID, "PARTNER_DECIDED", decision, reason, now)
 	if err != nil {
 		return fmt.Errorf("audit accountability decision: %w", err)
 	}

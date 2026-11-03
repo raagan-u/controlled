@@ -26,13 +26,14 @@ type RequestPact struct {
 }
 
 type RequestReviewer struct {
-	PartnerID   identity.UserID
-	Position    int
-	Status      string
-	Decision    string
-	AssignedAt  time.Time
-	ExpiresAt   time.Time
-	RespondedAt time.Time
+	PartnerID      identity.UserID
+	Position       int
+	Status         string
+	Decision       string
+	DecisionReason string
+	AssignedAt     time.Time
+	ExpiresAt      time.Time
+	RespondedAt    time.Time
 }
 
 type Request struct {
@@ -64,7 +65,7 @@ type RequestRepository interface {
 }
 
 type DecisionRepository interface {
-	DecideRequest(context.Context, identity.UserID, string, bool, string, string, time.Time) error
+	DecideRequest(context.Context, identity.UserID, string, bool, string, string, string, time.Time) error
 	CancelRequest(context.Context, identity.UserID, string, time.Time) error
 }
 
@@ -182,16 +183,23 @@ func (s *Service) Decide(
 	requestID string,
 	approve bool,
 	classification string,
+	reason string,
 ) (Request, error) {
 	if err := s.ready(); err != nil {
 		return Request{}, err
 	}
 	classification = strings.ToUpper(strings.TrimSpace(classification))
+	reason = strings.TrimSpace(reason)
 	if approve && classification != "EMERGENCY" && classification != "CONSCIOUS_BREAK" {
 		return Request{}, ErrInvalidDecision
 	}
 	if !approve {
 		classification = ""
+		if reason == "" {
+			return Request{}, ErrMissingDenialReason
+		}
+	} else {
+		reason = ""
 	}
 	repository, ok := s.repository.(DecisionRepository)
 	if !ok {
@@ -202,7 +210,7 @@ func (s *Service) Decide(
 		return Request{}, err
 	}
 	if err := repository.DecideRequest(
-		ctx, actorID, requestID, approve, classification, nextAssignmentID, s.clock.Now().UTC(),
+		ctx, actorID, requestID, approve, classification, reason, nextAssignmentID, s.clock.Now().UTC(),
 	); err != nil {
 		return Request{}, err
 	}
