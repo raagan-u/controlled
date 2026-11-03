@@ -1,6 +1,6 @@
 import { router, type Href, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, BackHandler, PanResponder, RefreshControl, ScrollView, type ScrollViewInstance, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, BackHandler, PanResponder, ScrollView, type ScrollViewInstance, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeIn, FadeInDown, interpolate, useAnimatedStyle, useDerivedValue, useSharedValue, withSpring } from 'react-native-reanimated';
 import { PressableScale, rise, useCountUp } from '@/motion';
@@ -61,6 +61,7 @@ export default function HomeScreen() {
   const collapseGestureZone = Math.min(420, Math.max(260, fullViewport * 0.62));
   const y = useSharedValue(0);
   const listRef = useRef<ScrollViewInstance>(null);
+	const pullDistance = useRef(0);
   const geometry = useSharedValue({ full: 1, lift: 0, offset: 1, resting: 1 });
   useEffect(() => { geometry.set({ full: Math.max(1, fullViewport), lift: sectionLift, offset: collapsedOffset, resting: restingViewport }); }, [collapsedOffset, fullViewport, geometry, restingViewport, sectionLift]);
   const progress = useDerivedValue(() => interpolate(y.value, [0, geometry.value.offset], [1, 0], 'clamp'));
@@ -95,12 +96,25 @@ export default function HomeScreen() {
   // at any scroll position, or from anywhere once the list is back at its top.
   const panelPan = useMemo(() => PanResponder.create({
     onMoveShouldSetPanResponder: (_, gesture) => !expanded && gesture.dy < -12 && Math.abs(gesture.dy) > Math.abs(gesture.dx),
-    onMoveShouldSetPanResponderCapture: (_, gesture) => expanded && (atTop || gesture.y0 - sheetTop < collapseGestureZone) && gesture.dy > 8 && gesture.dy > Math.abs(gesture.dx) * 1.5,
+    onMoveShouldSetPanResponderCapture: (_, gesture) => expanded && !atTop && gesture.y0 - sheetTop < collapseGestureZone && gesture.dy > 8 && gesture.dy > Math.abs(gesture.dx) * 1.5,
     onPanResponderMove: (_, gesture) => y.set(Math.max(0, Math.min(collapsedOffset, expanded ? gesture.dy - 8 : collapsedOffset + gesture.dy + 12))),
     onPanResponderRelease: (_, gesture) => settle(expanded ? !(gesture.dy > 90 || gesture.vy > 0.7) : gesture.dy < -60 || gesture.vy < -0.6),
     onPanResponderTerminate: () => settle(expanded),
     onPanResponderTerminationRequest: () => false,
   }), [atTop, collapseGestureZone, collapsedOffset, expanded, settle, sheetTop, y]);
+  const finishPull = useCallback(() => {
+		if (pullDistance.current <= 0) return;
+		const shouldCollapse = pullDistance.current > Math.min(90, collapsedOffset * 0.32);
+		pullDistance.current = 0;
+		settle(!shouldCollapse);
+  }, [collapsedOffset, settle]);
+	const activityPullPan = useMemo(() => PanResponder.create({
+		onMoveShouldSetPanResponderCapture: (_, gesture) => expanded && atTop && gesture.dy > 6 && gesture.dy > Math.abs(gesture.dx) * 1.35,
+		onPanResponderMove: (_, gesture) => y.set(Math.max(0, Math.min(collapsedOffset, gesture.dy - 4))),
+		onPanResponderRelease: (_, gesture) => settle(!(gesture.dy > 60 || gesture.vy > 0.55)),
+		onPanResponderTerminate: () => settle(true),
+		onPanResponderTerminationRequest: () => false,
+	}), [atTop, collapsedOffset, expanded, settle, y]);
   return <View style={styles.root}>
     <View style={[styles.hero, { paddingTop: Math.max(insets.top + 10, 28) }]}>
       <HeroShapes />
@@ -115,11 +129,11 @@ export default function HomeScreen() {
       <Animated.View {...panelPan.panHandlers} style={[styles.panel, { paddingBottom: Math.max(insets.bottom + 6, 14) }, panelMotion]}>
         <Animated.View pointerEvents="none" style={[styles.panelGrabber, grabberFade]} />
         <Animated.View pointerEvents={expanded ? 'none' : 'auto'} style={[styles.dashboardRow, dashboardFade]}><View style={styles.recentsColumn}><Text style={styles.kicker}>RECENTS —</Text><View style={styles.recentsGrid}>{Array.from({ length: 4 }, (_, index) => recentUsers[index]).map((user, index) => user ? <PressableScale accessibilityLabel={`Send money to ${user.displayName}`} entering={FadeIn.delay(380 + index * 70)} key={user.id} onPress={() => router.push(`/send?recipient=${encodeURIComponent(user.ctrldId)}` as Href)} scaleTo={0.9} style={styles.person}><View style={styles.avatar}><Text style={styles.avatarText}>{user.displayName.split(' ').map((word) => word[0]).join('').slice(0, 2).toUpperCase()}</Text></View></PressableScale> : <View key={`empty-${index}`} style={styles.person}><View style={[styles.avatar, styles.avatarEmpty]} /></View>)}</View></View><View onLayout={(event) => setPactWidth(event.nativeEvent.layout.width)} style={styles.pactsColumn}><Text style={styles.kicker}>ACTIVE PACTS —</Text>{pacts.length ? <ScrollView horizontal pagingEnabled showsHorizontalScrollIndicator={false} style={styles.pactCarousel}>{pacts.map((pact) => { const available = pact.progressAvailable !== false; const ratio = available ? pact.progress.usedMinor / pact.terms.spendingLimit.amountMinor : 0; const backgroundColor = !available ? colors.surface : pact.progress.overageMinor ? colors.redTint : pact.status === 'SCHEDULED' ? colors.blueTint : colors.greenTint; return <PressableScale key={pact.id} onPress={() => router.push(`/pacts/${pact.id}` as Href)} scaleTo={0.97} style={[styles.pactCard, pactWidth ? { width: pactWidth } : null, { backgroundColor }]}><Text numberOfLines={2} style={styles.pactName}>{pact.terms.goal}</Text>{available ? <><Text style={styles.pactAmount}>${formatUSD(pact.progress.usedMinor)} <Text style={styles.pactOf}>of ${formatUSD(pact.terms.spendingLimit.amountMinor)}</Text></Text><View style={styles.pactTrack}><View style={[styles.pactFill, { width: `${Math.max(4, Math.min(100, ratio * 100))}%` }]} /></View><Text style={styles.pactEmpty}>{pact.status === 'SCHEDULED' ? 'Scheduled' : `$${formatUSD(pact.progress.remainingMinor)} left`}</Text></> : <><Text style={styles.pactAmount}>Progress unavailable</Text><Text style={styles.pactEmpty}>Reconnect to the updated API.</Text></>}</PressableScale>; })}</ScrollView> : <PressableScale onPress={() => router.push('/pacts' as Href)} scaleTo={0.97} style={styles.pactCard}><Text style={styles.pactName}>No active pacts</Text><Text style={styles.pactEmpty}>Your active spending limits will appear here.</Text></PressableScale>}</View></Animated.View>
-        <Animated.View onLayout={(event) => setSectionY(Math.round(event.nativeEvent.layout.y))} style={[styles.activitySection, { marginBottom: -sectionLift }, sectionMotion]}>
+        <Animated.View {...activityPullPan.panHandlers} onLayout={(event) => setSectionY(Math.round(event.nativeEvent.layout.y))} style={[styles.activitySection, { marginBottom: -sectionLift }, sectionMotion]}>
           <PressableScale onPress={() => settle(!expanded)} scaleTo={0.97} style={styles.activityHeading}><Text style={styles.kicker}>RECENT ACTIVITY —</Text><Animated.Text style={[styles.activityArrow, arrowFade]}>→</Animated.Text></PressableScale>
           <View onLayout={(event) => setFullViewport(Math.round(event.nativeEvent.layout.height))} style={styles.activityViewport}>
             {ready ? <Animated.View style={[styles.activityClip, clipMotion]}>
-              <ScrollView contentContainerStyle={styles.activityList} ref={listRef} onScroll={(event) => setAtTop(event.nativeEvent.contentOffset.y <= 2)} refreshControl={expanded ? <RefreshControl colors={['transparent']} onRefresh={() => settle(false)} progressBackgroundColor="transparent" refreshing={false} tintColor="transparent" /> : undefined} scrollEnabled={expanded} scrollEventThrottle={16} showsVerticalScrollIndicator={false} style={{ height: fullViewport }}>
+              <ScrollView alwaysBounceVertical bounces contentContainerStyle={styles.activityList} onScroll={(event) => { const offset = event.nativeEvent.contentOffset.y; setAtTop(offset <= 2); if (expanded && offset < 0) { pullDistance.current = -offset; y.set(Math.min(collapsedOffset, -offset)); } }} onScrollBeginDrag={() => { pullDistance.current = 0; }} onScrollEndDrag={finishPull} overScrollMode="always" ref={listRef} scrollEnabled={expanded} scrollEventThrottle={16} showsVerticalScrollIndicator={false} style={{ height: fullViewport }}>
                 {loading && !data ? <ActivityIndicator color={colors.blue} style={styles.loader} /> : error && !data ? <PressableScale onPress={() => void refresh()} scaleTo={0.97} style={styles.state}><Text style={styles.stateTitle}>Couldn’t load wallet</Text><Text style={styles.stateCopy}>Tap to try again</Text></PressableScale> : activities.length === 0 ? <View style={styles.state}><Text style={styles.stateTitle}>No activity yet</Text><Text style={styles.stateCopy}>Your wallet transactions will appear here.</Text></View> : activities.slice(0, 60).map((item, index) => <ActivityRow card index={index} item={item} key={item.id} previewHeight={activityCardHeight} />)}
               </ScrollView>
             </Animated.View> : null}
