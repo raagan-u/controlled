@@ -27,7 +27,7 @@ type Commander interface {
 type requestCommander interface {
 	Requests(context.Context, identity.UserID) ([]Request, error)
 	Request(context.Context, identity.UserID, string) (Request, error)
-	Decide(context.Context, identity.UserID, string, bool, string) (Request, error)
+	Decide(context.Context, identity.UserID, string, bool, string, string) (Request, error)
 	CancelRequest(context.Context, identity.UserID, string) (Request, error)
 }
 
@@ -90,7 +90,7 @@ func (h *Handler) ApproveRequest(response http.ResponseWriter, request *http.Req
 		writeError(response, ErrUnavailable)
 		return
 	}
-	item, err := commands.Decide(request.Context(), user.ID(), request.PathValue("id"), true, input.Classification)
+	item, err := commands.Decide(request.Context(), user.ID(), request.PathValue("id"), true, input.Classification, "")
 	if err != nil {
 		writeError(response, err)
 		return
@@ -100,7 +100,29 @@ func (h *Handler) ApproveRequest(response http.ResponseWriter, request *http.Req
 }
 
 func (h *Handler) DenyRequest(response http.ResponseWriter, request *http.Request) {
-	h.decideWithoutBody(response, request, false)
+	user, ok := currentUser(response, request)
+	if !ok {
+		return
+	}
+	var input struct {
+		Reason string `json:"reason"`
+	}
+	if err := httpapi.ReadJSON(response, request, &input, httpapi.DefaultMaxBodyBytes); err != nil {
+		httpapi.WriteError(response, http.StatusBadRequest, "invalid_request", "Request body must contain a denial reason.")
+		return
+	}
+	commands, ok := h.commands.(requestCommander)
+	if !ok {
+		writeError(response, ErrUnavailable)
+		return
+	}
+	item, err := commands.Decide(request.Context(), user.ID(), request.PathValue("id"), false, "", input.Reason)
+	if err != nil {
+		writeError(response, err)
+		return
+	}
+	h.notifyRequestDecision(user, item)
+	httpapi.WriteJSON(response, http.StatusOK, requestResponse(item))
 }
 
 func (h *Handler) CancelRequest(response http.ResponseWriter, request *http.Request) {
@@ -119,25 +141,6 @@ func (h *Handler) CancelRequest(response http.ResponseWriter, request *http.Requ
 		return
 	}
 	h.notify(item.AssignedPartnerID, notification.Message{Title: "Request cancelled", Body: fmt.Sprintf("%s cancelled a $%.2f approval request", user.DisplayName(), float64(item.AmountMinor)/100), Kind: notification.KindAccountabilityRequest, EntityID: item.ID})
-	httpapi.WriteJSON(response, http.StatusOK, requestResponse(item))
-}
-
-func (h *Handler) decideWithoutBody(response http.ResponseWriter, request *http.Request, approve bool) {
-	user, ok := currentUser(response, request)
-	if !ok {
-		return
-	}
-	commands, ok := h.commands.(requestCommander)
-	if !ok {
-		writeError(response, ErrUnavailable)
-		return
-	}
-	item, err := commands.Decide(request.Context(), user.ID(), request.PathValue("id"), approve, "")
-	if err != nil {
-		writeError(response, err)
-		return
-	}
-	h.notifyRequestDecision(user, item)
 	httpapi.WriteJSON(response, http.StatusOK, requestResponse(item))
 }
 
@@ -345,13 +348,14 @@ type requestPactAPIResponse struct {
 }
 
 type requestReviewerAPIResponse struct {
-	PartnerID   string     `json:"partnerId"`
-	Position    int        `json:"position"`
-	Status      string     `json:"status"`
-	Decision    string     `json:"decision,omitempty"`
-	AssignedAt  *time.Time `json:"assignedAt,omitempty"`
-	ExpiresAt   *time.Time `json:"expiresAt,omitempty"`
-	RespondedAt *time.Time `json:"respondedAt,omitempty"`
+	PartnerID      string     `json:"partnerId"`
+	Position       int        `json:"position"`
+	Status         string     `json:"status"`
+	Decision       string     `json:"decision,omitempty"`
+	DecisionReason string     `json:"decisionReason,omitempty"`
+	AssignedAt     *time.Time `json:"assignedAt,omitempty"`
+	ExpiresAt      *time.Time `json:"expiresAt,omitempty"`
+	RespondedAt    *time.Time `json:"respondedAt,omitempty"`
 }
 
 type requestAPIResponse struct {
@@ -390,6 +394,7 @@ func requestResponse(item Request) struct {
 		value := requestReviewerAPIResponse{
 			PartnerID: string(reviewer.PartnerID), Position: reviewer.Position,
 			Status: reviewer.Status, Decision: reviewer.Decision,
+			DecisionReason: reviewer.DecisionReason,
 		}
 		if !reviewer.AssignedAt.IsZero() {
 			at := reviewer.AssignedAt
@@ -467,6 +472,8 @@ func writeError(response http.ResponseWriter, err error) {
 		httpapi.WriteError(response, http.StatusNotFound, "accountability_request_not_found", "The accountability request was not found.")
 	case errors.Is(err, ErrMissingReason):
 		httpapi.WriteError(response, http.StatusUnprocessableEntity, "accountability_reason_required", "A reason is required for an accountability request.")
+	case errors.Is(err, ErrMissingDenialReason):
+		httpapi.WriteError(response, http.StatusUnprocessableEntity, "accountability_denial_reason_required", "A reason is required when denying an accountability request.")
 	case errors.Is(err, ErrInvalidDecision):
 		httpapi.WriteError(response, http.StatusUnprocessableEntity, "invalid_accountability_decision", "Approval must be classified as EMERGENCY or CONSCIOUS_BREAK.")
 	case errors.Is(err, ErrWrongReviewer):

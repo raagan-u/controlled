@@ -8,6 +8,7 @@ import (
 
 	"github.com/raagan-u/controlled/internal/accountability"
 	"github.com/raagan-u/controlled/internal/identity"
+	"github.com/raagan-u/controlled/internal/walletops"
 )
 
 type fixedIDs struct{ values []string }
@@ -23,10 +24,33 @@ type fixedClock struct{ now time.Time }
 func (c fixedClock) Now() time.Time { return c.now }
 
 type memoryRepository struct {
-	users       map[string]identity.User
-	invitations map[accountability.InvitationID]accountability.Invitation
-	accepted    map[identity.UserID]bool
-	circle      accountability.Circle
+	users          map[string]identity.User
+	invitations    map[accountability.InvitationID]accountability.Invitation
+	accepted       map[identity.UserID]bool
+	circle         accountability.Circle
+	decisionReason string
+	request        accountability.Request
+}
+
+func (r *memoryRepository) CreateDebitRequest(context.Context, walletops.PendingDebit, string, string) (walletops.ReviewRequest, error) {
+	return walletops.ReviewRequest{}, nil
+}
+
+func (r *memoryRepository) RequestsForUser(context.Context, identity.UserID) ([]accountability.Request, error) {
+	return []accountability.Request{r.request}, nil
+}
+
+func (r *memoryRepository) RequestForUser(context.Context, identity.UserID, string) (accountability.Request, error) {
+	return r.request, nil
+}
+
+func (r *memoryRepository) DecideRequest(_ context.Context, _ identity.UserID, _ string, _ bool, _ string, reason, _ string, _ time.Time) error {
+	r.decisionReason = reason
+	return nil
+}
+
+func (r *memoryRepository) CancelRequest(context.Context, identity.UserID, string, time.Time) error {
+	return nil
 }
 
 func (r *memoryRepository) UserByEmail(_ context.Context, email string) (identity.User, error) {
@@ -137,5 +161,23 @@ func TestServiceRequiresAcceptedPartnersForCircle(t *testing.T) {
 	}
 	if duplicate || len(circle.Partners()) != 1 || circle.Partners()[0] != "accepted" {
 		t.Fatalf("circle = %#v, duplicate = %v", circle, duplicate)
+	}
+}
+
+func TestDenialRequiresAndPersistsReason(t *testing.T) {
+	now := time.Date(2026, time.November, 3, 12, 0, 0, 0, time.UTC)
+	repository := &memoryRepository{request: accountability.Request{ID: "request-1", Status: "DENIED"}}
+	service := accountability.NewService(&fixedIDs{values: []string{"assignment-1"}}, fixedClock{now}, repository)
+
+	_, err := service.Decide(t.Context(), "partner", "request-1", false, "", "   ")
+	if !errors.Is(err, accountability.ErrMissingDenialReason) {
+		t.Fatalf("empty denial reason error = %v", err)
+	}
+	result, err := service.Decide(t.Context(), "partner", "request-1", false, "", "  Not necessary right now  ")
+	if err != nil {
+		t.Fatalf("deny request: %v", err)
+	}
+	if result.Status != "DENIED" || repository.decisionReason != "Not necessary right now" {
+		t.Fatalf("result = %+v, persisted reason = %q", result, repository.decisionReason)
 	}
 }

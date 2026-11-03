@@ -188,12 +188,13 @@ func TestPostgresPactStakeLifecycle(t *testing.T) {
 		t.Fatalf("accountability request = %+v", storedRequest)
 	}
 	deniedRequest, err := accountabilityService.Decide(
-		ctx, partner.Provisioning.User().ID(), storedRequest.ID, false, "",
+		ctx, partner.Provisioning.User().ID(), storedRequest.ID, false, "", "The expense can wait",
 	)
 	if err != nil {
 		t.Fatalf("deny accountability request: %v", err)
 	}
-	if deniedRequest.Status != "DENIED" || deniedRequest.AssignedPartnerID != "" {
+	if deniedRequest.Status != "DENIED" || deniedRequest.AssignedPartnerID != "" ||
+		len(deniedRequest.Reviewers) != 1 || deniedRequest.Reviewers[0].DecisionReason != "The expense can wait" {
 		t.Fatalf("denied accountability request = %+v", deniedRequest)
 	}
 	timeoutAttempt, err := operations.TransferWithReason(
@@ -243,7 +244,7 @@ func TestPostgresPactStakeLifecycle(t *testing.T) {
 	}
 	decisionOnlyService := accountability.NewService(ids, clock, accountability.NewPostgresRepository(pool))
 	_, err = decisionOnlyService.Decide(
-		ctx, partner.Provisioning.User().ID(), emergencyAttempt.Request.ID, true, "EMERGENCY",
+		ctx, partner.Provisioning.User().ID(), emergencyAttempt.Request.ID, true, "EMERGENCY", "",
 	)
 	if !errors.Is(err, accountability.ErrUnavailable) {
 		t.Fatalf("interrupted emergency approval error = %v", err)
@@ -276,7 +277,7 @@ func TestPostgresPactStakeLifecycle(t *testing.T) {
 		t.Fatalf("create conscious break request: attempt=%+v err=%v", breakAttempt, err)
 	}
 	breakRequest, err := accountabilityService.Decide(
-		ctx, partner.Provisioning.User().ID(), breakAttempt.Request.ID, true, "CONSCIOUS_BREAK",
+		ctx, partner.Provisioning.User().ID(), breakAttempt.Request.ID, true, "CONSCIOUS_BREAK", "",
 	)
 	if err != nil {
 		t.Fatalf("approve conscious break: %v", err)
