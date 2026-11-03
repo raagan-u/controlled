@@ -95,7 +95,7 @@ func (h *Handler) ApproveRequest(response http.ResponseWriter, request *http.Req
 		writeError(response, err)
 		return
 	}
-	h.notifyRequestDecision(user, item)
+	h.notifyRequestDecision(user, item, true)
 	httpapi.WriteJSON(response, http.StatusOK, requestResponse(item))
 }
 
@@ -121,7 +121,7 @@ func (h *Handler) DenyRequest(response http.ResponseWriter, request *http.Reques
 		writeError(response, err)
 		return
 	}
-	h.notifyRequestDecision(user, item)
+	h.notifyRequestDecision(user, item, false)
 	httpapi.WriteJSON(response, http.StatusOK, requestResponse(item))
 }
 
@@ -255,12 +255,19 @@ func (h *Handler) respond(response http.ResponseWriter, request *http.Request, a
 	httpapi.WriteJSON(response, http.StatusOK, invitationEnvelope(invitation, false))
 }
 
-func (h *Handler) notifyRequestDecision(actor identity.User, item Request) {
+func (h *Handler) notifyRequestDecision(actor identity.User, item Request, approved bool) {
+	if !approved {
+		body := fmt.Sprintf("%s denied your $%.2f approval request", actor.DisplayName(), float64(item.AmountMinor)/100)
+		if item.Status == "ASSIGNED" {
+			body += ". It was sent to another accountability partner."
+		}
+		h.notify(item.OwnerID, notification.Message{Title: "Approval request denied", Body: body, Kind: notification.KindAccountabilityRequest, EntityID: item.ID})
+	}
 	if item.Status == "ASSIGNED" && item.AssignedPartnerID != "" && item.AssignedPartnerID != actor.ID() {
 		h.notify(item.AssignedPartnerID, notification.Message{Title: "Approval needed", Body: fmt.Sprintf("A $%.2f pact exception needs your decision", float64(item.AmountMinor)/100), Kind: notification.KindAccountabilityRequest, EntityID: item.ID})
 		return
 	}
-	if item.Status == "APPROVED" || item.Status == "DENIED" {
+	if approved && item.Status == "APPROVED" {
 		h.notify(item.OwnerID, notification.Message{Title: "Pact request " + strings.ToLower(item.Status), Body: fmt.Sprintf("Your $%.2f pact exception was %s", float64(item.AmountMinor)/100, strings.ToLower(item.Status)), Kind: notification.KindAccountabilityRequest, EntityID: item.ID})
 	}
 }
