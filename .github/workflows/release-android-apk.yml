@@ -1,0 +1,144 @@
+name: Release Android APK
+
+on:
+  push:
+    tags:
+      - "app-v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: App version, for example 1.0.0
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-android-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate app
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: app/.nvmrc
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type-check
+        run: npm run typecheck
+
+  build:
+    name: Build signed APK
+    needs: validate
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: app/.nvmrc
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Set up Expo and EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Configure release build
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = 'eas.json';
+          const config = JSON.parse(fs.readFileSync(path, 'utf8'));
+          config.build.preview = config.build.preview || {};
+          config.build.preview.distribution = 'internal';
+          config.build.preview.android = {
+            ...(config.build.preview.android || {}),
+            buildType: 'apk',
+          };
+          config.build.preview.env = {
+            ...(config.build.preview.env || {}),
+            EXPO_PUBLIC_API_URL: 'https://api.tryctrld.xyz',
+          };
+          fs.writeFileSync(path, `${JSON.stringify(config, null, 2)}\n`);
+          NODE
+
+      - name: Build APK with EAS
+        env:
+          EAS_NO_VCS: "1"
+        run: |
+          set -euo pipefail
+          eas build \
+            --platform android \
+            --profile preview \
+            --non-interactive \
+            --wait \
+            --json > eas-build.json
+          build_url="$(jq -r '.[0].artifacts.buildUrl // empty' eas-build.json)"
+          if [[ -z "${build_url}" ]]; then
+            echo "EAS did not return an APK URL." >&2
+            cat eas-build.json >&2
+            exit 1
+          fi
+          curl --fail --location --retry 3 "${build_url}" --output ctrld.apk
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ctrld-android-apk
+          path: app/ctrld.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Resolve release title
+        if: github.ref_type == 'tag'
+        id: release
+        shell: bash
+        run: echo "version=${GITHUB_REF_NAME#app-v}" >> "${GITHUB_OUTPUT}"
+
+      - name: Create or update GitHub Release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        working-directory: .
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            gh release upload "${GITHUB_REF_NAME}" app/ctrld.apk#ctrld.apk --clobber
+          else
+            gh release create "${GITHUB_REF_NAME}" \
+              app/ctrld.apk#ctrld.apk \
+              --verify-tag \
+              --title "ctrld Android ${RELEASE_VERSION}" \
+              --generate-notes
+          fi
