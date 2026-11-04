@@ -23,6 +23,7 @@ func TestPactHandlers(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.Handle("POST /v1/pacts", identity.RequireSession(sessions, http.HandlerFunc(handler.CreateDraft)))
 	mux.Handle("GET /v1/pacts", identity.RequireSession(sessions, http.HandlerFunc(handler.Pacts)))
+	mux.Handle("GET /v1/pacts/stake-recovery", identity.RequireSession(sessions, http.HandlerFunc(handler.StakeRecovery)))
 	mux.Handle("GET /v1/pacts/{id}", identity.RequireSession(sessions, http.HandlerFunc(handler.Pact)))
 	mux.Handle("PUT /v1/pacts/{id}", identity.RequireSession(sessions, http.HandlerFunc(handler.UpdateDraft)))
 	mux.Handle("POST /v1/pacts/{id}/confirm", identity.RequireSession(sessions, http.HandlerFunc(handler.Confirm)))
@@ -41,6 +42,7 @@ func TestPactHandlers(t *testing.T) {
 		{name: "cancel", method: http.MethodPost, path: "/v1/pacts/pact/cancel", body: `{}`, want: http.StatusOK},
 		{name: "detail", method: http.MethodGet, path: "/v1/pacts/pact", want: http.StatusOK},
 		{name: "list", method: http.MethodGet, path: "/v1/pacts", want: http.StatusOK},
+		{name: "stake recovery", method: http.MethodGet, path: "/v1/pacts/stake-recovery", want: http.StatusOK},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -57,6 +59,18 @@ func TestPactHandlers(t *testing.T) {
 }
 
 type stubPactCommands struct{ now time.Time }
+
+func (s stubPactCommands) StakeRecovery(_ context.Context, _ pact.UserID) (pact.StakeRecovery, error) {
+	return pact.StakeRecovery{
+		Currency: "USD", StakedMinor: 2_000, StakedPactCount: 1,
+		TotalReservedMinor: 3_000, RecoveredMinor: 1_000, CommitmentReserveMinor: 2_000,
+		ProjectedRecoveryMinor: 2_000,
+		Pacts: []pact.RecoveryPact{{
+			ID: "recovery-pact", Goal: "Stay in budget", Status: pact.StatusActive,
+			StakeMinor: 2_000, ProjectedRecoveryMinor: 2_000, EndsAt: s.now.Add(24 * time.Hour),
+		}},
+	}, nil
+}
 
 func (s stubPactCommands) CreateDraft(_ context.Context, _ string, owner pact.UserID, terms pact.Terms) (*pact.Pact, bool, error) {
 	value, err := pact.CreateDraft("pact", owner, terms, s.now)
