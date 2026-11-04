@@ -156,7 +156,7 @@ Outcomes:
 - `BROKEN`
 - `CANCELLED`
 
-Stake reservation, cancellation release, successful completion release, conscious-break movement, and recovery are ledger postings performed in the same database transaction as the pact transition. A kept pact may recover Commitment Reserve up to its own stake, but only from reserve allocations that predate its stake reservation. Recovery locks allocations oldest-first, supports partial lots, and is idempotent through the pact's terminal transition and ledger key.
+Stake reservation, cancellation release, successful completion release, conscious-break movement, and recovery are ledger postings performed in the same database transaction as the pact transition. New or edited pacts must span at least 24 hours. A kept pact may recover Commitment Reserve up to its own stake only when its immutable scheduled duration is at least seven days and only from reserve allocations that predate its stake reservation. Recovery locks allocations oldest-first, supports partial lots, and is idempotent through the pact's terminal transition and ledger key.
 
 Progress is derived from `pact_transaction_usage`. Successful applicable debits add usage once per pact. Reversed/failed withdrawal reservations mark usage reversed. Progress returns used, remaining, overage, and contributing operations.
 
@@ -217,7 +217,7 @@ Delivery covers new requests, money received, invitation responses, reviewer ass
 Maintenance runs once at startup and once per minute:
 
 - activates scheduled pacts;
-- completes ended pacts, releases their stake, and applies eligible Commitment Reserve recovery;
+- completes ended pacts, releases their stake, and applies Commitment Reserve recovery only for pacts scheduled for at least seven days;
 - cancels affected pending requests when pact periods end;
 - advances timed-out accountability assignments;
 - expires accountability requests;
