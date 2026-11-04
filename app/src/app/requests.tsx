@@ -41,9 +41,10 @@ export default function RequestsScreen() {
       {items.map((item) => {
         const incoming = item.recipient.id === user?.id;
         const other = incoming ? item.requester : item.recipient;
+        const visibleStatus = !incoming && item.status === 'AWAITING_APPROVAL' ? 'PENDING' : item.status;
         return <Pressable key={item.id} onPress={() => router.push(`/requests/${item.id}` as Href)} style={styles.card}>
           <View style={styles.cardTop}><Text style={styles.name}>{other.displayName}</Text><Text style={styles.amount}>${formatUSD(item.amountMinor)}</Text></View>
-		  <View style={styles.statusRow}><Text style={styles.direction}>{incoming ? 'Requested from you' : 'You requested'} · </Text><Text style={[styles.statusLabel, statusStyle(item.status)]}>{statusLabels[item.status]}</Text></View>
+		  <View style={styles.statusRow}><Text style={styles.direction}>{incoming ? 'Requested from you' : 'You requested'} · </Text><Text style={[styles.statusLabel, statusStyle(visibleStatus)]}>{statusLabels[visibleStatus]}</Text></View>
           {item.note ? <Text numberOfLines={1} style={styles.note}>{item.note}</Text> : null}
         </Pressable>;
       })}
