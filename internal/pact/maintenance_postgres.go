@@ -232,7 +232,7 @@ func (r *PostgresRepository) recoverCommitmentReserve(
 			UPDATE stake_allocations
 			   SET recovered_minor = recovered_minor + $2,
 			       fully_recovered_at = CASE
-			           WHEN recovered_minor + $2 = amount_minor THEN $3
+			           WHEN recovered_minor + $2 = amount_minor THEN $3::timestamptz
 			           ELSE NULL
 			       END
 			 WHERE pact_id = $1::text::uuid
