@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import type { User } from '@/api/types';
 import { apiErrorMessage, createPaymentRequest, toMinorUnits } from '@/api/wallet';
@@ -70,12 +70,13 @@ export default function RequestMoneyScreen() {
       <View style={styles.entry}>
         <View>
           <TransferTabs active="Request" />
-          <Text style={styles.requesting}>
-            requesting from{' '}
-            <Text onPress={() => setStep('recipient')} style={styles.requestingStrong}>
-              {recipient?.displayName}⌄
-            </Text>
-          </Text>
+          <View style={styles.requesting}>
+            <Text style={styles.requestingLabel}>requesting from</Text>
+            <Pressable accessibilityRole="button" onPress={() => setStep('recipient')} style={styles.requestingPicker}>
+              <Text numberOfLines={1} style={styles.requestingStrong}>{recipient?.displayName}</Text>
+              <Text style={styles.requestingChevron}>⌄</Text>
+            </Pressable>
+          </View>
         </View>
         <View style={styles.amountBlock}>
           <MoneyAmount calculation={calculation} caption={`${recipient?.displayName} can pay or decline`} onCalculationPress={() => { if (calculation) { setAmount(calculation); setDisplayAmount(calculation); setCalculation(null); } }} value={displayAmount} />
@@ -98,8 +99,11 @@ export default function RequestMoneyScreen() {
 
 const styles = StyleSheet.create({
   entry: { flex: 1, justifyContent: 'space-between' },
-  requesting: { color: colors.textMuted, fontFamily: fonts.medium, fontSize: 13, marginTop: 8, textAlign: 'center' },
-  requestingStrong: { color: colors.navy, fontFamily: fonts.bold },
+  requesting: { alignItems: 'center', flexDirection: 'row', justifyContent: 'center', marginTop: 8 },
+  requestingLabel: { color: colors.textMuted, fontFamily: fonts.medium, fontSize: 13 },
+  requestingPicker: { alignItems: 'center', flexDirection: 'row', gap: 6, marginLeft: 4, maxWidth: '60%', paddingVertical: 2 },
+  requestingStrong: { color: colors.navy, flexShrink: 1, fontFamily: fonts.bold, fontSize: 13 },
+  requestingChevron: { color: colors.navy, fontFamily: fonts.bold, fontSize: 16, lineHeight: 17, marginTop: -3 },
   amountBlock: { flex: 1, justifyContent: 'center' },
   remark: { backgroundColor: colors.surface, borderRadius: radii.md, color: colors.navy, fontFamily: fonts.medium, fontSize: 14, height: 48, marginHorizontal: 36, marginTop: 10, paddingHorizontal: 15, textAlign: 'center' },
   pendingTag: { backgroundColor: colors.orangeTint, borderRadius: 6, marginTop: 22, paddingHorizontal: 12, paddingVertical: 7 },
