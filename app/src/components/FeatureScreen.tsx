@@ -17,7 +17,7 @@ type Props = PropsWithChildren<{
 export function FeatureScreen({ children, footer, onBack, scroll = true, scrollToEnd = false, title }: Props) {
   const insets = useSafeAreaInsets();
 	const pathname = usePathname();
-	const topLevel = ['/pacts', '/requests', '/accountability', '/invitations'].includes(pathname);
+	const topLevel = ['/pacts', '/pacts/recovery', '/requests', '/accountability', '/invitations'].includes(pathname);
 	const scrollRef = useRef<ScrollViewInstance>(null);
 	const goBack = onBack ?? (() => {
 		if (topLevel) {
