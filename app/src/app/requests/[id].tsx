@@ -1,5 +1,5 @@
 import { router, type Href, useLocalSearchParams } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
 import type { PaymentRequest, User, Wallet } from '@/api/types';
@@ -9,6 +9,7 @@ import { SheetScreen } from '@/components/SheetScreen';
 import { SwipeConfirm } from '@/components/SwipeConfirm';
 import { colors, fonts, radii } from '@/theme';
 import { useActionCounts } from '@/notifications/ActionCounts';
+import { useActiveRefresh } from '@/hooks/useActiveRefresh';
 
 const initialNow = Date.now();
 
@@ -26,7 +27,8 @@ export default function RequestDetailScreen(){
   const {refresh:refreshActionCounts}=useActionCounts();
   const {id}=useLocalSearchParams<{id:string}>();const requestID=typeof id==='string'?id:'';
   const [item,setItem]=useState<PaymentRequest|null>(null);const [user,setUser]=useState<User|null>(null);const [wallet,setWallet]=useState<Wallet|null>(null);const [now,setNow]=useState(initialNow);const [loading,setLoading]=useState(true);const [acting,setActing]=useState(false);const [error,setError]=useState('');
-  useEffect(()=>{if(!requestID)return;let active=true;void Promise.all([getPaymentRequest(requestID),getCurrentUser(),getWallet().catch(()=>null)]).then(([next,current,currentWallet])=>{if(active){setItem(next);setUser(current.user);setWallet(currentWallet?.wallet??null)}}).catch((cause)=>{if(active)setError(apiErrorMessage(cause))}).finally(()=>{if(active)setLoading(false)});return()=>{active=false}},[requestID]);
+  const load=useCallback(async()=>{if(!requestID)return;try{const [next,current,currentWallet]=await Promise.all([getPaymentRequest(requestID),getCurrentUser(),getWallet().catch(()=>null)]);setItem(next);setUser(current.user);setWallet(currentWallet?.wallet??null);setError('')}catch(cause){setError(apiErrorMessage(cause))}finally{setLoading(false)}},[requestID]);
+  useActiveRefresh(load);
   useEffect(()=>{const timer=setInterval(()=>setNow(Date.now()),30_000);return()=>clearInterval(timer)},[]);
   const action=async(kind:'pay'|'decline'|'cancel')=>{if(!item||acting)return;setActing(true);setError('');try{if(kind==='pay'){const result=await payPaymentRequest(item.id);setItem(result.paymentRequest);const nextWallet=await getWallet().catch(()=>null);if(nextWallet)setWallet(nextWallet.wallet)}else if(kind==='decline'){setItem(await declinePaymentRequest(item.id))}else{setItem(await cancelPaymentRequest(item.id))}await refreshActionCounts()}catch(cause){setError(apiErrorMessage(cause))}finally{setActing(false)}};
   if(loading&&!item)return <SheetScreen title="request"><ActivityIndicator color={colors.blue} style={styles.loading}/></SheetScreen>;

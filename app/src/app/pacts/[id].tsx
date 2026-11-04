@@ -11,6 +11,7 @@ import { cancelPact, getCircles, getPact, reservePactStake } from '@/api/pacts';
 import { apiErrorMessage, formatUSD, getRecipients, getWallet } from '@/api/wallet';
 import type { AccountabilityCircle, Pact, User, Wallet } from '@/api/types';
 import { colors, fonts, radii } from '@/theme';
+import { useActiveRefresh } from '@/hooks/useActiveRefresh';
 
 function shortDate(value: string) { return new Date(value).toLocaleString('en-US', { day: 'numeric', hour: 'numeric', minute: '2-digit', month: 'short' }); }
 
@@ -23,11 +24,15 @@ export default function PactDetailScreen() {
       setError('');
       const [value, walletValue, circles, recipients] = await Promise.all([getPact(id), getWallet(), getCircles(), getRecipients()]);
       setPact(value); setWallet(walletValue.wallet); setCircle(circles.find((item) => item.id === value.terms.accountabilityCircleId) ?? null); setUsers(recipients.users);
-      setGuidanceLoading(true); void getPactInsight(id).then(setGuidance).catch(() => setGuidance(null)).finally(() => setGuidanceLoading(false));
     } catch (value) { setError(apiErrorMessage(value)); }
     finally { setLoading(false); }
   }, [id]);
-  useFocusEffect(useCallback(() => { void load(); }, [load]));
+  useActiveRefresh(load);
+  useFocusEffect(useCallback(() => {
+    if (!id) return;
+    setGuidanceLoading(true);
+    void getPactInsight(id).then(setGuidance).catch(() => setGuidance(null)).finally(() => setGuidanceLoading(false));
+  }, [id]));
   const people = useMemo(() => new Map(users.map((user) => [user.id, user])), [users]);
   const reserve = async () => {
     if (!pact) return; setBusy(true); setError('');

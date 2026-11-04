@@ -1,11 +1,12 @@
 import { router, type Href } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import type { PaymentRequest, User } from '@/api/types';
 import { apiErrorMessage, formatUSD, getCurrentUser, getPaymentRequests } from '@/api/wallet';
 import { SheetScreen } from '@/components/SheetScreen';
 import { colors, fonts, radii } from '@/theme';
+import { useActiveRefresh } from '@/hooks/useActiveRefresh';
 
 const statusLabels: Record<PaymentRequest['status'], string> = { PENDING: 'Pending', PROCESSING: 'Processing', AWAITING_APPROVAL: 'Awaiting approval', PAID: 'Paid', DECLINED: 'Declined', CANCELLED: 'Cancelled', EXPIRED: 'Expired' };
 function statusStyle(status: PaymentRequest['status']) {
@@ -29,14 +30,7 @@ export default function RequestsScreen() {
     } catch (cause) { setError(apiErrorMessage(cause)); }
     finally { setLoading(false); }
   }, []);
-  useEffect(() => {
-	let active = true;
-	void Promise.all([getPaymentRequests(), getCurrentUser()])
-	  .then(([requests, current]) => { if (active) { setItems(requests); setUser(current.user); } })
-	  .catch((cause) => { if (active) setError(apiErrorMessage(cause)); })
-	  .finally(() => { if (active) setLoading(false); });
-	return () => { active = false; };
-  }, []);
+  useActiveRefresh(load);
 
   return <SheetScreen title="requests">
     <View style={styles.heading}><View><Text style={styles.title}>Money requests</Text><Text style={styles.subtitle}>Incoming and sent requests</Text></View><Pressable onPress={() => router.push('/request-money' as Href)} style={styles.newButton}><Text style={styles.newText}>＋ New</Text></Pressable></View>
