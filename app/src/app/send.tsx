@@ -14,6 +14,7 @@ import { TransferTabs } from '@/components/TransferTabs';
 import { ShakeOnError } from '@/motion';
 import { colors, fonts, radii } from '@/theme';
 import { APIError } from '@/api/client';
+import { useActiveRefresh } from '@/hooks/useActiveRefresh';
 
 type Step = 'recipient' | 'amount' | 'reason' | 'success' | 'review';
 
@@ -55,7 +56,8 @@ export default function SendScreen() {
 		amountAttentionTimer.current = setTimeout(() => setAmountAttention(false), 650);
 	}, [amountMinor]);
 
-  useEffect(() => { void getWallet().then(({ wallet }) => setAvailable(wallet.balances.available.amountMinor)).catch((cause) => setError(apiErrorMessage(cause))); }, []);
+  const refreshWallet = useCallback(async () => { try { const { wallet } = await getWallet(); setAvailable(wallet.balances.available.amountMinor); } catch (cause) { setError(apiErrorMessage(cause)); } }, []);
+  useActiveRefresh(refreshWallet);
   useEffect(() => () => { if (amountAttentionTimer.current) clearTimeout(amountAttentionTimer.current); }, []);
 
 	const runPriceCheck = useCallback(async (forcePurchase = false) => {

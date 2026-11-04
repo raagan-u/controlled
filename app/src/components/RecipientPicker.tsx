@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { apiErrorMessage, getRecipients } from '@/api/wallet';
 import type { User } from '@/api/types';
 import { ContactRow } from '@/components/ContactRow';
 import { colors, fonts, radii } from '@/theme';
+import { useActiveRefresh } from '@/hooks/useActiveRefresh';
 
 type Props = {
   initialQuery?: string;
@@ -25,6 +26,17 @@ export function RecipientPicker({ initialQuery = '', onSelect }: Props) {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  const refresh = useCallback(async () => {
+    try {
+      const { users: matches } = await getRecipients(query);
+      setUsers(matches);
+      setError('');
+    } catch {
+      // Preserve the current matches during a transient background refresh failure.
+    }
+  }, [query]);
+  useActiveRefresh(refresh);
 
   useEffect(() => {
     let active = true;

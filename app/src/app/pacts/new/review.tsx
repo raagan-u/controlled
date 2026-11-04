@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { router, type Href } from 'expo-router';
 import { FeatureScreen } from '@/components/FeatureScreen';
@@ -8,11 +8,14 @@ import { clearLocalPactDraft, confirmPact, createPact, getCircles, loadLocalPact
 import { apiErrorMessage, formatUSD, getRecipients, getWallet } from '@/api/wallet';
 import type { AccountabilityCircle, User } from '@/api/types';
 import { colors, fonts } from '@/theme';
+import { useActiveRefresh } from '@/hooks/useActiveRefresh';
 
 function date(value?: string) { return value ? new Date(value).toLocaleString('en-US', { day: 'numeric', hour: 'numeric', minute: '2-digit', month: 'short' }) : '—'; }
 export default function ReviewPactScreen() {
   const [draft, setDraft] = useState<LocalPactDraft | null>(null); const [circle, setCircle] = useState<AccountabilityCircle | null>(null); const [users, setUsers] = useState<User[]>([]); const [available, setAvailable] = useState(0); const [busy, setBusy] = useState(false); const [error, setError] = useState('');
   useEffect(() => { void Promise.all([loadLocalPactDraft(), getCircles(), getRecipients(), getWallet()]).then(([saved, circles, recipients, wallet]) => { setDraft(saved); setCircle(circles.find((item) => item.id === saved?.accountabilityCircleId) ?? null); setUsers(recipients.users); setAvailable(wallet.wallet.balances.available.amountMinor); }).catch((value) => setError(apiErrorMessage(value))); }, []);
+  const refreshContext = useCallback(async () => { try { const [circles, recipients, wallet] = await Promise.all([getCircles(), getRecipients(), getWallet()]); setCircle(circles.find((item) => item.id === draft?.accountabilityCircleId) ?? null); setUsers(recipients.users); setAvailable(wallet.wallet.balances.available.amountMinor); } catch (value) { setError(apiErrorMessage(value)); } }, [draft?.accountabilityCircleId]);
+  useActiveRefresh(refreshContext);
   const people = useMemo(() => new Map(users.map((user) => [user.id, user])), [users]);
   const confirm = async () => {
     if (!draft?.goal || !draft.intent || !draft.spendingLimitMinor || !draft.stakeMinor || !draft.startsAt || !draft.endsAt || !draft.accountabilityCircleId) return;

@@ -1,15 +1,18 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
-import { router, type Href, useFocusEffect } from 'expo-router';
+import { router, type Href } from 'expo-router';
 import { FeatureScreen } from '@/components/FeatureScreen';
 import { getCircles, loadLocalPactDraft, saveLocalPactDraft } from '@/api/pacts';
 import { getRecipients } from '@/api/wallet';
 import type { AccountabilityCircle, User } from '@/api/types';
 import { colors, fonts, radii } from '@/theme';
+import { useActiveRefresh } from '@/hooks/useActiveRefresh';
 
 export default function PactCircleScreen() {
   const [circles, setCircles] = useState<AccountabilityCircle[]>([]); const [users, setUsers] = useState<User[]>([]); const [selected, setSelected] = useState(''); const [draft, setDraft] = useState<Record<string, unknown>>({}); const [loading, setLoading] = useState(true);
-  useFocusEffect(useCallback(() => { void Promise.all([getCircles(), getRecipients(), loadLocalPactDraft()]).then(([items, recipients, saved]) => { setCircles(items); setUsers(recipients.users); if (saved) { const { updatedAt: _updatedAt, ...rest } = saved; setDraft(rest); setSelected(saved.accountabilityCircleId ?? ''); } }).finally(() => setLoading(false)); }, []));
+  useEffect(() => { void loadLocalPactDraft().then((saved) => { if (saved) { const { updatedAt: _updatedAt, ...rest } = saved; setDraft(rest); setSelected(saved.accountabilityCircleId ?? ''); } }); }, []);
+  const load = useCallback(async () => { const [items, recipients] = await Promise.all([getCircles(), getRecipients()]); setCircles(items); setUsers(recipients.users); setLoading(false); }, []);
+  useActiveRefresh(load);
   const people = new Map(users.map((user) => [user.id, user]));
   const persist = async () => saveLocalPactDraft({ ...draft, accountabilityCircleId: selected });
   return <FeatureScreen footer={<Pressable disabled={!selected} onPress={() => void persist().then(() => router.push('/pacts/new/review' as Href))} style={[styles.button, !selected && styles.disabled]}><Text style={styles.buttonText}>Continue</Text></Pressable>} title="New pact">

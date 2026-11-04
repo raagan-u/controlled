@@ -1,5 +1,5 @@
 import { router, type Href } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import * as Linking from 'expo-linking';
 import type { FundingIntent } from '@/api/types';
@@ -12,6 +12,7 @@ import { ResultState } from '@/components/ResultState';
 import { SheetScreen } from '@/components/SheetScreen';
 import { SwipeConfirm } from '@/components/SwipeConfirm';
 import { colors, fonts, radii } from '@/theme';
+import { useActiveRefresh } from '@/hooks/useActiveRefresh';
 
 type Step = 'amount' | 'paypal' | 'processing' | 'success' | 'failed';
 
@@ -26,7 +27,8 @@ export default function FundScreen() {
   const [submitting, setSubmitting] = useState(false);
   const valid = Number(amount) > 0 && toMinorUnits(amount) > 0;
 
-  useEffect(() => { void getWallet().then(({ wallet }) => setAvailable(wallet.balances.available.amountMinor)).catch((cause) => setError(apiErrorMessage(cause))); }, []);
+  const refreshWallet = useCallback(async () => { try { const { wallet } = await getWallet(); setAvailable(wallet.balances.available.amountMinor); } catch (cause) { setError(apiErrorMessage(cause)); } }, []);
+  useActiveRefresh(refreshWallet);
 
   async function begin() {
     if (!valid || submitting) return;

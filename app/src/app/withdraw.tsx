@@ -1,5 +1,5 @@
 import { router, type Href } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { StyleSheet, Text, TextInput, View } from 'react-native';
 import type { Withdrawal } from '@/api/types';
 import { apiErrorMessage, createWithdrawal, formatUSD, getCurrentUser, getWallet, reconcileWithdrawal, toMinorUnits } from '@/api/wallet';
@@ -12,6 +12,7 @@ import { SheetScreen } from '@/components/SheetScreen';
 import { SwipeConfirm } from '@/components/SwipeConfirm';
 import { colors, fonts, radii } from '@/theme';
 import { APIError } from '@/api/client';
+import { useActiveRefresh } from '@/hooks/useActiveRefresh';
 
 type Step = 'amount' | 'reason' | 'processing' | 'success' | 'failed' | 'review';
 
@@ -32,7 +33,8 @@ export default function WithdrawScreen() {
   const over = available !== null && amountMinor > available;
   const valid = amountMinor > 0 && !over;
 
-  useEffect(() => { void Promise.all([getWallet(), getCurrentUser()]).then(([{ wallet }, { user }]) => { setAvailable(wallet.balances.available.amountMinor); setDestinationEmail(user.email); setDestination(`PayPal · ${user.email}`); }).catch((cause) => setError(apiErrorMessage(cause))); }, []);
+  const refreshWallet = useCallback(async () => { try { const [{ wallet }, { user }] = await Promise.all([getWallet(), getCurrentUser()]); setAvailable(wallet.balances.available.amountMinor); setDestinationEmail(user.email); setDestination(`PayPal · ${user.email}`); } catch (cause) { setError(apiErrorMessage(cause)); } }, []);
+  useActiveRefresh(refreshWallet);
 
   async function withdraw() {
     if (!valid || submitting) return;
