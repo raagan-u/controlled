@@ -12,7 +12,9 @@ type RecoveryPact struct {
 	Status                 Status
 	StakeMinor             int64
 	ProjectedRecoveryMinor int64
+	StartsAt               time.Time
 	EndsAt                 time.Time
+	RecoveryEligible       bool
 }
 
 type StakeRecovery struct {
@@ -78,39 +80,37 @@ func (r *PostgresRepository) StakeRecovery(ctx context.Context, ownerID UserID) 
 	if err != nil {
 		return StakeRecovery{}, fmt.Errorf("read commitment recovery summary: %w", err)
 	}
-	if summary.CommitmentReserveMinor == 0 {
-		return summary, nil
-	}
-
-	lotRows, err := r.pool.Query(ctx, `
-		SELECT amount_minor - recovered_minor, resolved_at
-		  FROM stake_allocations
-		 WHERE owner_id = $1
-		   AND status = 'COMMITMENT_RESERVED'
-		   AND recovered_minor < amount_minor
-		 ORDER BY resolved_at, pact_id
-	`, owner)
-	if err != nil {
-		return StakeRecovery{}, fmt.Errorf("read commitment recovery queue: %w", err)
-	}
 	var lots []recoveryLot
-	for lotRows.Next() {
-		var lot recoveryLot
-		if err := lotRows.Scan(&lot.remainingMinor, &lot.resolvedAt); err != nil {
+	if summary.CommitmentReserveMinor > 0 {
+		lotRows, err := r.pool.Query(ctx, `
+			SELECT amount_minor - recovered_minor, resolved_at
+			  FROM stake_allocations
+			 WHERE owner_id = $1
+			   AND status = 'COMMITMENT_RESERVED'
+			   AND recovered_minor < amount_minor
+			 ORDER BY resolved_at, pact_id
+		`, owner)
+		if err != nil {
+			return StakeRecovery{}, fmt.Errorf("read commitment recovery queue: %w", err)
+		}
+		for lotRows.Next() {
+			var lot recoveryLot
+			if err := lotRows.Scan(&lot.remainingMinor, &lot.resolvedAt); err != nil {
+				lotRows.Close()
+				return StakeRecovery{}, err
+			}
+			lots = append(lots, lot)
+		}
+		if err := lotRows.Err(); err != nil {
 			lotRows.Close()
 			return StakeRecovery{}, err
 		}
-		lots = append(lots, lot)
-	}
-	if err := lotRows.Err(); err != nil {
 		lotRows.Close()
-		return StakeRecovery{}, err
 	}
-	lotRows.Close()
 
 	pactRows, err := r.pool.Query(ctx, `
 		SELECT pact.id::text, pact.goal, pact.status, allocation.amount_minor,
-		       pact.ends_at, allocation.created_at
+		       pact.starts_at, pact.ends_at, allocation.created_at
 		  FROM stake_allocations AS allocation
 		  JOIN pacts AS pact ON pact.id = allocation.pact_id
 		 WHERE allocation.owner_id = $1
@@ -125,8 +125,13 @@ func (r *PostgresRepository) StakeRecovery(ctx context.Context, ownerID UserID) 
 	for pactRows.Next() {
 		var item RecoveryPact
 		var stakeCreatedAt time.Time
-		if err := pactRows.Scan(&item.ID, &item.Goal, &item.Status, &item.StakeMinor, &item.EndsAt, &stakeCreatedAt); err != nil {
+		if err := pactRows.Scan(&item.ID, &item.Goal, &item.Status, &item.StakeMinor, &item.StartsAt, &item.EndsAt, &stakeCreatedAt); err != nil {
 			return StakeRecovery{}, err
+		}
+		item.RecoveryEligible = item.EndsAt.Sub(item.StartsAt) >= MinimumRecoveryDuration
+		if !item.RecoveryEligible {
+			summary.Pacts = append(summary.Pacts, item)
+			continue
 		}
 		remainingStake := item.StakeMinor
 		for index := range lots {
@@ -141,10 +146,8 @@ func (r *PostgresRepository) StakeRecovery(ctx context.Context, ownerID UserID) 
 			remainingStake -= amount
 			lots[index].remainingMinor -= amount
 		}
-		if item.ProjectedRecoveryMinor > 0 {
-			summary.ProjectedRecoveryMinor += item.ProjectedRecoveryMinor
-			summary.Pacts = append(summary.Pacts, item)
-		}
+		summary.ProjectedRecoveryMinor += item.ProjectedRecoveryMinor
+		summary.Pacts = append(summary.Pacts, item)
 	}
 	if err := pactRows.Err(); err != nil {
 		return StakeRecovery{}, err

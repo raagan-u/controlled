@@ -50,7 +50,8 @@ func (h *Handler) StakeRecovery(response http.ResponseWriter, request *http.Requ
 		items = append(items, recoveryPactAPIResponse{
 			ID: string(item.ID), Goal: item.Goal, Status: item.Status,
 			StakeMinor: item.StakeMinor, ProjectedRecoveryMinor: item.ProjectedRecoveryMinor,
-			EndsAt: item.EndsAt,
+			StartsAt: item.StartsAt, EndsAt: item.EndsAt,
+			RecoveryEligible: item.RecoveryEligible,
 		})
 	}
 	httpapi.WriteJSON(response, http.StatusOK, stakeRecoveryAPIResponse{
@@ -67,7 +68,9 @@ type recoveryPactAPIResponse struct {
 	Status                 Status    `json:"status"`
 	StakeMinor             int64     `json:"stakeMinor"`
 	ProjectedRecoveryMinor int64     `json:"projectedRecoveryMinor"`
+	StartsAt               time.Time `json:"startsAt"`
 	EndsAt                 time.Time `json:"endsAt"`
+	RecoveryEligible       bool      `json:"recoveryEligible"`
 }
 
 type stakeRecoveryAPIResponse struct {
@@ -374,6 +377,8 @@ func writePactError(response http.ResponseWriter, err error) {
 		httpapi.WriteError(response, http.StatusBadRequest, "invalid_idempotency_key", "A non-empty Idempotency-Key header is required.")
 	case errors.Is(err, ErrPactNotFound):
 		httpapi.WriteError(response, http.StatusNotFound, "pact_not_found", "The pact was not found.")
+	case errors.Is(err, ErrPactDurationTooShort):
+		httpapi.WriteError(response, http.StatusUnprocessableEntity, "pact_duration_too_short", "A pact must last at least 24 hours.")
 	case errors.Is(err, ErrInvalidMoney), errors.Is(err, ErrCurrencyMismatch), errors.Is(err, ErrInvalidPeriod),
 		errors.Is(err, ErrMissingGoal), errors.Is(err, ErrMissingIntent), errors.Is(err, ErrMissingAccountabilityCircle),
 		errors.Is(err, ErrInvalidBreakConsequence):

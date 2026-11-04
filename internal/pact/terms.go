@@ -5,6 +5,11 @@ import (
 	"time"
 )
 
+const (
+	MinimumPactDuration     = 24 * time.Hour
+	MinimumRecoveryDuration = 7 * 24 * time.Hour
+)
+
 type (
 	PactID     string
 	UserID     string
@@ -100,6 +105,14 @@ func (t Terms) StartsAt() time.Time {
 
 func (t Terms) EndsAt() time.Time {
 	return t.endsAt
+}
+
+func (t Terms) Duration() time.Duration {
+	return t.endsAt.Sub(t.startsAt)
+}
+
+func (t Terms) RecoveryEligible() bool {
+	return t.Duration() >= MinimumRecoveryDuration
 }
 
 func (t Terms) AccountabilityCircleID() CircleID {

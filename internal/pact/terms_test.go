@@ -151,3 +151,33 @@ func mustMoney(t *testing.T, amountMinor int64, currency string) pact.Money {
 
 	return money
 }
+
+func TestTermsRecoveryEligibility(t *testing.T) {
+	t.Parallel()
+
+	start := time.Date(2026, time.October, 20, 0, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name     string
+		duration time.Duration
+		want     bool
+	}{
+		{name: "below seven days", duration: 7*24*time.Hour - time.Nanosecond, want: false},
+		{name: "exactly seven days", duration: 7 * 24 * time.Hour, want: true},
+		{name: "over seven days", duration: 8 * 24 * time.Hour, want: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			terms, err := pact.NewTerms(
+				"Keep enough money for rent", "Reduce discretionary spending", mustMoney(t, 15_000, "USD"),
+				mustMoney(t, 2_500, "USD"), start, start.Add(test.duration), "circle-1",
+				pact.BreakConsequenceCommitmentReserve,
+			)
+			if err != nil {
+				t.Fatalf("NewTerms() error = %v", err)
+			}
+			if got := terms.RecoveryEligible(); got != test.want {
+				t.Fatalf("RecoveryEligible() = %v, want %v", got, test.want)
+			}
+		})
+	}
+}

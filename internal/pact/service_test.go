@@ -2,6 +2,7 @@ package pact_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -86,7 +87,7 @@ func TestPactServiceReservesStakeAndCancelsScheduledPact(t *testing.T) {
 	now := time.Date(2026, time.October, 30, 12, 0, 0, 0, time.UTC)
 	repository := &pactRepository{}
 	service := pact.NewService(&sequencePactIDs{values: []string{"pact-1", "journal", "vault", "release"}}, pactClock{now}, repository)
-	draft, _, err := service.CreateDraft(t.Context(), "create", "owner", serviceTerms(t, now.Add(time.Hour), now.Add(24*time.Hour)))
+	draft, _, err := service.CreateDraft(t.Context(), "create", "owner", serviceTerms(t, now.Add(time.Hour), now.Add(25*time.Hour)))
 	if err != nil {
 		t.Fatalf("create draft: %v", err)
 	}
@@ -106,6 +107,18 @@ func TestPactServiceReservesStakeAndCancelsScheduledPact(t *testing.T) {
 	}
 	if duplicate || cancelled.Status() != pact.StatusCancelled {
 		t.Fatalf("status = %s, duplicate = %v", cancelled.Status(), duplicate)
+	}
+}
+
+func TestPactServiceRejectsDurationBelowTwentyFourHours(t *testing.T) {
+	now := time.Date(2026, time.October, 30, 12, 0, 0, 0, time.UTC)
+	repository := &pactRepository{}
+	service := pact.NewService(pactIDs{"pact-1"}, pactClock{now}, repository)
+	terms := serviceTerms(t, now.Add(time.Hour), now.Add(25*time.Hour-time.Nanosecond))
+
+	_, _, err := service.CreateDraft(t.Context(), "create", "owner", terms)
+	if !errors.Is(err, pact.ErrPactDurationTooShort) {
+		t.Fatalf("CreateDraft() error = %v, want %v", err, pact.ErrPactDurationTooShort)
 	}
 }
 
