@@ -1,6 +1,6 @@
-import { useEffect, useRef, type PropsWithChildren, type ReactNode } from 'react';
-import { router, usePathname } from 'expo-router';
-import { Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, type ScrollViewInstance, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useRef, type PropsWithChildren, type ReactNode } from 'react';
+import { router, useFocusEffect, usePathname } from 'expo-router';
+import { BackHandler, Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, type ScrollViewInstance, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, fonts, radii } from '@/theme';
 import { AuthenticatedMenu } from './AuthenticatedMenu';
@@ -17,15 +17,21 @@ type Props = PropsWithChildren<{
 export function FeatureScreen({ children, footer, onBack, scroll = true, scrollToEnd = false, title }: Props) {
   const insets = useSafeAreaInsets();
 	const pathname = usePathname();
+	const topLevel = ['/pacts', '/requests', '/accountability', '/invitations'].includes(pathname);
 	const scrollRef = useRef<ScrollViewInstance>(null);
 	const goBack = onBack ?? (() => {
-		if (['/pacts', '/requests', '/accountability', '/invitations'].includes(pathname)) {
+		if (topLevel) {
 			router.replace('/home');
 			return;
 		}
 		if (router.canGoBack()) router.back();
 		else router.replace('/home');
 	});
+	useFocusEffect(useCallback(() => {
+		if (!topLevel) return;
+		const subscription = BackHandler.addEventListener('hardwareBackPress', () => { router.replace('/home'); return true; });
+		return () => subscription.remove();
+	}, [topLevel]));
 	useEffect(() => {
 		if (!scrollToEnd) return;
 		const revealBottom = () => requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: true }));
