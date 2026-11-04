@@ -1,11 +1,12 @@
 import { useCallback, useState } from 'react';
-import { useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import type { Transaction, Wallet } from '@/api/types';
 import { apiErrorMessage, getTransaction, getWallet } from '@/api/wallet';
 import { SheetScreen } from '@/components/SheetScreen';
 import { transactionToActivity } from '@/data/activity';
 import { colors, fonts, radii } from '@/theme';
+import { useActiveRefresh } from '@/hooks/useActiveRefresh';
 
 export default function TransactionDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -21,7 +22,7 @@ export default function TransactionDetailScreen() {
     } catch (cause) { setError(apiErrorMessage(cause)); }
   }, [id]);
 
-  useFocusEffect(useCallback(() => { void load(); }, [load]));
+  useActiveRefresh(load);
 
   if (!data && !error) return <SheetScreen><ActivityIndicator color={colors.blue} style={styles.loader} /></SheetScreen>;
   if (!data) return <SheetScreen><Pressable onPress={() => void load()} style={styles.error}><Text style={styles.title}>Couldn’t load transaction</Text><Text style={styles.errorCopy}>{error}{'\n'}Tap to try again.</Text></Pressable></SheetScreen>;

@@ -23,11 +23,14 @@ export function useActiveRefresh(refresh: () => void | Promise<void>, intervalMs
         return;
       }
       running = true;
-      do {
-        queued = false;
-        await refreshRef.current();
-      } while (mounted && queued);
-      running = false;
+      try {
+        do {
+          queued = false;
+          try { await refreshRef.current(); } catch { /* Screens surface errors when useful; polling must keep running. */ }
+        } while (mounted && queued);
+      } finally {
+        running = false;
+      }
     };
 
     void run();

@@ -1,17 +1,18 @@
 import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import { router, useFocusEffect } from 'expo-router';
+import { router } from 'expo-router';
 import { FeatureScreen } from '@/components/FeatureScreen';
 import { InfoBox } from '@/components/InfoBox';
 import { createCircle, getInvitations, invitePartner } from '@/api/pacts';
 import { apiErrorMessage, getCurrentUser, getRecipients } from '@/api/wallet';
 import type { AccountabilityInvitation, User } from '@/api/types';
 import { colors, fonts, radii } from '@/theme';
+import { useActiveRefresh } from '@/hooks/useActiveRefresh';
 
 export default function CreateCircleScreen() {
   const [name, setName] = useState(''); const [query, setQuery] = useState(''); const [users, setUsers] = useState<User[]>([]); const [invitations, setInvitations] = useState<AccountabilityInvitation[]>([]); const [currentId, setCurrentId] = useState(''); const [selected, setSelected] = useState<string[]>([]); const [loading, setLoading] = useState(true); const [busy, setBusy] = useState(''); const [error, setError] = useState('');
-  const load = async () => { try { const [recipients, invites, current] = await Promise.all([getRecipients(), getInvitations(), getCurrentUser()]); setUsers(recipients.users); setInvitations(invites); setCurrentId(current.user.id); } catch (value) { setError(apiErrorMessage(value)); } finally { setLoading(false); } };
-  useFocusEffect(useCallback(() => { void load(); }, []));
+  const load = useCallback(async () => { try { const [recipients, invites, current] = await Promise.all([getRecipients(), getInvitations(), getCurrentUser()]); setUsers(recipients.users); setInvitations(invites); setCurrentId(current.user.id); } catch (value) { setError(apiErrorMessage(value)); } finally { setLoading(false); } }, []);
+  useActiveRefresh(load);
   const statusByPartner = useMemo(() => new Map(invitations.filter((invite) => invite.ownerId === currentId).map((invite) => [invite.partnerId, invite.status])), [currentId, invitations]);
   const filtered = users.filter((user) => !query.trim() || `${user.displayName} ${user.ctrldId} ${user.email}`.toLowerCase().includes(query.trim().toLowerCase()));
   const invite = async (user: User) => { setBusy(user.id); setError(''); try { await invitePartner(user.email); await load(); } catch (value) { setError(apiErrorMessage(value)); } finally { setBusy(''); } };
