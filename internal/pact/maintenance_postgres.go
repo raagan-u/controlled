@@ -132,11 +132,13 @@ func (r *PostgresRepository) CompleteDue(
 	if err != nil {
 		return fmt.Errorf("release completed pact stake: %w", err)
 	}
-	if err := r.recoverCommitmentReserve(
-		ctx, tx, pactID, ownerID, currency, amountMinor,
-		stakeCreatedAt, recoveryJournalID, now,
-	); err != nil {
-		return err
+	if current.Terms().RecoveryEligible() {
+		if err := r.recoverCommitmentReserve(
+			ctx, tx, pactID, ownerID, currency, amountMinor,
+			stakeCreatedAt, recoveryJournalID, now,
+		); err != nil {
+			return err
+		}
 	}
 	outcome := OutcomeKept
 	if current.EmergencyCount() > 0 {

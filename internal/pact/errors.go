@@ -6,6 +6,7 @@ var (
 	ErrInvalidMoney                = errors.New("money must have a positive amount and a three-letter uppercase currency")
 	ErrCurrencyMismatch            = errors.New("spending limit and stake must use the same currency")
 	ErrInvalidPeriod               = errors.New("pact period must have a start before its end")
+	ErrPactDurationTooShort        = errors.New("pact duration must be at least 24 hours")
 	ErrMissingGoal                 = errors.New("financial goal is required")
 	ErrMissingIntent               = errors.New("spending intent is required")
 	ErrMissingAccountabilityCircle = errors.New("accountability circle is required")

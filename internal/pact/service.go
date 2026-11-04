@@ -126,6 +126,9 @@ func (s *Service) CreateDraft(
 	if err := s.ready(); err != nil {
 		return nil, false, err
 	}
+	if terms.Duration() < MinimumPactDuration {
+		return nil, false, ErrPactDurationTooShort
+	}
 	key := strings.TrimSpace(idempotencyKey)
 	if key == "" {
 		return nil, false, ErrIdempotencyKey
@@ -147,6 +150,9 @@ func (s *Service) CreateDraft(
 func (s *Service) UpdateDraft(ctx context.Context, ownerID UserID, id PactID, terms Terms) (*Pact, error) {
 	if err := s.ready(); err != nil {
 		return nil, err
+	}
+	if terms.Duration() < MinimumPactDuration {
+		return nil, ErrPactDurationTooShort
 	}
 	if _, err := s.repository.CircleFacts(ctx, ownerID, terms.AccountabilityCircleID()); err != nil {
 		return nil, err

@@ -297,7 +297,7 @@ func TestPostgresPactStakeLifecycle(t *testing.T) {
 		t.Fatalf("balances after conscious break = %+v", brokenWallet.Balances())
 	}
 	lifecycleStart := now.Add(2 * time.Hour)
-	lifecycleEnd := now.Add(3 * time.Hour)
+	lifecycleEnd := lifecycleStart.Add(7 * 24 * time.Hour)
 	lifecycleStake, _ := pact.NewMoney(1_000, "USD")
 	lifecycleTerms, _ := pact.NewTerms(
 		"Lifecycle pact", "Verify automatic transitions", limit, lifecycleStake,
@@ -352,7 +352,7 @@ func TestPostgresPactStakeLifecycle(t *testing.T) {
 	largeStake, _ := pact.NewMoney(15_000, "USD")
 	insufficientTerms, _ := pact.NewTerms(
 		"Too large", "Verify atomic failure", limit, largeStake,
-		now.Add(time.Hour), now.Add(24*time.Hour), pact.CircleID(circle.ID()),
+		now.Add(time.Hour), now.Add(25*time.Hour), pact.CircleID(circle.ID()),
 		pact.BreakConsequenceCommitmentReserve,
 	)
 	insufficient, _, err := pactService.CreateDraft(ctx, "pact-insufficient:"+runID, draft.OwnerID(), insufficientTerms)
