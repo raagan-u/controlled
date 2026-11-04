@@ -64,33 +64,31 @@ export function AmountKeypad({ onCalculationChange, onChange, onDisplayChange, v
       lastEmitted.current = '';
       onChange('');
     }
-    const timer = setTimeout(() => {
-      if (!expression) {
-        lastEmitted.current = '';
-        onChange('');
-        onDisplayChange?.('');
-        return;
-      }
-      const result = evaluate(expression);
-      if (result === null) return;
-      const formatted = formatResult(result);
-      if (isCalculation) {
-        onCalculationChange?.(formatted);
-        return;
-      }
-      lastEmitted.current = formatted;
-      onChange(formatted);
-      onDisplayChange?.(formatted);
-    }, 550);
-    return () => clearTimeout(timer);
+    if (!expression) {
+      lastEmitted.current = '';
+      onChange('');
+      onDisplayChange?.('');
+      return;
+    }
+    const result = evaluate(expression);
+    if (result === null) return;
+    const formatted = formatResult(result);
+    if (isCalculation) {
+      onCalculationChange?.(formatted);
+      return;
+    }
+    lastEmitted.current = formatted;
+    onChange(formatted);
+    onDisplayChange?.(formatted);
   }, [expression, onCalculationChange, onChange, onDisplayChange]);
 
   const pressNumber = (key: string) => {
     setExpression((current) => {
-      const base = current;
+      let base = current;
       const currentNumber = base.split(/[+−×÷]/).at(-1) ?? '';
       if (key === '.' && currentNumber.includes('.')) return current;
       if (key !== '.' && (currentNumber.split('.')[1]?.length ?? 0) >= 2) return current;
+      if (key !== '.' && currentNumber === '0') base = base.slice(0, -1);
       const next = `${base}${key === '.' && base === '' ? '0.' : key}`;
       return next.length <= 18 ? next : current;
     });
