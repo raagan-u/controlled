@@ -17,12 +17,17 @@ type HealthHandler struct {
 	timeout  time.Duration
 }
 
+type HealthResponse struct {
+	Status  string `json:"status"`
+	Service string `json:"service"`
+}
+
 func NewHealthHandler(database Pinger, timeout time.Duration) *HealthHandler {
 	return &HealthHandler{database: database, timeout: timeout}
 }
 
 func (h *HealthHandler) Liveness(response http.ResponseWriter, _ *http.Request) {
-	response.WriteHeader(http.StatusNoContent)
+	WriteJSON(response, http.StatusOK, HealthResponse{Status: "ok", Service: "controlled-api"})
 }
 
 func (h *HealthHandler) Readiness(response http.ResponseWriter, request *http.Request) {
@@ -38,5 +43,5 @@ func (h *HealthHandler) Readiness(response http.ResponseWriter, request *http.Re
 		WriteError(response, http.StatusServiceUnavailable, "not_ready", "Controlled cannot reach its database.")
 		return
 	}
-	response.WriteHeader(http.StatusNoContent)
+	WriteJSON(response, http.StatusOK, HealthResponse{Status: "ready", Service: "controlled-api"})
 }
