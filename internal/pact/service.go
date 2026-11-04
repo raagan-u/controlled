@@ -32,7 +32,7 @@ type MaintenanceResult struct {
 type LifecycleRepository interface {
 	StartDue(context.Context, time.Time) (int, error)
 	DueForCompletion(context.Context, time.Time) ([]PactID, error)
-	CompleteDue(context.Context, PactID, string, time.Time) error
+	CompleteDue(context.Context, PactID, string, string, time.Time) error
 }
 
 func (s *Service) RunMaintenance(ctx context.Context) (MaintenanceResult, error) {
@@ -54,11 +54,15 @@ func (s *Service) RunMaintenance(ctx context.Context) (MaintenanceResult, error)
 	}
 	result := MaintenanceResult{Started: started}
 	for _, pactID := range due {
-		journalID, err := s.ids.NewID()
+		completionJournalID, err := s.ids.NewID()
 		if err != nil {
 			return result, err
 		}
-		if err := repository.CompleteDue(ctx, pactID, journalID, now); err != nil {
+		recoveryJournalID, err := s.ids.NewID()
+		if err != nil {
+			return result, err
+		}
+		if err := repository.CompleteDue(ctx, pactID, completionJournalID, recoveryJournalID, now); err != nil {
 			return result, err
 		}
 		result.Completed++
