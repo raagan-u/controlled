@@ -11,6 +11,7 @@ import { colors, fonts } from '@/theme';
 import { useActiveRefresh } from '@/hooks/useActiveRefresh';
 
 function date(value?: string) { return value ? new Date(value).toLocaleString('en-US', { day: 'numeric', hour: 'numeric', minute: '2-digit', month: 'short' }) : '—'; }
+const ONE_DAY = 86_400_000;
 export default function ReviewPactScreen() {
   const [draft, setDraft] = useState<LocalPactDraft | null>(null); const [circle, setCircle] = useState<AccountabilityCircle | null>(null); const [users, setUsers] = useState<User[]>([]); const [available, setAvailable] = useState(0); const [busy, setBusy] = useState(false); const [error, setError] = useState('');
   useEffect(() => { void Promise.all([loadLocalPactDraft(), getCircles(), getRecipients(), getWallet()]).then(([saved, circles, recipients, wallet]) => { setDraft(saved); setCircle(circles.find((item) => item.id === saved?.accountabilityCircleId) ?? null); setUsers(recipients.users); setAvailable(wallet.wallet.balances.available.amountMinor); }).catch((value) => setError(apiErrorMessage(value))); }, []);
@@ -35,14 +36,18 @@ export default function ReviewPactScreen() {
   };
   if (!draft) return <FeatureScreen scroll={false} title="Review pact"><ActivityIndicator color={colors.blue} style={styles.loader} /></FeatureScreen>;
   const partners = circle?.partnerIds.map((id, index) => `${index + 1} ${people.get(id)?.displayName ?? 'Partner'}`).join(' · ') ?? '—';
+  const duration = draft.startsAt && draft.endsAt ? new Date(draft.endsAt).getTime() - new Date(draft.startsAt).getTime() : 0;
+  const minimumDurationMet = duration >= ONE_DAY;
+  const recoveryEligible = duration >= 7 * ONE_DAY;
   return <FeatureScreen title="Review pact">
     <View style={styles.progress}><View style={styles.on} /><View style={styles.on} /><View style={styles.on} /><View style={styles.on} /></View>
     <Text style={styles.kicker}>STEP 4 OF 4 — REVIEW</Text>
-    <View style={styles.rows}><Row label="Goal" value={draft.goal ?? '—'} sub={draft.intent} /><Row label="Limit" value={`$${formatUSD(draft.spendingLimitMinor ?? 0)}`} /><Row label="Stake" value={`$${formatUSD(draft.stakeMinor ?? 0)}`} /><Row label="Dates" value={`${date(draft.startsAt)} — ${date(draft.endsAt)}`} /><Row label="Circle" value={circle?.name ?? '—'} sub={partners} /><Row label="If you break it" value="Stake → Commitment Reserve" /><Row label="Available after stake" value={`$${formatUSD(Math.max(0, available - (draft.stakeMinor ?? 0)))}`} /></View>
+    <View style={styles.rows}><Row label="Goal" value={draft.goal ?? '—'} sub={draft.intent} /><Row label="Limit" value={`$${formatUSD(draft.spendingLimitMinor ?? 0)}`} /><Row label="Stake" value={`$${formatUSD(draft.stakeMinor ?? 0)}`} /><Row label="Dates" value={`${date(draft.startsAt)} — ${date(draft.endsAt)}`} /><Row label="Recovery" value={!minimumDurationMet ? 'Duration too short' : recoveryEligible ? 'Eligible if kept' : 'Not eligible'} sub={!minimumDurationMet ? 'Pacts must last at least 24 hours.' : recoveryEligible ? 'This pact lasts at least 7 days.' : 'Choose 7 days or longer to unlock reserve.'} /><Row label="Circle" value={circle?.name ?? '—'} sub={partners} /><Row label="If you break it" value="Stake → Commitment Reserve" /><Row label="Available after stake" value={`$${formatUSD(Math.max(0, available - (draft.stakeMinor ?? 0)))}`} /></View>
     <InfoBox>Your stake stays your money, but you can’t spend it while the pact is active. This first swipe freezes the terms. You’ll reserve the stake with a separate second swipe.</InfoBox>
     <View style={styles.check}><Text style={styles.checkIcon}>✓</Text><Text style={styles.checkText}>I understand these terms become fixed after confirmation.</Text></View>
     {error ? <Text style={styles.error}>{error}</Text> : null}
-    <View style={styles.swipe}><SwipeConfirm disabled={busy} label={busy ? 'Confirming terms…' : 'Swipe to confirm terms'} onConfirm={() => void confirm()} /></View>
+    {!minimumDurationMet ? <Text style={styles.error}>Move the pact end time to at least 24 hours after it starts.</Text> : null}
+    <View style={styles.swipe}><SwipeConfirm disabled={busy || !minimumDurationMet} label={busy ? 'Confirming terms…' : 'Swipe to confirm terms'} onConfirm={() => void confirm()} /></View>
   </FeatureScreen>;
 }
 function Row({ label, sub, value }: { label: string; sub?: string; value: string }) { return <View style={styles.row}><Text style={styles.label}>{label}</Text><View style={styles.valueWrap}><Text style={styles.value}>{value}</Text>{sub ? <Text style={styles.sub}>{sub}</Text> : null}</View></View>; }

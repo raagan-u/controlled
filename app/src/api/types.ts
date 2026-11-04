@@ -179,7 +179,9 @@ export type StakeRecoveryPact = {
   goal: string;
   id: string;
   projectedRecoveryMinor: number;
+  recoveryEligible: boolean;
   stakeMinor: number;
+  startsAt: string;
   status: Extract<PactStatus, 'SCHEDULED' | 'ACTIVE'>;
 };
 
