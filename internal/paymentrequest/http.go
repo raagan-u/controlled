@@ -67,7 +67,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 			Kind: notification.KindPaymentRequest, EntityID: item.ID,
 		})
 	}
-	writeItem(w, status, item)
+	writeItem(w, status, item, user.ID())
 }
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	user, ok := identity.CurrentUser(r.Context())
@@ -82,7 +82,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	output := make([]responseItem, len(items))
 	for i, item := range items {
-		output[i] = newResponse(item)
+		output[i] = newResponse(item, user.ID())
 	}
 	httpapi.WriteJSON(w, 200, struct {
 		PaymentRequests []responseItem `json:"paymentRequests"`
@@ -99,7 +99,7 @@ func (h *Handler) Detail(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	writeItem(w, 200, item)
+	writeItem(w, 200, item, user.ID())
 }
 func (h *Handler) Pay(w http.ResponseWriter, r *http.Request) {
 	user, ok := identity.CurrentUser(r.Context())
@@ -115,7 +115,7 @@ func (h *Handler) Pay(w http.ResponseWriter, r *http.Request) {
 	payload := struct {
 		PaymentRequest        responseItem    `json:"paymentRequest"`
 		AccountabilityRequest *reviewResponse `json:"accountabilityRequest,omitempty"`
-	}{PaymentRequest: newResponse(result.Request)}
+	}{PaymentRequest: newResponse(result.Request, user.ID())}
 	if result.Review != nil {
 		payload.AccountabilityRequest = &reviewResponse{ID: result.Review.ID, Status: result.Review.Status, ExpiresAt: result.Review.ExpiresAt}
 		if !result.Review.Duplicate {
@@ -151,7 +151,7 @@ func (h *Handler) resolve(w http.ResponseWriter, r *http.Request, cancel bool) {
 	} else {
 		h.notify(item.RequesterID, notification.Message{Title: "Request declined", Body: fmt.Sprintf("%s declined your $%.2f request", user.DisplayName(), float64(item.AmountMinor)/100), Kind: notification.KindPaymentRequest, EntityID: item.ID})
 	}
-	writeItem(w, 200, item)
+	writeItem(w, 200, item, user.ID())
 }
 
 func (h *Handler) notify(recipient identity.UserID, message notification.Message) {
@@ -189,17 +189,21 @@ type reviewResponse struct {
 }
 
 func newParty(p Party) partyResponse { return partyResponse{p.ID, p.CtrldID, p.Email, p.DisplayName} }
-func newResponse(item Request) responseItem {
+func newResponse(item Request, viewer identity.UserID) responseItem {
 	result := responseItem{ID: item.ID, Requester: newParty(item.Requester), Recipient: newParty(item.Recipient), AmountMinor: item.AmountMinor, Currency: item.Currency, Note: item.Note, Status: item.Status, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt, ExpiresAt: item.ExpiresAt, TransferID: item.TransferID, AccountabilityRequestID: item.AccountabilityRequestID, Duplicate: item.Duplicate}
+	// A payer's pact and approval flow are private. The requester only needs the payment status.
+	if viewer == item.RequesterID {
+		result.AccountabilityRequestID = ""
+	}
 	if !item.ResolvedAt.IsZero() {
 		result.ResolvedAt = &item.ResolvedAt
 	}
 	return result
 }
-func writeItem(w http.ResponseWriter, status int, item Request) {
+func writeItem(w http.ResponseWriter, status int, item Request, viewer identity.UserID) {
 	httpapi.WriteJSON(w, status, struct {
 		PaymentRequest responseItem `json:"paymentRequest"`
-	}{newResponse(item)})
+	}{newResponse(item, viewer)})
 }
 func writeAuth(w http.ResponseWriter) {
 	httpapi.WriteError(w, 401, "authentication_required", "A valid Controlled session is required.")
