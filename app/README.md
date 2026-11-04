@@ -1,6 +1,6 @@
 # Controlled mobile app
 
-Expo React Native client for the complete Controlled MVP on Android and iOS.
+Expo React Native client for the Controlled Android MVP. The project retains iOS development support, but production iOS hardening and Sign in with Apple remain roadmap work.
 
 ## Implemented screens
 
@@ -9,12 +9,14 @@ Expo React Native client for the complete Controlled MVP on Android and iOS.
 - Fund, send, request money, and withdraw flows
 - Optional purchase-intent price checking
 - Payment-request list and detail/actions
-- Pact list, creation wizard, detail/progress, and history
+- Pact list, creation wizard, detail/progress, history, and Stakes & Recovery
 - Accountability invitations, circle creation, request list, and approve/deny/cancel detail
 - Transaction details with remarks and pact-approval metadata
 - Authenticated navigation badges and Expo notification deep links
 
 The Home screen refreshes wallet/activity/pact data on focus, app foreground, and every ten seconds while visible. This keeps remote approvals and time-based pact transitions current without manual pull-to-refresh.
+
+Pact creation enforces a 24-hour minimum. Pacts lasting at least seven days are marked recovery-eligible; shorter valid pacts are clearly explained as unable to unlock Commitment Reserve.
 
 ## Requirements
 

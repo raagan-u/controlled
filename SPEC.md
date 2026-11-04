@@ -95,6 +95,7 @@ DRAFT -> AWAITING_STAKE -> SCHEDULED -> ACTIVE -> RESOLVED
 ```
 
 - Draft terms can be edited.
+- New and edited pacts must span at least 24 hours from start to end.
 - Confirmation validates the accountability circle and freezes terms.
 - Stake reservation atomically moves funds from available to staked.
 - A future start produces `SCHEDULED`; an arrived start produces `ACTIVE`.
@@ -103,7 +104,9 @@ DRAFT -> AWAITING_STAKE -> SCHEDULED -> ACTIVE -> RESOLVED
 - Draft, awaiting-stake, and scheduled pacts can be cancelled. Cancelling a scheduled pact releases its stake.
 - Active pacts cannot be directly cancelled.
 - A conscious break resolves the affected pact as `BROKEN` and moves the complete stake to Commitment Reserve.
-- A later pact whose stake was reserved after that break can recover reserve funds when it resolves `KEPT` or `KEPT_WITH_EXCEPTIONS`.
+- A later pact qualifies for recovery only when its scheduled duration is at least seven days and its stake was reserved after the reserve entry was created.
+- A valid pact lasting from 24 hours to under seven days can enforce spending normally but cannot recover Commitment Reserve. Creation, review, and recovery screens explain this state.
+- An eligible pact can recover reserve funds when it resolves `KEPT` or `KEPT_WITH_EXCEPTIONS`.
 - Recovery is capped by the kept pact's stake and applied oldest-first across outstanding reserve stakes. Partial recovery is allowed.
 - The kept pact's own stake release and any reserve recovery are committed atomically. Broken or cancelled pacts recover nothing.
 
@@ -198,7 +201,8 @@ Notification taps deep-link to the relevant existing screen. There is no separat
 12. Controlled never receives a broken pact's stake.
 13. Provider, AI, shopping, and notification failures must not bypass ledger/policy rules.
 14. All authoritative money is USD integer cents.
-15. Commitment Reserve recovery is oldest-first, cannot exceed eligible kept stake, and cannot recover a reserve entry created after the recovering pact's stake reservation.
+15. New pacts last at least 24 hours; reserve-recovery pacts last at least seven days.
+16. Commitment Reserve recovery is oldest-first, cannot exceed eligible kept stake, and cannot recover a reserve entry created after the recovering pact's stake reservation.
 
 ## 10. Explicit MVP boundaries
 
