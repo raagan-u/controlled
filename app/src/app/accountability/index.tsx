@@ -1,16 +1,17 @@
 import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
-import { router, type Href, useFocusEffect } from 'expo-router';
+import { router, type Href } from 'expo-router';
 import { FeatureScreen } from '@/components/FeatureScreen';
 import { getAccountabilityRequests } from '@/api/pacts';
 import { apiErrorMessage, formatUSD, getCurrentUser, getRecipients } from '@/api/wallet';
 import type { AccountabilityRequest, User } from '@/api/types';
 import { colors, fonts, radii } from '@/theme';
+import { useActiveRefresh } from '@/hooks/useActiveRefresh';
 
 export default function AccountabilityScreen() {
   const [requests, setRequests] = useState<AccountabilityRequest[]>([]); const [users, setUsers] = useState<User[]>([]); const [current, setCurrent] = useState<User | null>(null); const [loading, setLoading] = useState(true); const [error, setError] = useState('');
   const load = useCallback(async () => { try { setError(''); const [items, recipients, me] = await Promise.all([getAccountabilityRequests(), getRecipients(), getCurrentUser()]); setRequests(items); setUsers(recipients.users); setCurrent(me.user); } catch (value) { setError(apiErrorMessage(value)); } finally { setLoading(false); } }, []);
-  useFocusEffect(useCallback(() => { void load(); }, [load]));
+  useActiveRefresh(load);
   const people = useMemo(() => new Map([...(current ? [current] : []), ...users].map((user) => [user.id, user])), [current, users]);
   const needs = requests.filter((item) => item.status === 'ASSIGNED' && item.assignedPartnerId === current?.id);
   const pending = requests.filter((item) => item.status === 'ASSIGNED' && item.ownerId === current?.id);

@@ -1,12 +1,13 @@
 import { useCallback, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
-import { router, type Href, useFocusEffect } from 'expo-router';
+import { router, type Href } from 'expo-router';
 import { FeatureScreen } from '@/components/FeatureScreen';
 import { PactCard } from '@/components/PactCard';
 import { getPacts, loadLocalPactDraft } from '@/api/pacts';
 import type { LocalPactDraft } from '@/api/pacts';
 import type { Pact } from '@/api/types';
 import { colors, fonts, radii } from '@/theme';
+import { useActiveRefresh } from '@/hooks/useActiveRefresh';
 
 export default function PactsScreen() {
   const [pacts, setPacts] = useState<Pact[]>([]);
@@ -21,7 +22,7 @@ export default function PactsScreen() {
     } catch (value) { setError(value instanceof Error ? value.message : 'Could not load pacts.'); }
     finally { setLoading(false); }
   }, []);
-  useFocusEffect(useCallback(() => { void load(); }, [load]));
+  useActiveRefresh(load);
   const current = pacts.filter((pact) => ['ACTIVE', 'SCHEDULED', 'AWAITING_STAKE'].includes(pact.status));
   const drafts = pacts.filter((pact) => pact.status === 'DRAFT');
   return (

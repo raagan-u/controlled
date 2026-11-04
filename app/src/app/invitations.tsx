@@ -1,18 +1,18 @@
 import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
-import { useFocusEffect } from 'expo-router';
 import { FeatureScreen } from '@/components/FeatureScreen';
 import { acceptInvitation, declineInvitation, getInvitations } from '@/api/pacts';
 import { apiErrorMessage, getCurrentUser, getRecipients } from '@/api/wallet';
 import type { AccountabilityInvitation, User } from '@/api/types';
 import { colors, fonts, radii } from '@/theme';
 import { useActionCounts } from '@/notifications/ActionCounts';
+import { useActiveRefresh } from '@/hooks/useActiveRefresh';
 
 export default function InvitationsScreen() {
   const { refresh: refreshActionCounts } = useActionCounts();
   const [items, setItems] = useState<AccountabilityInvitation[]>([]); const [users, setUsers] = useState<User[]>([]); const [current, setCurrent] = useState<User | null>(null); const [loading, setLoading] = useState(true); const [busy, setBusy] = useState(''); const [error, setError] = useState('');
   const load = useCallback(async () => { try { const [invites, recipients, me] = await Promise.all([getInvitations(), getRecipients(), getCurrentUser()]); setItems(invites); setUsers(recipients.users); setCurrent(me.user); } catch (value) { setError(apiErrorMessage(value)); } finally { setLoading(false); } }, []);
-  useFocusEffect(useCallback(() => { void load(); }, [load])); const people = useMemo(() => new Map([...(current ? [current] : []), ...users].map((user) => [user.id, user])), [current, users]); const incoming = items.filter((item) => item.partnerId === current?.id); const sent = items.filter((item) => item.ownerId === current?.id);
+  useActiveRefresh(load); const people = useMemo(() => new Map([...(current ? [current] : []), ...users].map((user) => [user.id, user])), [current, users]); const incoming = items.filter((item) => item.partnerId === current?.id); const sent = items.filter((item) => item.ownerId === current?.id);
   const respond = async (id: string, accept: boolean) => { setBusy(id); setError(''); try { await (accept ? acceptInvitation(id) : declineInvitation(id)); await Promise.all([load(), refreshActionCounts()]); } catch (value) { setError(apiErrorMessage(value)); } finally { setBusy(''); } };
   return <FeatureScreen title="Invitations">
     {loading ? <ActivityIndicator color={colors.blue} style={styles.loader} /> : null}{error ? <Text style={styles.error}>{error}</Text> : null}
