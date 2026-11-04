@@ -65,7 +65,7 @@ export function AuthenticatedMenu({ initiallyOpen = false, style }: { initiallyO
     setOpen(false);
     // Activity is Home's expanded panel; the changing param re-triggers it even when already on Home.
     if (opensActivity) router.replace({ pathname: '/home', params: { openActivity: String(++activityRequests) } });
-    else if (route === '/home') router.replace(route); else router.push(route);
+    else router.replace(route);
   };
   const leave = async () => {
     await unregister().catch(() => undefined);
