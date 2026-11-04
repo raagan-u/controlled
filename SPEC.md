@@ -103,6 +103,9 @@ DRAFT -> AWAITING_STAKE -> SCHEDULED -> ACTIVE -> RESOLVED
 - Draft, awaiting-stake, and scheduled pacts can be cancelled. Cancelling a scheduled pact releases its stake.
 - Active pacts cannot be directly cancelled.
 - A conscious break resolves the affected pact as `BROKEN` and moves the complete stake to Commitment Reserve.
+- A later pact whose stake was reserved after that break can recover reserve funds when it resolves `KEPT` or `KEPT_WITH_EXCEPTIONS`.
+- Recovery is capped by the kept pact's stake and applied oldest-first across outstanding reserve stakes. Partial recovery is allowed.
+- The kept pact's own stake release and any reserve recovery are committed atomically. Broken or cancelled pacts recover nothing.
 
 The app saves an in-progress pact draft locally so the flow can be resumed. After successful creation it provides a direct route back Home.
 
@@ -195,6 +198,7 @@ Notification taps deep-link to the relevant existing screen. There is no separat
 12. Controlled never receives a broken pact's stake.
 13. Provider, AI, shopping, and notification failures must not bypass ledger/policy rules.
 14. All authoritative money is USD integer cents.
+15. Commitment Reserve recovery is oldest-first, cannot exceed eligible kept stake, and cannot recover a reserve entry created after the recovering pact's stake reservation.
 
 ## 10. Explicit MVP boundaries
 
@@ -204,6 +208,5 @@ Notification taps deep-link to the relevant existing screen. There is no separat
 - No production KYC/compliance or custody claims
 - No cards, credit, lending, PYUSD, rewards, yield, or investment return
 - No monitoring of spending outside Controlled
-- No release/recovery flow for Commitment Reserve
 - No notification inbox
 - No pagination in the mobile activity experience
