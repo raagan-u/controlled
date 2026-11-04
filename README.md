@@ -35,6 +35,7 @@ Insufficient balance is never overridable. AI never moves money or approves an e
 - Withdrawals with provider settlement/reconciliation
 - Optional purchase-intent price checks through Channel3
 - Pact creation, local draft recovery, scheduling, progress, history, and outcomes
+- Stakes & recovery view with live staked totals, Commitment Reserve progress, and projected unlocks
 - Accountability invitations, ordered circles, approval classifications, denial reasons, and decision history
 - Transaction details showing remarks and pact-approval metadata
 - Expo push notifications for money received, payment requests, invitations, and accountability decisions
@@ -49,6 +50,7 @@ Insufficient balance is never overridable. AI never moves money or approves an e
 - Idempotent money-moving and resource-creation commands
 - Ordered accountability assignment with six-hour reviewer windows and 24-hour request expiry
 - Pact and request maintenance on startup and once per minute
+- Atomic oldest-first Commitment Reserve recovery when eligible later pacts are kept
 - Selectable fake or PayPal Sandbox custody provider
 - Deterministic guidance with optional OpenAI-compatible structured-output enhancement
 - Optional Channel3 product search
@@ -66,6 +68,7 @@ Insufficient balance is never overridable. AI never moves money or approves an e
 7. If a debit crosses any active pact limit, explain why and request approval.
 8. The assigned partner approves it as an emergency/conscious break or denies it with a reason.
 9. Controlled rechecks balance and every current pact before executing an approved transaction.
+10. If a pact breaks, its stake remains user-owned in Commitment Reserve; later eligible kept pacts unlock it up to their own stake, oldest reserve first.
 
 ## System shape
 
@@ -159,6 +162,6 @@ These ideas are not part of the current MVP and would require additional product
 
 ## MVP boundaries
 
-Controlled is a sandbox proof of concept, not a bank, production custodial wallet, money-transmission service, investment product, or source of yield. It is USD-only. Password reset and email verification are not implemented yet. Commitment Reserve funds remain user-owned but are not releasable in this MVP. The fake provider is process-local; PayPal integration targets Sandbox only.
+Controlled is a sandbox proof of concept, not a bank, production custodial wallet, money-transmission service, investment product, or source of yield. It is USD-only. Password reset and email verification are not implemented yet. Commitment Reserve funds remain user-owned and can be recovered only through eligible later kept pacts; they cannot be withdrawn directly. The fake provider is process-local; PayPal integration targets Sandbox only.
 
 > AI advises. Humans authorize. The policy engine enforces. The provider moves the money.
