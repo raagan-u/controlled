@@ -228,6 +228,7 @@ func run(ctx context.Context) error {
 	mux.Handle("POST /v1/accountability/requests/{id}/cancel", identity.RequireSession(sessions, http.HandlerFunc(accountabilityHandler.CancelRequest)))
 	mux.Handle("POST /v1/pacts", identity.RequireSession(sessions, http.HandlerFunc(pactHandler.CreateDraft)))
 	mux.Handle("GET /v1/pacts", identity.RequireSession(sessions, http.HandlerFunc(pactHandler.Pacts)))
+	mux.Handle("GET /v1/pacts/stake-recovery", identity.RequireSession(sessions, http.HandlerFunc(pactHandler.StakeRecovery)))
 	mux.Handle("GET /v1/pacts/{id}", identity.RequireSession(sessions, http.HandlerFunc(pactHandler.Pact)))
 	mux.Handle("PUT /v1/pacts/{id}", identity.RequireSession(sessions, http.HandlerFunc(pactHandler.UpdateDraft)))
 	mux.Handle("POST /v1/pacts/{id}/confirm", identity.RequireSession(sessions, http.HandlerFunc(pactHandler.Confirm)))
