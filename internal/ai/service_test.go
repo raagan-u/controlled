@@ -77,6 +77,17 @@ type modelStub struct {
 	classifyErr     error
 }
 
+type idStub struct{ value string }
+
+func (s idStub) NewID() (string, error) { return s.value, nil }
+
+type assessmentStoreStub struct{ saved StoredAssessment }
+
+func (s *assessmentStoreStub) SaveAssessment(_ context.Context, value StoredAssessment) error {
+	s.saved = value
+	return nil
+}
+
 func (s *modelStub) Draft(_ context.Context, input ModelInput) (ModelDraft, error) {
 	s.inputs = append(s.inputs, input)
 	index := len(s.inputs) - 1
@@ -248,6 +259,21 @@ func TestAssessTransactionKeepsLowConfidenceClassificationUnclear(t *testing.T) 
 	assessment, err := service.AssessTransaction(context.Background(), "user-1", 1_000, "food", false)
 	if err != nil || assessment.Relationship != RelationshipUnclear || assessment.ForecastWarning {
 		t.Fatalf("assessment = %#v, error = %v", assessment, err)
+	}
+}
+
+func TestAssessTransactionPersistsReusableAssessment(t *testing.T) {
+	t.Parallel()
+	value := testActivePact(t, "pact", 20_000, 4_000, testNow.Add(-4*24*time.Hour), testNow.Add(10*24*time.Hour))
+	store := &assessmentStoreStub{}
+	service := NewService(fixedClock{testNow}, walletReaderStub{}, pactReaderStub{values: []*pact.Pact{value}}, nil, nil, nil).
+		EnableAssessmentPersistence(idStub{value: "assessment-1"}, store)
+	assessment, err := service.AssessTransaction(context.Background(), "user-1", 1_000, "food", true)
+	if err != nil || assessment.ID != "assessment-1" {
+		t.Fatalf("assessment = %#v, error = %v", assessment, err)
+	}
+	if store.saved.ID != "assessment-1" || store.saved.OwnerID != "user-1" || !store.saved.IsPurchase || store.saved.ExpiresAt.Sub(store.saved.CreatedAt) != 15*time.Minute {
+		t.Fatalf("stored = %#v", store.saved)
 	}
 }
 

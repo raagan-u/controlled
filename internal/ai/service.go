@@ -72,6 +72,7 @@ type Guidance struct {
 }
 
 type TransactionAssessment struct {
+	ID                string          `json:"id,omitempty"`
 	Relationship      Relationship    `json:"relationship"`
 	Confidence        Confidence      `json:"confidence"`
 	ClassifierVersion string          `json:"classifierVersion"`
@@ -89,10 +90,19 @@ type Service struct {
 	accountability AccountabilityReader
 	identities     IdentityReader
 	model          Model
+	assessmentIDs  interface{ NewID() (string, error) }
+	assessments    AssessmentStore
 }
 
 func NewService(clock Clock, wallets WalletReader, pacts PactReader, accountability AccountabilityReader, identities IdentityReader, model Model) *Service {
 	return &Service{clock: clock, wallets: wallets, pacts: pacts, accountability: accountability, identities: identities, model: model}
+}
+
+func (s *Service) EnableAssessmentPersistence(ids interface{ NewID() (string, error) }, store AssessmentStore) *Service {
+	if s != nil {
+		s.assessmentIDs, s.assessments = ids, store
+	}
+	return s
 }
 
 func (s *Service) SuggestPact(ctx context.Context, userID identity.UserID, goal, intent string) (Guidance, error) {
@@ -203,11 +213,26 @@ func (s *Service) AssessTransaction(ctx context.Context, userID identity.UserID,
 		}
 	}
 	guidance := s.generate(ctx, input, facts, transactionFallback(input, pattern.HasSufficientHistory))
-	return TransactionAssessment{
+	assessment := TransactionAssessment{
 		Relationship: classification.Relationship, Confidence: classification.Confidence,
 		ClassifierVersion: "transaction-relationship-v1", PrimaryPactID: primaryID,
 		Pattern: pattern, ForecastWarning: input.ForecastWarning, ProjectedMinor: input.ProjectedMinor, Guidance: guidance,
-	}, nil
+	}
+	if s.assessmentIDs != nil && s.assessments != nil {
+		id, idErr := s.assessmentIDs.NewID()
+		if idErr == nil {
+			createdAt := s.now()
+			stored := StoredAssessment{
+				ID: id, OwnerID: userID, PrimaryPactID: primaryID, AmountMinor: amountMinor, Remark: remark, IsPurchase: isPurchase,
+				Relationship: assessment.Relationship, Confidence: assessment.Confidence, ClassifierVersion: assessment.ClassifierVersion,
+				CreatedAt: createdAt, ExpiresAt: createdAt.Add(15 * time.Minute),
+			}
+			if saveErr := s.assessments.SaveAssessment(ctx, stored); saveErr == nil {
+				assessment.ID = id
+			}
+		}
+	}
+	return assessment, nil
 }
 
 func MeaningfulRemark(value string) bool {

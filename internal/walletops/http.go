@@ -28,6 +28,10 @@ type accountableCommander interface {
 	CreateWithdrawalWithReason(context.Context, string, identity.UserID, string, int64, string, string) (DebitAttempt, error)
 }
 
+type guidedCommander interface {
+	TransferWithGuidance(context.Context, string, identity.UserID, string, int64, string, string, string, bool) (DebitAttempt, error)
+}
+
 type Handler struct {
 	commands      Commander
 	notifications notification.Notifier
@@ -96,6 +100,8 @@ func (h *Handler) CreateTransfer(response http.ResponseWriter, request *http.Req
 		AmountMinor    int64  `json:"amountMinor"`
 		Currency       string `json:"currency"`
 		Reason         string `json:"reason"`
+		AssessmentID   string `json:"assessmentId"`
+		IsPurchase     bool   `json:"isPurchase"`
 	}
 	if err := httpapi.ReadJSON(response, request, &input, httpapi.DefaultMaxBodyBytes); err != nil {
 		httpapi.WriteError(response, http.StatusBadRequest, "invalid_request", "Request body must contain a recipient and amount.")
@@ -104,7 +110,17 @@ func (h *Handler) CreateTransfer(response http.ResponseWriter, request *http.Req
 	var transfer Transfer
 	var review *ReviewRequest
 	var err error
-	if commands, ok := h.commands.(accountableCommander); ok {
+	if commands, ok := h.commands.(guidedCommander); ok {
+		attempt, attemptErr := commands.TransferWithGuidance(
+			request.Context(), request.Header.Get("Idempotency-Key"), user.ID(),
+			input.RecipientEmail, input.AmountMinor, input.Currency, input.Reason, input.AssessmentID, input.IsPurchase,
+		)
+		err = attemptErr
+		if attempt.Transfer != nil {
+			transfer = *attempt.Transfer
+		}
+		review = attempt.Request
+	} else if commands, ok := h.commands.(accountableCommander); ok {
 		attempt, attemptErr := commands.TransferWithReason(
 			request.Context(), request.Header.Get("Idempotency-Key"), user.ID(),
 			input.RecipientEmail, input.AmountMinor, input.Currency, input.Reason,

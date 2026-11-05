@@ -206,6 +206,20 @@ func (s *Service) TransferWithReason(
 	currency string,
 	reason string,
 ) (DebitAttempt, error) {
+	return s.TransferWithGuidance(ctx, key, senderID, recipientEmail, amountMinor, currency, reason, "", false)
+}
+
+func (s *Service) TransferWithGuidance(
+	ctx context.Context,
+	key string,
+	senderID identity.UserID,
+	recipientEmail string,
+	amountMinor int64,
+	currency string,
+	reason string,
+	assessmentID string,
+	isPurchase bool,
+) (DebitAttempt, error) {
 	if err := s.available(); err != nil {
 		return DebitAttempt{}, err
 	}
@@ -232,7 +246,7 @@ func (s *Service) TransferWithReason(
 	now := s.clock.Now().UTC()
 	transfer, err := s.repo.CreateTransfer(ctx, key, Transfer{
 		ID: OperationID(generated[0]), SenderID: senderID,
-		RecipientEmail: recipientEmail, Amount: amount, Remark: strings.TrimSpace(reason), CreatedAt: now,
+		RecipientEmail: recipientEmail, Amount: amount, Remark: strings.TrimSpace(reason), GuidanceAssessmentID: strings.TrimSpace(assessmentID), IsPurchase: isPurchase, CreatedAt: now,
 	}, ledger.JournalID(generated[1]))
 	if err == nil {
 		s.notifyMoneyReceived(ctx, transfer)

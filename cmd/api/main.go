@@ -166,7 +166,8 @@ func run(ctx context.Context) error {
 		zap.String("model", configuration.AIModel),
 		zap.Duration("timeout", configuration.AITimeout),
 	)
-	aiService := controlledai.NewService(platform.SystemClock{}, store, pactService, accountabilityService, identityStore, aiModel)
+	aiService := controlledai.NewService(platform.SystemClock{}, store, pactService, accountabilityService, identityStore, aiModel).
+		EnableAssessmentPersistence(platform.NewUUIDGenerator(), controlledai.NewPostgresAssessmentStore(database))
 	aiHandler := controlledai.NewHandler(aiService)
 	var productCatalog shopping.Catalog
 	if configuration.Channel3APIKey != "" {
