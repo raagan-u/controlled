@@ -8,6 +8,7 @@ const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '⌫'];
 const operators = ['+', '−', '×', '÷'] as const;
 const operatorSet = new Set<string>(operators);
 type Props = {
+  compact?: boolean;
   onCalculationChange?: (value: string | null) => void;
   onChange: (value: string) => void;
   onDisplayChange?: (value: string) => void;
@@ -46,7 +47,7 @@ function formatResult(result: number) {
   return result.toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1');
 }
 
-export function AmountKeypad({ onCalculationChange, onChange, onDisplayChange, value }: Props) {
+export function AmountKeypad({ compact = false, onCalculationChange, onChange, onDisplayChange, value }: Props) {
   const [expression, setExpression] = useState(value);
   const lastEmitted = useRef(value);
 
@@ -113,16 +114,16 @@ export function AmountKeypad({ onCalculationChange, onChange, onDisplayChange, v
 
   return (
     <View>
-      <View style={styles.operators}>
+      <View style={[styles.operators, compact && styles.operatorsCompact]}>
         {operators.map((operator) => (
           <PressableScale key={operator} onPress={() => pressOperator(operator)} scaleTo={0.8}>
             <Text style={styles.math}>{operator}</Text>
           </PressableScale>
         ))}
       </View>
-      <View style={styles.panel}>
+      <View style={[styles.panel, compact && styles.panelCompact]}>
         {keys.map((key) => (
-          <PressableScale accessibilityLabel={key === '⌫' ? 'Delete' : key} key={key} onPress={() => press(key)} scaleTo={0.9} style={styles.key}>
+          <PressableScale accessibilityLabel={key === '⌫' ? 'Delete' : key} key={key} onPress={() => press(key)} scaleTo={0.9} style={[styles.key, compact && styles.keyCompact]}>
             <Text style={key === '⌫' || key === '.' ? styles.operator : styles.number}>{key}</Text>
           </PressableScale>
         ))}
@@ -133,9 +134,12 @@ export function AmountKeypad({ onCalculationChange, onChange, onDisplayChange, v
 
 const styles = StyleSheet.create({
   operators: { flexDirection: 'row', justifyContent: 'space-around', paddingBottom: 12, paddingHorizontal: 20 },
+  operatorsCompact: { paddingBottom: 5 },
   math: { color: colors.textMuted, fontFamily: fonts.medium, fontSize: 27, textAlign: 'center', width: 48 },
   panel: { backgroundColor: colors.surfaceAlt, borderRadius: radii.keypad, flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10, marginHorizontal: 8, padding: 10 },
+  panelCompact: { gap: 6, marginBottom: 4, padding: 7 },
   key: { alignItems: 'center', backgroundColor: colors.key, borderRadius: radii.pill, flexGrow: 1, height: 56, justifyContent: 'center', width: '30%' },
+  keyCompact: { height: 44 },
   number: { color: colors.keyText, fontFamily: fonts.medium, fontSize: 26 },
   operator: { color: colors.keyText, fontFamily: fonts.medium, fontSize: 23 },
 });
