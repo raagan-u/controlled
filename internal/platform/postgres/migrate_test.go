@@ -72,7 +72,7 @@ func TestDiscoverEmbeddedMigrations(t *testing.T) {
 	if found[17].version != 18 || found[17].name != "000018_accountability_denial_reasons.up.sql" || found[17].sql == "" {
 		t.Fatalf("migration = %#v", found[17])
 	}
-	if found[18].version != 19 || found[18].name != "000019_ai_transaction_assessments.up.sql" || found[18].sql == "" {
+	if found[18].version != 20 || found[18].name != "000020_ai_transaction_assessments.up.sql" || found[18].sql == "" {
 		t.Fatalf("migration = %#v", found[18])
 	}
 }
