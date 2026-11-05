@@ -173,3 +173,25 @@ export type PactTermsInput = {
   stakeMinor: number;
   startsAt: string;
 };
+
+export type StakeRecoveryPact = {
+  endsAt: string;
+  goal: string;
+  id: string;
+  projectedRecoveryMinor: number;
+  recoveryEligible: boolean;
+  stakeMinor: number;
+  startsAt: string;
+  status: Extract<PactStatus, 'SCHEDULED' | 'ACTIVE'>;
+};
+
+export type StakeRecovery = {
+  commitmentReserveMinor: number;
+  currency: 'USD';
+  pacts: StakeRecoveryPact[];
+  projectedRecoveryMinor: number;
+  recoveredMinor: number;
+  stakedMinor: number;
+  stakedPactCount: number;
+  totalReservedMinor: number;
+};

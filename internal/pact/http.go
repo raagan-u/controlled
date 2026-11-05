@@ -26,6 +26,64 @@ type progressCommander interface {
 	PactsProgress(context.Context, UserID) (map[PactID]Progress, error)
 }
 
+type recoveryCommander interface {
+	StakeRecovery(context.Context, UserID) (StakeRecovery, error)
+}
+
+func (h *Handler) StakeRecovery(response http.ResponseWriter, request *http.Request) {
+	user, ok := pactUser(response, request)
+	if !ok {
+		return
+	}
+	reader, ok := h.commands.(recoveryCommander)
+	if !ok {
+		writePactError(response, ErrUnavailable)
+		return
+	}
+	summary, err := reader.StakeRecovery(request.Context(), UserID(user.ID()))
+	if err != nil {
+		writePactError(response, err)
+		return
+	}
+	items := make([]recoveryPactAPIResponse, 0, len(summary.Pacts))
+	for _, item := range summary.Pacts {
+		items = append(items, recoveryPactAPIResponse{
+			ID: string(item.ID), Goal: item.Goal, Status: item.Status,
+			StakeMinor: item.StakeMinor, ProjectedRecoveryMinor: item.ProjectedRecoveryMinor,
+			StartsAt: item.StartsAt, EndsAt: item.EndsAt,
+			RecoveryEligible: item.RecoveryEligible,
+		})
+	}
+	httpapi.WriteJSON(response, http.StatusOK, stakeRecoveryAPIResponse{
+		Currency: summary.Currency, StakedMinor: summary.StakedMinor,
+		StakedPactCount: summary.StakedPactCount, TotalReservedMinor: summary.TotalReservedMinor,
+		RecoveredMinor: summary.RecoveredMinor, CommitmentReserveMinor: summary.CommitmentReserveMinor,
+		ProjectedRecoveryMinor: summary.ProjectedRecoveryMinor, Pacts: items,
+	})
+}
+
+type recoveryPactAPIResponse struct {
+	ID                     string    `json:"id"`
+	Goal                   string    `json:"goal"`
+	Status                 Status    `json:"status"`
+	StakeMinor             int64     `json:"stakeMinor"`
+	ProjectedRecoveryMinor int64     `json:"projectedRecoveryMinor"`
+	StartsAt               time.Time `json:"startsAt"`
+	EndsAt                 time.Time `json:"endsAt"`
+	RecoveryEligible       bool      `json:"recoveryEligible"`
+}
+
+type stakeRecoveryAPIResponse struct {
+	Currency               string                    `json:"currency"`
+	StakedMinor            int64                     `json:"stakedMinor"`
+	StakedPactCount        int                       `json:"stakedPactCount"`
+	TotalReservedMinor     int64                     `json:"totalReservedMinor"`
+	RecoveredMinor         int64                     `json:"recoveredMinor"`
+	CommitmentReserveMinor int64                     `json:"commitmentReserveMinor"`
+	ProjectedRecoveryMinor int64                     `json:"projectedRecoveryMinor"`
+	Pacts                  []recoveryPactAPIResponse `json:"pacts"`
+}
+
 func (h *Handler) ReserveStake(response http.ResponseWriter, request *http.Request) {
 	user, ok := pactUser(response, request)
 	if !ok {
@@ -319,6 +377,8 @@ func writePactError(response http.ResponseWriter, err error) {
 		httpapi.WriteError(response, http.StatusBadRequest, "invalid_idempotency_key", "A non-empty Idempotency-Key header is required.")
 	case errors.Is(err, ErrPactNotFound):
 		httpapi.WriteError(response, http.StatusNotFound, "pact_not_found", "The pact was not found.")
+	case errors.Is(err, ErrPactDurationTooShort):
+		httpapi.WriteError(response, http.StatusUnprocessableEntity, "pact_duration_too_short", "A pact must last at least 24 hours.")
 	case errors.Is(err, ErrInvalidMoney), errors.Is(err, ErrCurrencyMismatch), errors.Is(err, ErrInvalidPeriod),
 		errors.Is(err, ErrMissingGoal), errors.Is(err, ErrMissingIntent), errors.Is(err, ErrMissingAccountabilityCircle),
 		errors.Is(err, ErrInvalidBreakConsequence):

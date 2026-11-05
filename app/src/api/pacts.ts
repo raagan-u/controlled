@@ -5,6 +5,7 @@ import type {
   AccountabilityInvitation,
   AccountabilityRequest,
   Pact,
+	StakeRecovery,
   PactTermsInput,
 } from './types';
 
@@ -52,6 +53,7 @@ export const updatePact = async (id: string, terms: PactTermsInput) => normalize
 export const confirmPact = async (id: string) => normalizePact((await apiRequest<{ pact: Pact }>(`/v1/pacts/${encodeURIComponent(id)}/confirm`, { body: {}, method: 'POST' })).pact);
 export const reservePactStake = async (id: string) => normalizePact((await apiRequest<{ pact: Pact }>(`/v1/pacts/${encodeURIComponent(id)}/stake`, { body: {}, idempotent: true, method: 'POST' })).pact);
 export const cancelPact = async (id: string) => normalizePact((await apiRequest<{ pact: Pact }>(`/v1/pacts/${encodeURIComponent(id)}/cancel`, { body: {}, method: 'POST' })).pact);
+export const getStakeRecovery = () => apiRequest<StakeRecovery>('/v1/pacts/stake-recovery');
 
 export const getInvitations = async () => (await apiRequest<{ invitations: AccountabilityInvitation[] }>('/v1/accountability/invitations')).invitations;
 export const invitePartner = async (partnerEmail: string) => (await apiRequest<{ invitation: AccountabilityInvitation }>('/v1/accountability/invitations', { body: { partnerEmail }, idempotent: true, method: 'POST' })).invitation;

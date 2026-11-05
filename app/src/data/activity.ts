@@ -14,7 +14,7 @@ export type Activity = {
 };
 
 const withdrawalTerminalTypes = new Set(['WITHDRAWAL_SETTLEMENT', 'WITHDRAWAL_RELEASE']);
-const stakeMovementTypes = new Set(['PACT_STAKE_RESERVATION', 'PACT_STAKE_RELEASE', 'PACT_COMPLETION', 'PACT_CONSCIOUS_BREAK']);
+const stakeMovementTypes = new Set(['PACT_STAKE_RESERVATION', 'PACT_STAKE_RELEASE', 'PACT_COMPLETION', 'PACT_CONSCIOUS_BREAK', 'PACT_STAKE_RECOVERY']);
 
 export function visibleTransactions(transactions: Transaction[]) {
   const terminalWithdrawalIDs = new Set(
@@ -52,6 +52,7 @@ function presentation(transaction: Transaction, outgoing: boolean) {
   if (referenceType === 'PACT_STAKE_RESERVATION') return { label: 'Stake reserved', status: 'Completed' as const };
   if (referenceType === 'PACT_STAKE_RELEASE' || referenceType === 'PACT_COMPLETION') return { label: 'Stake released', status: 'Completed' as const };
   if (referenceType === 'PACT_CONSCIOUS_BREAK') return { label: 'Stake moved to Commitment Reserve', status: 'Completed' as const };
+  if (referenceType === 'PACT_STAKE_RECOVERY') return { label: 'Commitment Reserve recovered', status: 'Completed' as const };
   return { label: outgoing ? 'Money sent' : 'Money received', status: 'Completed' as const };
 }
 

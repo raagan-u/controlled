@@ -90,7 +90,7 @@ Each wallet owns ledger accounts for:
 - `PENDING`
 - `COMMITMENT_RESERVE`
 
-Stakes are posted to the system USD `STAKE_VAULT` account and attributed back to users/pacts through `stake_allocations`. Wallet reads expose the user's allocated total as the computed `staked` balance.
+Stakes are posted to the system USD `STAKE_VAULT` account and attributed back to users/pacts through `stake_allocations`. Wallet reads expose the user's allocated total as the computed `staked` balance. Commitment Reserve allocations retain their source pact, recovered amount, and completion time; `stake_recovery_applications` records every partial oldest-first recovery and its ledger transaction.
 
 Journal transactions contain balanced debit/credit entries. Database constraints and repository transactions prevent unbalanced postings, cross-currency movement, duplicate references, and negative available balances.
 
@@ -156,7 +156,7 @@ Outcomes:
 - `BROKEN`
 - `CANCELLED`
 
-Stake reservation, cancellation release, successful completion release, and conscious-break movement are ledger postings performed in the same database transaction as the pact transition.
+Stake reservation, cancellation release, successful completion release, conscious-break movement, and recovery are ledger postings performed in the same database transaction as the pact transition. New or edited pacts must span at least 24 hours. A kept pact may recover Commitment Reserve up to its own stake only when its immutable scheduled duration is at least seven days and only from reserve allocations that predate its stake reservation. Recovery locks allocations oldest-first, supports partial lots, and is idempotent through the pact's terminal transition and ledger key.
 
 Progress is derived from `pact_transaction_usage`. Successful applicable debits add usage once per pact. Reversed/failed withdrawal reservations mark usage reversed. Progress returns used, remaining, overage, and contributing operations.
 
@@ -217,7 +217,7 @@ Delivery covers new requests, money received, invitation responses, reviewer ass
 Maintenance runs once at startup and once per minute:
 
 - activates scheduled pacts;
-- completes ended pacts and releases stake;
+- completes ended pacts, releases their stake, and applies Commitment Reserve recovery only for pacts scheduled for at least seven days;
 - cancels affected pending requests when pact periods end;
 - advances timed-out accountability assignments;
 - expires accountability requests;
@@ -234,13 +234,13 @@ The migration set currently creates or evolves:
 - `wallets`, `ledger_accounts`, `ledger_transactions`, `ledger_entries`
 - `funding_intents`, `internal_transfers`, `withdrawals`, `idempotency_keys`
 - `accountability_invitations`, `accountability_circles`, `accountability_circle_members`
-- `pacts`, `stake_allocations`, `pact_transaction_usage`
+- `pacts`, `stake_allocations`, `stake_recovery_applications`, `pact_transaction_usage`
 - `transaction_intents`, `accountability_requests`, request pact/reviewer/assignment tables
 - `payment_requests`
 - `push_devices`
 - `controlled_audit_events`
 
-Later migrations add Controlled IDs, payment-request lifecycle fields, provider net funding amounts, pending-name state, transfer remarks, and accountability denial reasons.
+Later migrations add Controlled IDs, payment-request lifecycle fields, provider net funding amounts, pending-name state, transfer remarks, accountability denial reasons, and partial stake recovery tracking.
 
 Applied migrations are immutable. The runner stores checksums and refuses startup if a previously applied migration changes.
 

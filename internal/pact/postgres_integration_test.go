@@ -297,7 +297,7 @@ func TestPostgresPactStakeLifecycle(t *testing.T) {
 		t.Fatalf("balances after conscious break = %+v", brokenWallet.Balances())
 	}
 	lifecycleStart := now.Add(2 * time.Hour)
-	lifecycleEnd := now.Add(3 * time.Hour)
+	lifecycleEnd := lifecycleStart.Add(7 * 24 * time.Hour)
 	lifecycleStake, _ := pact.NewMoney(1_000, "USD")
 	lifecycleTerms, _ := pact.NewTerms(
 		"Lifecycle pact", "Verify automatic transitions", limit, lifecycleStake,
@@ -329,11 +329,30 @@ func TestPostgresPactStakeLifecycle(t *testing.T) {
 	if err != nil || lifecyclePact.Status() != pact.StatusResolved || lifecyclePact.Outcome() != pact.OutcomeKept {
 		t.Fatalf("completed lifecycle pact = %+v err=%v", lifecyclePact, err)
 	}
+	recoveredWallet, err := walletStore.WalletByUser(ctx, owner.Provisioning.User().ID())
+	if err != nil {
+		t.Fatalf("read wallet after recovery: %v", err)
+	}
+	if recoveredWallet.Balances().CommitmentReserve.AmountMinor() != 1_500 {
+		t.Fatalf("commitment reserve after recovery = %d, want 1500", recoveredWallet.Balances().CommitmentReserve.AmountMinor())
+	}
+	var recoveredMinor, applicationMinor int64
+	err = pool.QueryRow(ctx, `
+		SELECT allocation.recovered_minor, application.amount_minor
+		  FROM stake_allocations AS allocation
+		  JOIN stake_recovery_applications AS application
+		    ON application.source_pact_id = allocation.pact_id
+		 WHERE allocation.pact_id = $1::text::uuid
+		   AND application.recovery_pact_id = $2::text::uuid
+	`, string(active.ID()), string(lifecyclePact.ID())).Scan(&recoveredMinor, &applicationMinor)
+	if err != nil || recoveredMinor != 1_000 || applicationMinor != 1_000 {
+		t.Fatalf("stake recovery = recovered %d, application %d, err %v", recoveredMinor, applicationMinor, err)
+	}
 
 	largeStake, _ := pact.NewMoney(15_000, "USD")
 	insufficientTerms, _ := pact.NewTerms(
 		"Too large", "Verify atomic failure", limit, largeStake,
-		now.Add(time.Hour), now.Add(24*time.Hour), pact.CircleID(circle.ID()),
+		now.Add(time.Hour), now.Add(25*time.Hour), pact.CircleID(circle.ID()),
 		pact.BreakConsequenceCommitmentReserve,
 	)
 	insufficient, _, err := pactService.CreateDraft(ctx, "pact-insufficient:"+runID, draft.OwnerID(), insufficientTerms)

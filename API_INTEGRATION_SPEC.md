@@ -91,6 +91,7 @@ Creation and money commands marked **yes** below require `Idempotency-Key`. Repl
 | `POST` | `/v1/accountability/requests/{id}/cancel` | yes | no |
 | `POST` | `/v1/pacts` | yes | yes |
 | `GET` | `/v1/pacts` | yes | no |
+| `GET` | `/v1/pacts/stake-recovery` | yes | no |
 | `GET` | `/v1/pacts/{id}` | yes | no |
 | `PUT` | `/v1/pacts/{id}` | yes | no |
 | `POST` | `/v1/pacts/{id}/confirm` | yes | no |
@@ -395,6 +396,8 @@ Idempotency-Key: pact-1
 
 `PUT /v1/pacts/{id}` accepts the same body while `DRAFT`. Confirm and reserve the stake:
 
+The interval from `startsAt` to `endsAt` must be at least 24 hours. Pacts lasting from 24 hours to under seven days are valid spending commitments but do not qualify for Commitment Reserve recovery.
+
 ```text
 POST /v1/pacts/{id}/confirm
 POST /v1/pacts/{id}/stake     (Idempotency-Key required)
@@ -403,6 +406,38 @@ POST /v1/pacts/{id}/stake     (Idempotency-Key required)
 Stake reservation returns `SCHEDULED` for a future start or `ACTIVE` once the start has arrived. `GET /v1/pacts` and `GET /v1/pacts/{id}` include `progress` with used, remaining, overage, and usage items.
 
 `POST /v1/pacts/{id}/cancel` supports draft, awaiting-stake, and scheduled pacts. Active pacts cannot be directly cancelled.
+
+Read the authenticated user's stake and Commitment Reserve recovery plan:
+
+```http
+GET /v1/pacts/stake-recovery
+```
+
+```json
+{
+  "currency": "USD",
+  "stakedMinor": 2000,
+  "stakedPactCount": 1,
+  "totalReservedMinor": 3000,
+  "recoveredMinor": 1000,
+  "commitmentReserveMinor": 2000,
+  "projectedRecoveryMinor": 2000,
+  "pacts": [
+    {
+      "id": "<pact-id>",
+      "goal": "Stay within the weekly food budget",
+      "status": "ACTIVE",
+      "stakeMinor": 2000,
+      "projectedRecoveryMinor": 2000,
+      "startsAt": "2026-11-26T00:00:00Z",
+      "recoveryEligible": true,
+      "endsAt": "2026-12-03T00:00:00Z"
+    }
+  ]
+}
+```
+
+The response includes all scheduled/active staked pacts and marks whether each meets the seven-day recovery minimum. Ineligible pacts have zero projected recovery. When an eligible pact resolves `KEPT` or `KEPT_WITH_EXCEPTIONS`, its own stake returns normally and up to the same amount moves from Commitment Reserve to Available. Recovery consumes the oldest eligible reserve allocations first and can partially recover one allocation. A pact can recover only reserve entries created before that pact's stake was reserved. Broken, cancelled, or shorter pacts recover nothing.
 
 ## 11. Accountability decisions
 
@@ -493,6 +528,7 @@ Push delivery is best-effort. Always refresh the corresponding API resource.
 | `409` | `approval_stale` | approved operation no longer matches current state |
 | `409` | `invalid_request_state` | resource is final or action is invalid now |
 | `422` | `invalid_pact_terms` | pact money, period, text, circle, or consequence invalid |
+| `422` | `pact_duration_too_short` | pact duration is less than 24 hours |
 | `422` | `accountability_reason_required` | blocked debit lacks owner reason |
 | `422` | `accountability_denial_reason_required` | reviewer denial lacks reason |
 | `422` | `invalid_accountability_decision` | approval classification invalid |
