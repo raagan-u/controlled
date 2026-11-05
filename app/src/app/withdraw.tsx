@@ -47,12 +47,13 @@ export default function WithdrawScreen() {
 		if (!isMeaningfulRemark(remark) || amountMinor <= 0 || over) return false;
 		const key = `${amountMinor}\u0000${remark}`;
 		if (lastAssessmentKey.current === key) return true;
+		lastAssessmentKey.current = key;
 		const requestId = ++assessmentRequestId.current;
 		setAssessmentLoading(true); setGuidanceStatus('');
 		try {
 			const result = await assessTransaction(amountMinor, remark, false);
 			if (requestId !== assessmentRequestId.current) return false;
-			setAssessment(result); lastAssessmentKey.current = key;
+			setAssessment(result);
 			return true;
 		} catch {
 			if (requestId !== assessmentRequestId.current) return false;

@@ -71,12 +71,13 @@ export default function SendScreen() {
 		if (!isMeaningfulRemark(reason) || amountMinor <= 0 || over) return false;
 		const key = `${amountMinor}\u0000${isPurchase}\u0000${reason}`;
 		if (lastAssessmentKey.current === key) return true;
+		lastAssessmentKey.current = key;
 		const requestId = ++assessmentRequestId.current;
 		setAssessmentLoading(true); setGuidanceStatus(''); setRemarkError('');
 		try {
 			const result = await assessTransaction(amountMinor, reason, isPurchase);
 			if (requestId !== assessmentRequestId.current) return false;
-			setAssessment(result); lastAssessmentKey.current = key;
+			setAssessment(result);
 			return true;
 		} catch (cause) {
 			if (requestId !== assessmentRequestId.current) return false;
