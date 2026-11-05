@@ -222,6 +222,16 @@ func TestSuggestPactRejectsIncompleteInput(t *testing.T) {
 	}
 }
 
+func TestAssessTransactionSkipsGuidanceWithoutActivePact(t *testing.T) {
+	t.Parallel()
+	service := NewService(fixedClock{testNow}, walletReaderStub{err: errors.New("transactions should not be read")}, pactReaderStub{}, nil, nil, &modelStub{})
+
+	assessment, err := service.AssessTransaction(context.Background(), "user-1", 1_000, "food", false, 0)
+	if !errors.Is(err, ErrNotApplicable) {
+		t.Fatalf("assessment = %#v, error = %v", assessment, err)
+	}
+}
+
 func TestAssessTransactionUsesHighestStakePactAndWarnsOnForecast(t *testing.T) {
 	t.Parallel()
 	primary := testActivePact(t, "primary", 20_000, 8_000, testNow.Add(-4*24*time.Hour), testNow.Add(6*24*time.Hour))

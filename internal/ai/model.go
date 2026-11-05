@@ -14,6 +14,7 @@ var (
 	ErrInvalidResponse = errors.New("AI model returned an invalid response")
 	ErrRateLimited     = errors.New("AI model is rate limited")
 	ErrUnavailable     = errors.New("AI model is unavailable")
+	ErrNotApplicable   = errors.New("AI guidance is not applicable")
 )
 
 type GuidanceKind string

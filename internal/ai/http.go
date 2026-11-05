@@ -54,6 +54,10 @@ func (h *Handler) AssessTransaction(response http.ResponseWriter, request *http.
 	}
 	assessment, err := h.service.AssessTransaction(request.Context(), user.ID(), input.AmountMinor, input.Remark, input.IsPurchase, input.TimezoneOffsetMinutes)
 	if err != nil {
+		if errors.Is(err, ErrNotApplicable) {
+			response.WriteHeader(http.StatusNoContent)
+			return
+		}
 		if errors.Is(err, ErrInvalidInput) {
 			httpapi.WriteError(response, http.StatusUnprocessableEntity, "invalid_transaction_remark", "Add a meaningful remark so Controlled can guide this payment.")
 			return

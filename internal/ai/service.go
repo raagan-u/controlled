@@ -186,36 +186,37 @@ func (s *Service) AssessTransaction(ctx context.Context, userID identity.UserID,
 	if userID == "" || amountMinor <= 0 || !MeaningfulRemark(remark) || timezoneOffsetMinutes < -840 || timezoneOffsetMinutes > 840 || s == nil || s.wallets == nil || s.pacts == nil {
 		return TransactionAssessment{}, ErrInvalidInput
 	}
+	primary, progress, err := s.primaryPact(ctx, userID)
+	if err != nil {
+		return TransactionAssessment{}, err
+	}
+	if primary == nil {
+		return TransactionAssessment{}, ErrNotApplicable
+	}
 	transactions, err := s.wallets.TransactionsByUser(ctx, userID, 100)
 	if err != nil {
 		return TransactionAssessment{}, err
 	}
 	pattern := summarizeSpending(transactions, s.now(), timezoneOffsetMinutes)
-	primary, progress, err := s.primaryPact(ctx, userID)
-	if err != nil {
-		return TransactionAssessment{}, err
-	}
 	input := ModelInput{Kind: GuidanceTransactionPreview, ProposedMinor: amountMinor, ProposedReason: remark, IsPurchase: isPurchase, SpendingPattern: &pattern}
 	facts := []Fact{{Label: "Last thirty days", Value: usd(pattern.RecentSpentMinor + pattern.PreviousSpentMinor)}, {Label: "Payments counted", Value: fmt.Sprintf("%d", pattern.RecentCount+pattern.PreviousCount)}}
 	classification := Classification{Relationship: RelationshipUnclear, Confidence: ConfidenceLow, Reason: "There is not enough pact context to classify this payment."}
 	classifiedByModel := false
 	primaryID := ""
-	if primary != nil {
-		primaryID = string(primary.ID())
-		terms := primary.Terms()
-		input.Goal, input.Intent = terms.Goal(), terms.Intent()
-		input.LimitMinor, input.UsedMinor = terms.SpendingLimit().AmountMinor(), progress.UsedMinor
-		input.RemainingMinor, input.OverageMinor = progress.RemainingMinor, progress.OverageMinor
-		input.PactStatus = string(primary.Status())
-		input.ElapsedDays = elapsedDays(terms.StartsAt(), s.now())
-		input.DaysRemaining = remainingDays(terms.EndsAt(), s.now())
-		classification, classifiedByModel = s.classify(ctx, ClassificationInput{Goal: input.Goal, Intent: input.Intent, Reason: remark, IsPurchase: isPurchase})
-		input.Relationship, input.Confidence = classification.Relationship, classification.Confidence
-		input.ProjectedMinor, input.ForecastWarning = forecast(input.UsedMinor, amountMinor, input.LimitMinor, input.ElapsedDays, input.DaysRemaining)
-		facts = append(facts, Fact{Label: "Pact used after payment", Value: percent(input.UsedMinor+amountMinor, input.LimitMinor)})
-		if input.ElapsedDays >= 3 {
-			facts = append(facts, Fact{Label: "Projected at pact end", Value: forecastLabel(input.ProjectedMinor, input.LimitMinor)})
-		}
+	primaryID = string(primary.ID())
+	terms := primary.Terms()
+	input.Goal, input.Intent = terms.Goal(), terms.Intent()
+	input.LimitMinor, input.UsedMinor = terms.SpendingLimit().AmountMinor(), progress.UsedMinor
+	input.RemainingMinor, input.OverageMinor = progress.RemainingMinor, progress.OverageMinor
+	input.PactStatus = string(primary.Status())
+	input.ElapsedDays = elapsedDays(terms.StartsAt(), s.now())
+	input.DaysRemaining = remainingDays(terms.EndsAt(), s.now())
+	classification, classifiedByModel = s.classify(ctx, ClassificationInput{Goal: input.Goal, Intent: input.Intent, Reason: remark, IsPurchase: isPurchase})
+	input.Relationship, input.Confidence = classification.Relationship, classification.Confidence
+	input.ProjectedMinor, input.ForecastWarning = forecast(input.UsedMinor, amountMinor, input.LimitMinor, input.ElapsedDays, input.DaysRemaining)
+	facts = append(facts, Fact{Label: "Pact used after payment", Value: percent(input.UsedMinor+amountMinor, input.LimitMinor)})
+	if input.ElapsedDays >= 3 {
+		facts = append(facts, Fact{Label: "Projected at pact end", Value: forecastLabel(input.ProjectedMinor, input.LimitMinor)})
 	}
 	fallback := transactionFallback(input, pattern.HasSufficientHistory)
 	guidance := Guidance{Kind: input.Kind, Headline: fallback.Headline, Message: fallback.Message, Tone: fallback.Tone, Facts: facts, Source: SourceRules, GeneratedAt: s.now()}

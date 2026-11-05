@@ -50,6 +50,6 @@ export const getPactInsight = (id: string) => guidance(`/v1/ai/pacts/${encodeURI
 export const getAccountabilityBrief = (id: string) => guidance(`/v1/ai/accountability/${encodeURIComponent(id)}/brief`);
 
 export const assessTransaction = (amountMinor: number, remark: string, isPurchase: boolean) =>
-  apiRequest<{ assessment: TransactionAssessment }>('/v1/ai/transaction-assessments', {
+  apiRequest<{ assessment: TransactionAssessment } | undefined>('/v1/ai/transaction-assessments', {
     body: { amountMinor, isPurchase, remark, timezoneOffsetMinutes: new Date().getTimezoneOffset() }, method: 'POST', timeoutMs: 20_000,
-  }).then((response) => response.assessment);
+  }).then((response) => response?.assessment ?? null);
