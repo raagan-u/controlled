@@ -14,10 +14,12 @@ import { colors, fonts, radii } from '@/theme';
 import { APIError } from '@/api/client';
 import { useActiveRefresh } from '@/hooks/useActiveRefresh';
 import { assessTransaction, type TransactionAssessment } from '@/api/ai';
+import { getPacts } from '@/api/pacts';
 import { TransactionGuidance } from '@/components/TransactionGuidance';
 import { isMeaningfulRemark } from '@/utils/remark';
 
 type Step = 'amount' | 'reason' | 'processing' | 'success' | 'failed' | 'review';
+const INPUT_SETTLE_DELAY_MS = 900;
 
 export default function WithdrawScreen() {
   const [amount, setAmount] = useState('');
@@ -34,6 +36,7 @@ export default function WithdrawScreen() {
 	const [assessment, setAssessment] = useState<TransactionAssessment | null>(null);
 	const [assessmentLoading, setAssessmentLoading] = useState(false);
 	const [guidanceStatus, setGuidanceStatus] = useState('');
+	const [hasActivePact, setHasActivePact] = useState(false);
 	const assessmentRequestId = useRef(0);
 	const lastAssessmentKey = useRef('');
   const [reviewId, setReviewId] = useState('');
@@ -48,6 +51,10 @@ export default function WithdrawScreen() {
 		const key = `${amountMinor}\u0000${remark}`;
 		if (lastAssessmentKey.current === key) return true;
 		lastAssessmentKey.current = key;
+		if (!hasActivePact) {
+			setAssessment(null); setAssessmentLoading(false); setGuidanceStatus('');
+			return true;
+		}
 		const requestId = ++assessmentRequestId.current;
 		setAssessmentLoading(true); setGuidanceStatus('');
 		try {
@@ -62,21 +69,29 @@ export default function WithdrawScreen() {
 		} finally {
 			if (requestId === assessmentRequestId.current) setAssessmentLoading(false);
 		}
-	}, [amountMinor, over, reason]);
+	}, [amountMinor, hasActivePact, over, reason]);
 	useEffect(() => {
 		if (!valid) return;
-		const timer = setTimeout(() => void runAssessment(), 450);
+		const timer = setTimeout(() => void runAssessment(), INPUT_SETTLE_DELAY_MS);
 		return () => clearTimeout(timer);
 	}, [runAssessment, valid]);
+	useEffect(() => { if (hasActivePact) lastAssessmentKey.current = ''; }, [hasActivePact]);
 
-  const refreshWallet = useCallback(async () => { try { const [{ wallet }, { user }] = await Promise.all([getWallet(), getCurrentUser()]); setAvailable(wallet.balances.available.amountMinor); setDestinationEmail(user.email); setDestination(`PayPal · ${user.email}`); } catch (cause) { setError(apiErrorMessage(cause)); } }, []);
+  const refreshWallet = useCallback(async () => {
+		const [walletResult, userResult, pactsResult] = await Promise.allSettled([getWallet(), getCurrentUser(), getPacts()]);
+		if (walletResult.status === 'fulfilled') setAvailable(walletResult.value.wallet.balances.available.amountMinor);
+		else setError(apiErrorMessage(walletResult.reason));
+		if (userResult.status === 'fulfilled') { setDestinationEmail(userResult.value.user.email); setDestination(`PayPal · ${userResult.value.user.email}`); }
+		else setError(apiErrorMessage(userResult.reason));
+		setHasActivePact(pactsResult.status === 'fulfilled' && pactsResult.value.some((pact) => pact.status === 'ACTIVE'));
+	}, []);
   useActiveRefresh(refreshWallet);
 
   async function withdraw() {
     if (!valid || submitting) return;
 		if (lastAssessmentKey.current !== `${amountMinor}\u0000${reason.trim()}`) {
-			await runAssessment();
-			return;
+			const ready = await runAssessment();
+			if (!ready || hasActivePact) return;
 		}
     setSubmitting(true); setError('');
     try {

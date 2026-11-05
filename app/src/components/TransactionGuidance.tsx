@@ -19,7 +19,7 @@ const changeLabels: Record<TransactionAssessment['pattern']['change'], string> =
   STABLE: 'Spending is mostly stable',
 };
 
-export function TransactionGuidance({ assessment, loading, status }: { assessment: TransactionAssessment | null; loading: boolean; status: string }) {
+export function TransactionGuidance({ assessment, loading, loadingText = 'Checking this payment against your pact…', status }: { assessment: TransactionAssessment | null; loading: boolean; loadingText?: string; status: string }) {
   const [visible, setVisible] = useState(false);
   const lastOpenedAssessment = useRef('');
   const assessmentKey = assessment ? assessment.id ?? `${assessment.guidance.generatedAt}:${assessment.guidance.headline}` : '';
@@ -30,7 +30,7 @@ export function TransactionGuidance({ assessment, loading, status }: { assessmen
     setVisible(true);
   }, [assessment, assessmentKey]);
 
-  if (loading) return <Text style={styles.status}>Checking this payment against your pact…</Text>;
+  if (loading) return <Text style={styles.status}>{loadingText}</Text>;
   if (!assessment) return status ? <Text style={styles.status}>{status}</Text> : null;
 
   const guidance = assessment.guidance;
