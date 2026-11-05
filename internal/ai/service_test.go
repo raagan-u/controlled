@@ -236,14 +236,14 @@ func TestAssessTransactionUsesHighestStakePactAndWarnsOnForecast(t *testing.T) {
 		testSpendingTransactionWithReason(t, 500, testNow.Add(-20*24*time.Hour), "coffee"),
 	}}, pactReaderStub{values: []*pact.Pact{secondary, primary}, progress: pact.Progress{UsedMinor: 9_000, RemainingMinor: 11_000}}, nil, nil, model)
 
-	assessment, err := service.AssessTransaction(context.Background(), "user-1", 2_000, "expensive dinner", true)
+	assessment, err := service.AssessTransaction(context.Background(), "user-1", 2_000, "expensive dinner", true, -330)
 	if err != nil {
 		t.Fatalf("AssessTransaction() error = %v", err)
 	}
 	if assessment.PrimaryPactID != "primary" || !assessment.ForecastWarning || assessment.Relationship != RelationshipConflicting {
 		t.Fatalf("assessment = %#v", assessment)
 	}
-	if assessment.Pattern.RecentCount != 1 || assessment.Pattern.PreviousCount != 2 || assessment.Pattern.FrequentReasons[0].Reason != "food" {
+	if assessment.Pattern.RecentCount != 1 || assessment.Pattern.PreviousCount != 2 || assessment.Pattern.FrequentReasons[0].Reason != "food" || assessment.Pattern.PeakTime != "afternoon" {
 		t.Fatalf("pattern = %#v", assessment.Pattern)
 	}
 }
@@ -256,7 +256,7 @@ func TestAssessTransactionKeepsLowConfidenceClassificationUnclear(t *testing.T) 
 		drafts:          []ModelDraft{{Headline: "Not enough history yet", Message: "There is not enough recent activity to identify a reliable pattern.", Tone: ToneNeutral}},
 	}
 	service := NewService(fixedClock{testNow}, walletReaderStub{}, pactReaderStub{values: []*pact.Pact{value}}, nil, nil, model)
-	assessment, err := service.AssessTransaction(context.Background(), "user-1", 1_000, "food", false)
+	assessment, err := service.AssessTransaction(context.Background(), "user-1", 1_000, "food", false, 0)
 	if err != nil || assessment.Relationship != RelationshipUnclear || assessment.ForecastWarning {
 		t.Fatalf("assessment = %#v, error = %v", assessment, err)
 	}
@@ -268,7 +268,7 @@ func TestAssessTransactionPersistsReusableAssessment(t *testing.T) {
 	store := &assessmentStoreStub{}
 	service := NewService(fixedClock{testNow}, walletReaderStub{}, pactReaderStub{values: []*pact.Pact{value}}, nil, nil, nil).
 		EnableAssessmentPersistence(idStub{value: "assessment-1"}, store)
-	assessment, err := service.AssessTransaction(context.Background(), "user-1", 1_000, "food", true)
+	assessment, err := service.AssessTransaction(context.Background(), "user-1", 1_000, "food", true, 0)
 	if err != nil || assessment.ID != "assessment-1" {
 		t.Fatalf("assessment = %#v, error = %v", assessment, err)
 	}

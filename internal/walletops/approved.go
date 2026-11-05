@@ -57,7 +57,7 @@ func (s *Service) ExecuteApproved(ctx context.Context, approved ApprovedDebit) (
 	case DebitWithdrawal:
 		withdrawal, err := s.repo.ReserveWithdrawal(approvedContext, approved.IdempotencyKey, Withdrawal{
 			ID: approved.IntentID, OwnerID: approved.OwnerID, Destination: approved.Destination,
-			Amount: approved.Amount, Status: WithdrawalReserved, CreatedAt: now, UpdatedAt: now,
+			Amount: approved.Amount, Remark: strings.TrimSpace(approved.Reason), Status: WithdrawalReserved, CreatedAt: now, UpdatedAt: now,
 		}, ledger.JournalID(generated[0]))
 		if err != nil {
 			return "", err

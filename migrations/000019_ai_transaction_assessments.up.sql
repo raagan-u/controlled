@@ -19,3 +19,6 @@ CREATE INDEX ai_transaction_assessments_owner_created_idx
 ALTER TABLE internal_transfers
     ADD COLUMN guidance_assessment_id uuid REFERENCES ai_transaction_assessments(id) ON DELETE SET NULL,
     ADD COLUMN is_purchase boolean NOT NULL DEFAULT false;
+
+ALTER TABLE withdrawals
+    ADD COLUMN remark text NOT NULL DEFAULT '';

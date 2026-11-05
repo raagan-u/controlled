@@ -84,6 +84,7 @@ type Withdrawal struct {
 	OwnerID                  identity.UserID
 	WalletID                 string
 	Destination              string
+	Remark                   string
 	Amount                   money.Money
 	Status                   WithdrawalStatus
 	ProviderPayoutID         string

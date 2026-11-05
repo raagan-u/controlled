@@ -12,6 +12,7 @@ import (
 	"github.com/raagan-u/controlled/internal/ledger"
 	"github.com/raagan-u/controlled/internal/notification"
 	"github.com/raagan-u/controlled/internal/platform/httpapi"
+	"github.com/raagan-u/controlled/internal/platform/textcheck"
 )
 
 type Commander interface {
@@ -107,6 +108,10 @@ func (h *Handler) CreateTransfer(response http.ResponseWriter, request *http.Req
 		httpapi.WriteError(response, http.StatusBadRequest, "invalid_request", "Request body must contain a recipient and amount.")
 		return
 	}
+	if !textcheck.MeaningfulRemark(input.Reason) {
+		httpapi.WriteError(response, http.StatusUnprocessableEntity, "invalid_transaction_remark", "Add a meaningful remark so Controlled can guide this payment.")
+		return
+	}
 	var transfer Transfer
 	var review *ReviewRequest
 	var err error
@@ -168,6 +173,10 @@ func (h *Handler) CreateWithdrawal(response http.ResponseWriter, request *http.R
 	}
 	if err := httpapi.ReadJSON(response, request, &input, httpapi.DefaultMaxBodyBytes); err != nil {
 		httpapi.WriteError(response, http.StatusBadRequest, "invalid_request", "Request body must contain a destination and amount.")
+		return
+	}
+	if !textcheck.MeaningfulRemark(input.Reason) {
+		httpapi.WriteError(response, http.StatusUnprocessableEntity, "invalid_transaction_remark", "Add a meaningful remark so Controlled can guide this withdrawal.")
 		return
 	}
 	var withdrawal Withdrawal

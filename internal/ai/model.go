@@ -58,6 +58,10 @@ type SpendingPattern struct {
 	PeakTime             string          `json:"peakTime,omitempty"`
 	FrequentReasons      []ReasonPattern `json:"frequentReasons,omitempty"`
 	HasSufficientHistory bool            `json:"hasSufficientHistory"`
+	AlignedCount         int             `json:"alignedCount"`
+	ConflictingCount     int             `json:"conflictingCount"`
+	ExceptionalCount     int             `json:"exceptionalCount"`
+	UnclearCount         int             `json:"unclearCount"`
 }
 
 type Tone string

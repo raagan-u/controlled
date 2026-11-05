@@ -339,7 +339,7 @@ func (s *Service) CreateWithdrawalWithReason(
 	now := s.clock.Now().UTC()
 	withdrawal, err := s.repo.ReserveWithdrawal(ctx, key, Withdrawal{
 		ID: OperationID(generated[0]), OwnerID: ownerID, Destination: destination,
-		Amount: amount, Status: WithdrawalReserved, CreatedAt: now, UpdatedAt: now,
+		Amount: amount, Remark: strings.TrimSpace(reason), Status: WithdrawalReserved, CreatedAt: now, UpdatedAt: now,
 	}, ledger.JournalID(generated[1]))
 	if err != nil {
 		var blocked *PolicyBlockedError

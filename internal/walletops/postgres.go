@@ -402,7 +402,7 @@ func (r *PostgresRepository) ReserveWithdrawal(
 
 	existing, err := loadWithdrawalByKey(ctx, tx, candidate.OwnerID, key, true)
 	if err == nil {
-		if existing.Destination != candidate.Destination || !existing.Amount.Equal(candidate.Amount) {
+		if existing.Destination != candidate.Destination || !existing.Amount.Equal(candidate.Amount) || existing.Remark != candidate.Remark {
 			return Withdrawal{}, ErrIdempotencyConflict
 		}
 		existing.Duplicate = true
@@ -472,9 +472,9 @@ func (r *PostgresRepository) ReserveWithdrawal(
 		INSERT INTO withdrawals (
 			id, owner_id, wallet_id, idempotency_key, destination,
 			amount_minor, currency, status, reservation_transaction_id,
-			created_at, updated_at
-		) VALUES ($1, $2, $3::text::uuid, $4, $5, $6, $7, 'RESERVED', $8::text::uuid, $9, $9)
-	`, parsedID, ownerID, walletID, key, candidate.Destination, candidate.Amount.AmountMinor(), currency, string(posted.JournalID), candidate.CreatedAt)
+			created_at, updated_at, remark
+		) VALUES ($1, $2, $3::text::uuid, $4, $5, $6, $7, 'RESERVED', $8::text::uuid, $9, $9, $10)
+	`, parsedID, ownerID, walletID, key, candidate.Destination, candidate.Amount.AmountMinor(), currency, string(posted.JournalID), candidate.CreatedAt, candidate.Remark)
 	if err != nil {
 		return Withdrawal{}, mapOperationError(err)
 	}
@@ -939,7 +939,7 @@ const withdrawalSelect = `
 	       amount_minor, currency, status, COALESCE(provider_payout_id, ''),
 	       reservation_transaction_id::text,
 	       COALESCE(settlement_transaction_id::text, ''),
-	       created_at, updated_at, completed_at
+	       created_at, updated_at, completed_at, remark
 	  FROM withdrawals`
 
 func scanWithdrawal(row interface{ Scan(...any) error }) (Withdrawal, error) {
@@ -955,7 +955,7 @@ func scanWithdrawal(row interface{ Scan(...any) error }) (Withdrawal, error) {
 		&id, &ownerID, &result.WalletID, &result.Destination,
 		&amountMinor, &currency, &result.Status, &result.ProviderPayoutID,
 		&result.ReservationTransactionID, &result.SettlementTransactionID,
-		&createdAt, &updatedAt, &completedAt,
+		&createdAt, &updatedAt, &completedAt, &result.Remark,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Withdrawal{}, ErrOperationNotFound

@@ -14,6 +14,7 @@ import (
 	"github.com/raagan-u/controlled/internal/identity"
 	"github.com/raagan-u/controlled/internal/ledger"
 	"github.com/raagan-u/controlled/internal/pact"
+	"github.com/raagan-u/controlled/internal/platform/textcheck"
 	"github.com/raagan-u/controlled/internal/wallet"
 )
 
@@ -177,16 +178,16 @@ func (s *Service) AccountabilityBrief(ctx context.Context, userID identity.UserI
 	return s.generate(ctx, input, facts, accountabilityFallback(input)), nil
 }
 
-func (s *Service) AssessTransaction(ctx context.Context, userID identity.UserID, amountMinor int64, remark string, isPurchase bool) (TransactionAssessment, error) {
+func (s *Service) AssessTransaction(ctx context.Context, userID identity.UserID, amountMinor int64, remark string, isPurchase bool, timezoneOffsetMinutes int) (TransactionAssessment, error) {
 	remark = strings.TrimSpace(remark)
-	if userID == "" || amountMinor <= 0 || !MeaningfulRemark(remark) || s == nil || s.wallets == nil || s.pacts == nil {
+	if userID == "" || amountMinor <= 0 || !MeaningfulRemark(remark) || timezoneOffsetMinutes < -840 || timezoneOffsetMinutes > 840 || s == nil || s.wallets == nil || s.pacts == nil {
 		return TransactionAssessment{}, ErrInvalidInput
 	}
 	transactions, err := s.wallets.TransactionsByUser(ctx, userID, 100)
 	if err != nil {
 		return TransactionAssessment{}, err
 	}
-	pattern := summarizeSpending(transactions, s.now())
+	pattern := summarizeSpending(transactions, s.now(), timezoneOffsetMinutes)
 	primary, progress, err := s.primaryPact(ctx, userID)
 	if err != nil {
 		return TransactionAssessment{}, err
@@ -236,34 +237,7 @@ func (s *Service) AssessTransaction(ctx context.Context, userID identity.UserID,
 }
 
 func MeaningfulRemark(value string) bool {
-	value = strings.TrimSpace(value)
-	if value == "" || len(value) > 300 {
-		return false
-	}
-	lower := strings.ToLower(value)
-	for _, noise := range []string{"asdf", "qwer", "zxcv", "hjkl", "1234"} {
-		if strings.Contains(lower, noise) {
-			return false
-		}
-	}
-	letters := 0
-	var previous rune
-	repeated := 0
-	for _, character := range lower {
-		if character >= 'a' && character <= 'z' {
-			letters++
-			if character == previous {
-				repeated++
-			} else {
-				repeated = 1
-			}
-			if repeated >= 4 {
-				return false
-			}
-		}
-		previous = character
-	}
-	return letters >= 2
+	return textcheck.MeaningfulRemark(value)
 }
 
 func (s *Service) classify(ctx context.Context, input ClassificationInput) Classification {
@@ -452,7 +426,7 @@ func accountabilityFallback(input ModelInput) ModelDraft {
 	return ModelDraft{Headline: "Review the trade-off", Message: fmt.Sprintf("%s raised this request. Review their reason against the pact they chose to protect, then decide whether the exception fits.", input.RequesterName), Tone: ToneCaution}
 }
 
-func summarizeSpending(transactions []wallet.Transaction, now time.Time) SpendingPattern {
+func summarizeSpending(transactions []wallet.Transaction, now time.Time, timezoneOffsetMinutes int) SpendingPattern {
 	cutoff, midpoint := now.Add(-30*24*time.Hour), now.Add(-15*24*time.Hour)
 	pattern := SpendingPattern{FrequentReasons: []ReasonPattern{}}
 	type totals struct {
@@ -476,9 +450,24 @@ func summarizeSpending(transactions []wallet.Transaction, now time.Time) Spendin
 			pattern.RecentSpentMinor += amount
 			pattern.RecentCount++
 		}
-		days[transaction.OccurredAt.Weekday().String()] += amount
-		times[dayPart(transaction.OccurredAt)] += amount
+		localTime := transaction.OccurredAt.Add(-time.Duration(timezoneOffsetMinutes) * time.Minute)
+		days[localTime.Weekday().String()] += amount
+		times[dayPart(localTime)] += amount
 		reason := transactionReason(transaction)
+		if transaction.Transfer != nil {
+			switch Relationship(transaction.Transfer.GuidanceRelationship) {
+			case RelationshipAligned:
+				pattern.AlignedCount++
+			case RelationshipConflicting:
+				pattern.ConflictingCount++
+			case RelationshipExceptional:
+				pattern.ExceptionalCount++
+			default:
+				pattern.UnclearCount++
+			}
+		} else {
+			pattern.UnclearCount++
+		}
 		if reason != "" && MeaningfulRemark(reason) {
 			key := strings.ToLower(strings.TrimSpace(reason))
 			value := reasons[key]
@@ -517,6 +506,9 @@ func transactionReason(transaction wallet.Transaction) string {
 	}
 	if transaction.Approval != nil {
 		return transaction.Approval.Reason
+	}
+	if transaction.SpendingReason != "" {
+		return transaction.SpendingReason
 	}
 	return ""
 }
