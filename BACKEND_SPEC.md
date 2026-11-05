@@ -111,7 +111,7 @@ Funding flow:
 4. credit the provider-reported net amount to available balance once; and
 5. retain gross/net/provider identifiers for audit and idempotency.
 
-Withdrawal flow:
+Withdrawal flow (a meaningful reason is required before policy evaluation):
 
 1. validate balance and pact policy;
 2. reserve available funds into pending and count pact usage;
@@ -123,7 +123,7 @@ Provider calls use bounded HTTP timeouts and idempotency/request identifiers. Pr
 
 ## 9. Internal transfers and payment requests
 
-An internal transfer atomically debits the sender's available account and credits the recipient's available account. Self-transfer, unknown recipient, non-USD input, non-positive amount, and insufficient balance are rejected. Optional remarks are persisted and returned with the transaction.
+An internal transfer atomically debits the sender's available account and credits the recipient's available account. Self-transfer, unknown recipient, non-USD input, non-positive amount, insufficient balance, and a missing/obviously noisy remark are rejected. Meaningful remarks are required, persisted, and returned with the transaction. A caller may attach a matching unexpired transaction-assessment ID and purchase flag; the repository verifies owner, amount, remark, flag, and expiry before preserving the guidance classification on the transfer.
 
 Payment requests are seven-day resources between two distinct users. States are:
 
@@ -193,7 +193,9 @@ Emergency increments each affected pact's exception count and retains stake. Con
 
 ## 13. Guidance and shopping
 
-AI endpoints read verified server state and return a stable `guidance` schema. With `CONTROLLED_AI_PROVIDER=disabled`, rules generate the response. With `openai_compatible`, the model receives only a curated snapshot and must return strict structured output. The backend validates all output and falls back to rules on provider error.
+AI endpoints read verified server state. Pact suggestions, pact insights, and accountability briefs return the stable `guidance` schema. Transaction previews return an `assessment` containing guidance, relationship/confidence, a 30-day spending pattern, forecast fields, the selected primary pact, and an optional short-lived persistence ID. With `CONTROLLED_AI_PROVIDER=disabled`, rules generate guidance. With `openai_compatible`, the model receives only a curated snapshot and must return strict structured output. The backend validates output and falls back to rules on provider error.
+
+`POST /v1/ai/transaction-assessments` first selects the active pact with highest stake, then highest spending limit, then longest duration. It returns `204` without loading history or calling a model when no active pact exists. Otherwise it summarizes outgoing transfers and withdrawal reservations across a rolling 30-day window split into two 15-day periods, including amount/frequency, local day/time, meaningful remarks, trend, and prior classifications. At least three historical payments are required to claim a reliable pattern. Forecasting starts after three elapsed pact days and warns only when post-payment usage is at least 50% and projected end usage exceeds the limit. Policy authorization remains deterministic and continues to evaluate all active pacts.
 
 AI has no command interface to wallet, ledger, pact, or accountability services.
 

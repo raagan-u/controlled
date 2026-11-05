@@ -30,9 +30,9 @@ Insufficient balance is never overridable. AI never moves money or approves an e
 - First-time display-name setup
 - Home dashboard with available balance, recent recipients, live pact progress, and transaction activity
 - PayPal Sandbox or fake-provider wallet funding
-- Internal transfers by Controlled recipient, with persisted remarks
+- Internal transfers by Controlled recipient, with required meaningful persisted remarks
 - Payment requests with pay, decline, cancel, expiry, and pact enforcement
-- Withdrawals with provider settlement/reconciliation
+- Withdrawals with required reasons and provider settlement/reconciliation
 - Optional purchase-intent price checks through Channel3
 - Pact creation with a 24-hour minimum, local draft recovery, scheduling, progress, history, and outcomes
 - Stakes & recovery view with live totals, seven-day eligibility, projected unlocks, and clear ineligible states
@@ -52,7 +52,7 @@ Insufficient balance is never overridable. AI never moves money or approves an e
 - Pact and request maintenance on startup and once per minute
 - Atomic oldest-first Commitment Reserve recovery from kept pacts lasting at least seven days
 - Selectable fake or PayPal Sandbox custody provider
-- Deterministic guidance with optional OpenAI-compatible structured-output enhancement
+- Active-pact transaction previews grounded in 30-day spending patterns, with deterministic guidance and optional OpenAI-compatible structured-output enhancement
 - Optional Channel3 product search
 - Asynchronous Expo push delivery
 - Structured Zap startup, feature-status, request, domain, and error logs
@@ -64,7 +64,7 @@ Insufficient balance is never overridable. AI never moves money or approves an e
 3. Invite at least one accountability partner and create an ordered circle.
 4. Create a pact with a goal, limit, stake, and a period of at least 24 hours. Seven days or longer qualifies it for reserve recovery.
 5. Confirm the terms and reserve the stake.
-6. Send, pay, or withdraw normally.
+6. Send with a meaningful remark, withdraw with a meaningful reason, or pay an existing request. When an active pact exists, Controlled previews the payment against the pact and recent spending pattern; without an active pact, guidance is skipped.
 7. If a debit crosses any active pact limit, explain why and request approval.
 8. The assigned partner approves it as an emergency/conscious break or denies it with a reason.
 9. Controlled rechecks balance and every current pact before executing an approved transaction.

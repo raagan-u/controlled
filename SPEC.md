@@ -34,7 +34,7 @@ Balance, activity, recipients, and pact state refresh together when Home regains
 
 ### Send money
 
-The user selects an existing Controlled recipient, enters an amount, and may add a remark. The remark is persisted and shown in transaction details.
+The user selects an existing Controlled recipient, enters an amount, and adds a required meaningful remark. Short labels and single words are allowed, but empty text and obvious keyboard noise are rejected. The remark is persisted and shown in transaction details.
 
 The user can mark the transfer as a purchase. In purchase mode:
 
@@ -43,6 +43,8 @@ The user can mark the transfer as a purchase. In purchase mode:
 - a price check is skipped when the amount exceeds available balance;
 - a matched result may show the best offer, merchant, product, savings, and verdict; and
 - provider failure never blocks the payment.
+
+The client waits 900 milliseconds after valid input settles before starting pact guidance or a price check. When both apply, it renders one combined loading status; matched price results and pact guidance still open automatically.
 
 The purchase toggle affects guidance only; the transfer itself remains the same wallet operation.
 
@@ -56,7 +58,7 @@ If payment requires accountability approval, the payment request moves to `AWAIT
 
 Funding creates a provider order. The fake provider supports deterministic local confirmation; PayPal Sandbox returns an approval URL and captures the approved order through the API.
 
-Withdrawal reserves available funds into pending balance before provider payout. Successful settlement consumes the pending amount. Failed settlement releases it back to available and reverses corresponding pact usage. PayPal payouts can be reconciled by the API.
+Withdrawal requires a meaningful reason, then reserves available funds into pending balance before provider payout. Successful settlement consumes the pending amount. Failed settlement releases it back to available and reverses corresponding pact usage. PayPal payouts can be reconciled by the API.
 
 ### Transaction details
 
@@ -164,8 +166,15 @@ Approval is single-use and scoped to the exact saved transaction. Before executi
 The guidance layer supports:
 
 - pact term suggestions from the user's goal, intent, balance, and history;
+- transaction previews for proposed sends and withdrawals when at least one pact is active;
 - pact progress insights; and
 - factual accountability briefs.
+
+Transaction previews are not requested when the user has no active pact, and the API independently returns `204 No Content` in that case. With overlapping active pacts, preview guidance uses the pact with the highest stake, then highest limit, then longest duration; deterministic enforcement still evaluates every active pact.
+
+The preview summarizes outgoing transfers and withdrawal reservations from the last 30 days. It compares the most recent 15 days with the previous 15, identifies amount-weighted day/time and remark patterns, and reports whether at least three historical payments exist. The proposed remark is classified as potentially aligned, conflicting, exceptional, or unclear using only the pact goal/intent, transaction remark, and purchase flag. Generic or uncertain remarks remain neutral.
+
+Forecast guidance begins only after three elapsed pact days. The stronger warning appears only when the proposed payment would bring usage to at least half the limit and projected end-of-pact spending would exceed the limit. Guidance remains neutral and concise unless verified pact or forecast facts justify a firmer, caring tone. Potentially aligned spending still counts toward the pact limit.
 
 With AI disabled or unavailable, endpoints return deterministic rule-based guidance. With an OpenAI-compatible provider enabled, the backend sends a curated snapshot, requires structured JSON, validates the response, and falls back to rules on timeout, rate limiting, invalid output, or provider failure.
 

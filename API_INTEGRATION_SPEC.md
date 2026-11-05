@@ -98,6 +98,7 @@ Creation and money commands marked **yes** below require `Idempotency-Key`. Repl
 | `POST` | `/v1/pacts/{id}/stake` | yes | yes |
 | `POST` | `/v1/pacts/{id}/cancel` | yes | no |
 | `POST` | `/v1/ai/pact-suggestions` | yes | no |
+| `POST` | `/v1/ai/transaction-assessments` | yes | no |
 | `GET` | `/v1/ai/pacts/{id}/insight` | yes | no |
 | `GET` | `/v1/ai/accountability/{id}/brief` | yes | no |
 | `POST` | `/v1/shopping/price-checks` | yes | no |
@@ -253,11 +254,13 @@ Idempotency-Key: send-1
   "recipientEmail": "bob@example.test",
   "amountMinor": 3000,
   "currency": "USD",
-  "reason": "Dinner and train ticket"
+  "reason": "Dinner and train ticket",
+  "isPurchase": false,
+  "assessmentId": "<optional-matching-assessment-id>"
 }
 ```
 
-`reason` is persisted as the transfer remark. When active pacts block the debit, it is also the required owner reason for the accountability request. A permitted transfer returns the transfer. A blocked transfer with a reason returns `202` and `accountabilityRequest`. Insufficient funds return `409` and never create a review.
+`reason` is required for every direct transfer and is persisted as the transfer remark. It must contain meaningful text (short single-word labels are valid; empty text and obvious keyboard noise are not). When active pacts block the debit, it is also the owner reason for the accountability request. `isPurchase` defaults to `false`. If `assessmentId` is supplied, it must be unexpired and match the authenticated owner, amount, exact remark, and purchase flag. A permitted transfer returns the transfer. A blocked transfer returns `202` and `accountabilityRequest`. Insufficient funds return `409` and never create a review.
 
 Optional product price check:
 
@@ -291,7 +294,7 @@ Idempotency-Key: withdraw-1
 }
 ```
 
-A permitted withdrawal reserves funds and returns `202`. Reconcile a PayPal payout with `POST /v1/wallet/withdrawals/{id}/reconcile`. The fake provider supports:
+`reason` follows the same meaningful-text requirement as a transfer remark. A permitted withdrawal reserves funds and returns `202`. Reconcile a PayPal payout with `POST /v1/wallet/withdrawals/{id}/reconcile`. The fake provider supports:
 
 ```http
 POST /v1/demo/withdrawals/{id}/settle
@@ -482,6 +485,23 @@ POST /v1/ai/pact-suggestions
 {"goal":"Keep weekends intentional","intent":"Protect travel savings"}
 ```
 
+Preview a proposed transaction against the user's primary active pact:
+
+```http
+POST /v1/ai/transaction-assessments
+
+{
+  "amountMinor": 3999,
+  "remark": "PC game Elden Ring",
+  "isPurchase": true,
+  "timezoneOffsetMinutes": -330
+}
+```
+
+When no active pact exists, the endpoint returns `204 No Content` and performs no model call. Otherwise it returns `200` with `assessment`: an optional 15-minute `id`, `primaryPactId`, `relationship` (`ALIGNED`, `CONFLICTING`, `EXCEPTIONAL`, or `UNCLEAR`), `confidence`, `classifierVersion`, `forecastWarning`, optional `projectedMinor`, `pattern`, and nested `guidance`.
+
+`pattern` covers outgoing transfers and withdrawal reservations from the last 30 days, split into `recent*` (latest 15 days) and `previous*` (prior 15 days). It includes amount/count trend, peak local day/time, up to three amount-ranked meaningful remarks, classification counts, and `hasSufficientHistory` (at least three payments). The primary preview pact is chosen by highest stake, then highest limit, then longest duration. Forecasting starts after three elapsed days; `forecastWarning` requires both post-payment usage of at least 50% and a projection above the pact limit. This preview does not replace the authoritative all-active-pact policy check.
+
 Read grounded insight/brief:
 
 ```text
@@ -489,7 +509,7 @@ GET /v1/ai/pacts/{id}/insight
 GET /v1/ai/accountability/{id}/brief
 ```
 
-Responses identify `source` as `AI` or `RULES`. Provider failure falls back to deterministic rules after verified source data loads. Guidance endpoints never mutate wallet, pact, or review state.
+Guidance objects identify `source` as `AI` or `RULES`. Provider failure falls back to deterministic rules after verified source data loads. Guidance endpoints never mutate wallet, pact, or review state; transaction assessment persistence stores only advisory metadata for later transfer attribution.
 
 ## 13. Push devices
 
@@ -529,6 +549,7 @@ Push delivery is best-effort. Always refresh the corresponding API resource.
 | `409` | `invalid_request_state` | resource is final or action is invalid now |
 | `422` | `invalid_pact_terms` | pact money, period, text, circle, or consequence invalid |
 | `422` | `pact_duration_too_short` | pact duration is less than 24 hours |
+| `422` | `invalid_transaction_remark` | send/withdraw remark or assessment input is empty or obvious noise |
 | `422` | `accountability_reason_required` | blocked debit lacks owner reason |
 | `422` | `accountability_denial_reason_required` | reviewer denial lacks reason |
 | `422` | `invalid_accountability_decision` | approval classification invalid |

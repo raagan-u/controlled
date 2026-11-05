@@ -8,6 +8,7 @@ Expo React Native client for the Controlled Android MVP. The project retains iOS
 - Home balance, recent recipients, active/scheduled pact cards, and expandable activity
 - Fund, send, request money, and withdraw flows
 - Optional purchase-intent price checking
+- Active-pact transaction guidance grounded in recent spending patterns
 - Payment-request list and detail/actions
 - Pact list, creation wizard, detail/progress, history, and Stakes & Recovery
 - Accountability invitations, circle creation, request list, and approve/deny/cancel detail
@@ -17,6 +18,8 @@ Expo React Native client for the Controlled Android MVP. The project retains iOS
 The Home screen refreshes wallet/activity/pact data on focus, app foreground, and every ten seconds while visible. This keeps remote approvals and time-based pact transitions current without manual pull-to-refresh.
 
 Pact creation enforces a 24-hour minimum. Pacts lasting at least seven days are marked recovery-eligible; shorter valid pacts are clearly explained as unable to unlock Commitment Reserve.
+
+Send and withdrawal flows require a meaningful remark/reason. After valid input settles for 900 milliseconds, purchase price checking and active-pact guidance run as applicable and share one loading status when both are in flight. Guidance is skipped entirely when there is no active pact; matched price results and completed guidance still open automatically.
 
 ## Requirements
 

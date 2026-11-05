@@ -261,7 +261,7 @@ When `CONTROLLED_CUSTODY_PROVIDER=paypal_sandbox`, client ID, secret, API base, 
 
 ### AI is logged as disabled
 
-Set `CONTROLLED_AI_PROVIDER=openai_compatible` plus base URL, model, and API key. If disabled, guidance still works through deterministic rules.
+Set `CONTROLLED_AI_PROVIDER=openai_compatible` plus base URL, model, and API key. If disabled, applicable guidance still works through deterministic rules. Transaction-preview guidance is intentionally skipped when the authenticated user has no active pact; `POST /v1/ai/transaction-assessments` returns `204` in that case.
 
 ### Shopping is logged as disabled
 
