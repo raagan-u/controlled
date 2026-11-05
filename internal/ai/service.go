@@ -195,6 +195,7 @@ func (s *Service) AssessTransaction(ctx context.Context, userID identity.UserID,
 	input := ModelInput{Kind: GuidanceTransactionPreview, ProposedMinor: amountMinor, ProposedReason: remark, IsPurchase: isPurchase, SpendingPattern: &pattern}
 	facts := []Fact{{Label: "Last thirty days", Value: usd(pattern.RecentSpentMinor + pattern.PreviousSpentMinor)}, {Label: "Payments counted", Value: fmt.Sprintf("%d", pattern.RecentCount+pattern.PreviousCount)}}
 	classification := Classification{Relationship: RelationshipUnclear, Confidence: ConfidenceLow, Reason: "There is not enough pact context to classify this payment."}
+	classifiedByModel := false
 	primaryID := ""
 	if primary != nil {
 		primaryID = string(primary.ID())
@@ -205,7 +206,7 @@ func (s *Service) AssessTransaction(ctx context.Context, userID identity.UserID,
 		input.PactStatus = string(primary.Status())
 		input.ElapsedDays = elapsedDays(terms.StartsAt(), s.now())
 		input.DaysRemaining = remainingDays(terms.EndsAt(), s.now())
-		classification = s.classify(ctx, ClassificationInput{Goal: input.Goal, Intent: input.Intent, Reason: remark, IsPurchase: isPurchase})
+		classification, classifiedByModel = s.classify(ctx, ClassificationInput{Goal: input.Goal, Intent: input.Intent, Reason: remark, IsPurchase: isPurchase})
 		input.Relationship, input.Confidence = classification.Relationship, classification.Confidence
 		input.ProjectedMinor, input.ForecastWarning = forecast(input.UsedMinor, amountMinor, input.LimitMinor, input.ElapsedDays, input.DaysRemaining)
 		facts = append(facts, Fact{Label: "Pact used after payment", Value: percent(input.UsedMinor+amountMinor, input.LimitMinor)})
@@ -213,7 +214,11 @@ func (s *Service) AssessTransaction(ctx context.Context, userID identity.UserID,
 			facts = append(facts, Fact{Label: "Projected at pact end", Value: forecastLabel(input.ProjectedMinor, input.LimitMinor)})
 		}
 	}
-	guidance := s.generate(ctx, input, facts, transactionFallback(input, pattern.HasSufficientHistory))
+	fallback := transactionFallback(input, pattern.HasSufficientHistory)
+	guidance := Guidance{Kind: input.Kind, Headline: fallback.Headline, Message: fallback.Message, Tone: fallback.Tone, Facts: facts, Source: SourceRules, GeneratedAt: s.now()}
+	if classifiedByModel {
+		guidance = s.generate(ctx, input, facts, fallback)
+	}
 	assessment := TransactionAssessment{
 		Relationship: classification.Relationship, Confidence: classification.Confidence,
 		ClassifierVersion: "transaction-relationship-v1", PrimaryPactID: primaryID,
@@ -240,19 +245,19 @@ func MeaningfulRemark(value string) bool {
 	return textcheck.MeaningfulRemark(value)
 }
 
-func (s *Service) classify(ctx context.Context, input ClassificationInput) Classification {
+func (s *Service) classify(ctx context.Context, input ClassificationInput) (Classification, bool) {
 	classifier, ok := s.model.(TransactionClassifier)
 	if !ok {
-		return Classification{Relationship: RelationshipUnclear, Confidence: ConfidenceLow, Reason: "Semantic classification is unavailable."}
+		return Classification{Relationship: RelationshipUnclear, Confidence: ConfidenceLow, Reason: "Semantic classification is unavailable."}, false
 	}
 	result, err := classifier.ClassifyTransaction(ctx, input)
 	if err != nil || !validClassification(result) {
-		return Classification{Relationship: RelationshipUnclear, Confidence: ConfidenceLow, Reason: "Semantic classification is unavailable."}
+		return Classification{Relationship: RelationshipUnclear, Confidence: ConfidenceLow, Reason: "Semantic classification is unavailable."}, false
 	}
 	if result.Confidence != ConfidenceHigh {
 		result.Relationship = RelationshipUnclear
 	}
-	return result
+	return result, true
 }
 
 func validClassification(value Classification) bool {

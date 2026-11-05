@@ -262,6 +262,26 @@ func TestAssessTransactionKeepsLowConfidenceClassificationUnclear(t *testing.T) 
 	}
 }
 
+func TestAssessTransactionSkipsSecondProviderCallWhenClassificationFails(t *testing.T) {
+	t.Parallel()
+	value := testActivePact(t, "pact", 20_000, 4_000, testNow.Add(-24*time.Hour), testNow.Add(10*24*time.Hour))
+	model := &modelStub{
+		classifyErr: ErrUnavailable,
+		drafts:      []ModelDraft{{Headline: "Should not be used", Message: "The provider draft should not be requested.", Tone: ToneNeutral}},
+	}
+	service := NewService(fixedClock{testNow}, walletReaderStub{}, pactReaderStub{values: []*pact.Pact{value}}, nil, nil, model)
+	assessment, err := service.AssessTransaction(context.Background(), "user-1", 1_000, "food", false, 0)
+	if err != nil {
+		t.Fatalf("AssessTransaction() error = %v", err)
+	}
+	if assessment.Relationship != RelationshipUnclear || assessment.Guidance.Source != SourceRules {
+		t.Fatalf("assessment = %#v", assessment)
+	}
+	if len(model.inputs) != 0 {
+		t.Fatalf("Draft() calls = %d, want 0", len(model.inputs))
+	}
+}
+
 func TestAssessTransactionPersistsReusableAssessment(t *testing.T) {
 	t.Parallel()
 	value := testActivePact(t, "pact", 20_000, 4_000, testNow.Add(-4*24*time.Hour), testNow.Add(10*24*time.Hour))
