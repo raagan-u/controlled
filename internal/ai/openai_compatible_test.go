@@ -64,6 +64,30 @@ func TestOpenAICompatibleModelMapsProviderFailures(t *testing.T) {
 	}
 }
 
+func TestOpenAICompatibleModelClassifiesTransactionWithStrictSchema(t *testing.T) {
+	t.Parallel()
+	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		var payload map[string]any
+		if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		format := payload["response_format"].(map[string]any)
+		schema := format["json_schema"].(map[string]any)
+		if schema["name"] != "controlled_transaction_relationship" {
+			t.Errorf("schema = %#v", schema)
+		}
+		return jsonResponse(http.StatusOK, `{"choices":[{"message":{"content":"{\"relationship\":\"CONFLICTING\",\"confidence\":\"HIGH\",\"reason\":\"The purchase directly matches the behavior the pact aims to avoid.\"}"}}]}`), nil
+	})}
+	model, err := NewOpenAICompatibleModel(OpenAICompatibleOptions{BaseURL: "https://models.example.test/v1", Model: "model", APIKey: "secret", Timeout: time.Second, HTTPClient: client})
+	if err != nil {
+		t.Fatal(err)
+	}
+	classification, err := model.ClassifyTransaction(context.Background(), ClassificationInput{Goal: "Avoid expensive dinners", Intent: "Protect savings", Reason: "expensive dinner", IsPurchase: true})
+	if err != nil || classification.Relationship != RelationshipConflicting || classification.Confidence != ConfidenceHigh {
+		t.Fatalf("classification = %#v, error = %v", classification, err)
+	}
+}
+
 func jsonResponse(status int, body string) *http.Response {
 	return &http.Response{StatusCode: status, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body))}
 }

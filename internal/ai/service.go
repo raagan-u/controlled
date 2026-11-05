@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -29,6 +30,7 @@ type WalletReader interface {
 
 type PactReader interface {
 	Pact(context.Context, pact.UserID, pact.PactID) (*pact.Pact, error)
+	Pacts(context.Context, pact.UserID) ([]*pact.Pact, error)
 	PactProgress(context.Context, pact.UserID, pact.PactID) (pact.Progress, error)
 }
 
@@ -67,6 +69,17 @@ type Guidance struct {
 	SuggestedTerms *SuggestedTerms `json:"suggestedTerms,omitempty"`
 	Source         Source          `json:"source"`
 	GeneratedAt    time.Time       `json:"generatedAt"`
+}
+
+type TransactionAssessment struct {
+	Relationship      Relationship    `json:"relationship"`
+	Confidence        Confidence      `json:"confidence"`
+	ClassifierVersion string          `json:"classifierVersion"`
+	PrimaryPactID     string          `json:"primaryPactId,omitempty"`
+	Pattern           SpendingPattern `json:"pattern"`
+	ForecastWarning   bool            `json:"forecastWarning"`
+	ProjectedMinor    int64           `json:"projectedMinor,omitempty"`
+	Guidance          Guidance        `json:"guidance"`
 }
 
 type Service struct {
@@ -152,6 +165,133 @@ func (s *Service) AccountabilityBrief(ctx context.Context, userID identity.UserI
 		facts = append(facts, Fact{Label: "Pact used", Value: fmt.Sprintf("%s of %s", usd(blocking.UsedMinor), usd(blocking.LimitMinor))}, Fact{Label: "Would exceed by", Value: usd(blocking.OverageMinor)})
 	}
 	return s.generate(ctx, input, facts, accountabilityFallback(input)), nil
+}
+
+func (s *Service) AssessTransaction(ctx context.Context, userID identity.UserID, amountMinor int64, remark string, isPurchase bool) (TransactionAssessment, error) {
+	remark = strings.TrimSpace(remark)
+	if userID == "" || amountMinor <= 0 || !MeaningfulRemark(remark) || s == nil || s.wallets == nil || s.pacts == nil {
+		return TransactionAssessment{}, ErrInvalidInput
+	}
+	transactions, err := s.wallets.TransactionsByUser(ctx, userID, 100)
+	if err != nil {
+		return TransactionAssessment{}, err
+	}
+	pattern := summarizeSpending(transactions, s.now())
+	primary, progress, err := s.primaryPact(ctx, userID)
+	if err != nil {
+		return TransactionAssessment{}, err
+	}
+	input := ModelInput{Kind: GuidanceTransactionPreview, ProposedMinor: amountMinor, ProposedReason: remark, IsPurchase: isPurchase, SpendingPattern: &pattern}
+	facts := []Fact{{Label: "Last thirty days", Value: usd(pattern.RecentSpentMinor + pattern.PreviousSpentMinor)}, {Label: "Payments counted", Value: fmt.Sprintf("%d", pattern.RecentCount+pattern.PreviousCount)}}
+	classification := Classification{Relationship: RelationshipUnclear, Confidence: ConfidenceLow, Reason: "There is not enough pact context to classify this payment."}
+	primaryID := ""
+	if primary != nil {
+		primaryID = string(primary.ID())
+		terms := primary.Terms()
+		input.Goal, input.Intent = terms.Goal(), terms.Intent()
+		input.LimitMinor, input.UsedMinor = terms.SpendingLimit().AmountMinor(), progress.UsedMinor
+		input.RemainingMinor, input.OverageMinor = progress.RemainingMinor, progress.OverageMinor
+		input.PactStatus = string(primary.Status())
+		input.ElapsedDays = elapsedDays(terms.StartsAt(), s.now())
+		input.DaysRemaining = remainingDays(terms.EndsAt(), s.now())
+		classification = s.classify(ctx, ClassificationInput{Goal: input.Goal, Intent: input.Intent, Reason: remark, IsPurchase: isPurchase})
+		input.Relationship, input.Confidence = classification.Relationship, classification.Confidence
+		input.ProjectedMinor, input.ForecastWarning = forecast(input.UsedMinor, amountMinor, input.LimitMinor, input.ElapsedDays, input.DaysRemaining)
+		facts = append(facts, Fact{Label: "Pact used after payment", Value: percent(input.UsedMinor+amountMinor, input.LimitMinor)})
+		if input.ElapsedDays >= 3 {
+			facts = append(facts, Fact{Label: "Projected at pact end", Value: forecastLabel(input.ProjectedMinor, input.LimitMinor)})
+		}
+	}
+	guidance := s.generate(ctx, input, facts, transactionFallback(input, pattern.HasSufficientHistory))
+	return TransactionAssessment{
+		Relationship: classification.Relationship, Confidence: classification.Confidence,
+		ClassifierVersion: "transaction-relationship-v1", PrimaryPactID: primaryID,
+		Pattern: pattern, ForecastWarning: input.ForecastWarning, ProjectedMinor: input.ProjectedMinor, Guidance: guidance,
+	}, nil
+}
+
+func MeaningfulRemark(value string) bool {
+	value = strings.TrimSpace(value)
+	if value == "" || len(value) > 300 {
+		return false
+	}
+	lower := strings.ToLower(value)
+	for _, noise := range []string{"asdf", "qwer", "zxcv", "hjkl", "1234"} {
+		if strings.Contains(lower, noise) {
+			return false
+		}
+	}
+	letters := 0
+	var previous rune
+	repeated := 0
+	for _, character := range lower {
+		if character >= 'a' && character <= 'z' {
+			letters++
+			if character == previous {
+				repeated++
+			} else {
+				repeated = 1
+			}
+			if repeated >= 4 {
+				return false
+			}
+		}
+		previous = character
+	}
+	return letters >= 2
+}
+
+func (s *Service) classify(ctx context.Context, input ClassificationInput) Classification {
+	classifier, ok := s.model.(TransactionClassifier)
+	if !ok {
+		return Classification{Relationship: RelationshipUnclear, Confidence: ConfidenceLow, Reason: "Semantic classification is unavailable."}
+	}
+	result, err := classifier.ClassifyTransaction(ctx, input)
+	if err != nil || !validClassification(result) {
+		return Classification{Relationship: RelationshipUnclear, Confidence: ConfidenceLow, Reason: "Semantic classification is unavailable."}
+	}
+	if result.Confidence != ConfidenceHigh {
+		result.Relationship = RelationshipUnclear
+	}
+	return result
+}
+
+func validClassification(value Classification) bool {
+	validRelationship := value.Relationship == RelationshipAligned || value.Relationship == RelationshipConflicting || value.Relationship == RelationshipExceptional || value.Relationship == RelationshipUnclear
+	validConfidence := value.Confidence == ConfidenceHigh || value.Confidence == ConfidenceMedium || value.Confidence == ConfidenceLow
+	return validRelationship && validConfidence && strings.TrimSpace(value.Reason) != "" && len(value.Reason) <= 180
+}
+
+func (s *Service) primaryPact(ctx context.Context, userID identity.UserID) (*pact.Pact, pact.Progress, error) {
+	values, err := s.pacts.Pacts(ctx, pact.UserID(userID))
+	if err != nil {
+		return nil, pact.Progress{}, err
+	}
+	var primary *pact.Pact
+	for _, candidate := range values {
+		if candidate == nil || candidate.Status() != pact.StatusActive {
+			continue
+		}
+		if primary == nil || moreImportantPact(candidate, primary) {
+			primary = candidate
+		}
+	}
+	if primary == nil {
+		return nil, pact.Progress{}, nil
+	}
+	progress, err := s.pacts.PactProgress(ctx, pact.UserID(userID), primary.ID())
+	return primary, progress, err
+}
+
+func moreImportantPact(left, right *pact.Pact) bool {
+	l, r := left.Terms(), right.Terms()
+	if l.Stake().AmountMinor() != r.Stake().AmountMinor() {
+		return l.Stake().AmountMinor() > r.Stake().AmountMinor()
+	}
+	if l.SpendingLimit().AmountMinor() != r.SpendingLimit().AmountMinor() {
+		return l.SpendingLimit().AmountMinor() > r.SpendingLimit().AmountMinor()
+	}
+	return l.EndsAt().Sub(l.StartsAt()) > r.EndsAt().Sub(r.StartsAt())
 }
 
 func (s *Service) walletContext(ctx context.Context, userID identity.UserID) (ModelInput, []Fact, error) {
@@ -285,6 +425,173 @@ func progressFallback(input ModelInput) ModelDraft {
 
 func accountabilityFallback(input ModelInput) ModelDraft {
 	return ModelDraft{Headline: "Review the trade-off", Message: fmt.Sprintf("%s raised this request. Review their reason against the pact they chose to protect, then decide whether the exception fits.", input.RequesterName), Tone: ToneCaution}
+}
+
+func summarizeSpending(transactions []wallet.Transaction, now time.Time) SpendingPattern {
+	cutoff, midpoint := now.Add(-30*24*time.Hour), now.Add(-15*24*time.Hour)
+	pattern := SpendingPattern{FrequentReasons: []ReasonPattern{}}
+	type totals struct {
+		count  int
+		amount int64
+	}
+	reasons := map[string]totals{}
+	days, times := map[string]int64{}, map[string]int64{}
+	for _, transaction := range transactions {
+		if transaction.Reversed || transaction.OccurredAt.Before(cutoff) || !isSpendingReference(transaction.Reference.Type) {
+			continue
+		}
+		amount := outgoingAmount(transaction)
+		if amount <= 0 {
+			continue
+		}
+		if transaction.OccurredAt.Before(midpoint) {
+			pattern.PreviousSpentMinor += amount
+			pattern.PreviousCount++
+		} else {
+			pattern.RecentSpentMinor += amount
+			pattern.RecentCount++
+		}
+		days[transaction.OccurredAt.Weekday().String()] += amount
+		times[dayPart(transaction.OccurredAt)] += amount
+		reason := transactionReason(transaction)
+		if reason != "" && MeaningfulRemark(reason) {
+			key := strings.ToLower(strings.TrimSpace(reason))
+			value := reasons[key]
+			value.count++
+			value.amount += amount
+			reasons[key] = value
+		}
+	}
+	pattern.Change = spendingChange(pattern.RecentSpentMinor, pattern.PreviousSpentMinor)
+	pattern.PeakDay, pattern.PeakTime = largestBucket(days), largestBucket(times)
+	for reason, value := range reasons {
+		pattern.FrequentReasons = append(pattern.FrequentReasons, ReasonPattern{Reason: reason, Count: value.count, AmountMinor: value.amount})
+	}
+	sort.Slice(pattern.FrequentReasons, func(i, j int) bool {
+		return pattern.FrequentReasons[i].AmountMinor > pattern.FrequentReasons[j].AmountMinor
+	})
+	if len(pattern.FrequentReasons) > 3 {
+		pattern.FrequentReasons = pattern.FrequentReasons[:3]
+	}
+	pattern.HasSufficientHistory = pattern.RecentCount+pattern.PreviousCount >= 3
+	return pattern
+}
+
+func outgoingAmount(transaction wallet.Transaction) int64 {
+	for _, entry := range transaction.Entries {
+		if entry.AccountKind == ledger.AccountKindAvailable && entry.Side == ledger.SideDebit {
+			return entry.Amount.AmountMinor()
+		}
+	}
+	return 0
+}
+
+func transactionReason(transaction wallet.Transaction) string {
+	if transaction.Transfer != nil {
+		return transaction.Transfer.Remark
+	}
+	if transaction.Approval != nil {
+		return transaction.Approval.Reason
+	}
+	return ""
+}
+
+func dayPart(value time.Time) string {
+	switch hour := value.Hour(); {
+	case hour < 6:
+		return "overnight"
+	case hour < 12:
+		return "morning"
+	case hour < 17:
+		return "afternoon"
+	case hour < 22:
+		return "evening"
+	default:
+		return "late night"
+	}
+}
+
+func largestBucket(values map[string]int64) string {
+	name := ""
+	var largest int64
+	for candidate, value := range values {
+		if value > largest || value == largest && candidate < name {
+			name, largest = candidate, value
+		}
+	}
+	return name
+}
+
+func spendingChange(current, previous int64) string {
+	if previous == 0 {
+		if current == 0 {
+			return "STABLE"
+		}
+		return "NEW_ACTIVITY"
+	}
+	ratio := float64(current-previous) / float64(previous)
+	if ratio >= .2 {
+		return "INCREASING"
+	}
+	if ratio <= -.2 {
+		return "DECREASING"
+	}
+	return "STABLE"
+}
+
+func elapsedDays(start, now time.Time) int {
+	if !now.After(start) {
+		return 0
+	}
+	return int(math.Floor(now.Sub(start).Hours()/24)) + 1
+}
+
+func remainingDays(end, now time.Time) int {
+	days := int(math.Ceil(end.Sub(now).Hours() / 24))
+	if days < 0 {
+		return 0
+	}
+	return days
+}
+
+func forecast(used, proposed, limit int64, elapsed, remaining int) (int64, bool) {
+	usedAfter := used + proposed
+	if elapsed < 3 || limit <= 0 {
+		return 0, false
+	}
+	projected := usedAfter + int64(math.Round(float64(used)/float64(elapsed)*float64(remaining)))
+	return projected, usedAfter*2 >= limit && projected > limit
+}
+
+func percent(value, total int64) string {
+	if total <= 0 {
+		return "—"
+	}
+	return fmt.Sprintf("%d%%", int(math.Round(float64(value)*100/float64(total))))
+}
+
+func forecastLabel(projected, limit int64) string {
+	if projected > limit {
+		return "Above limit"
+	}
+	return "Within limit"
+}
+
+func transactionFallback(input ModelInput, sufficientHistory bool) ModelDraft {
+	switch {
+	case input.ForecastWarning:
+		return ModelDraft{Headline: "Protect the room ahead", Message: "This payment may make the rest of your pact harder to sustain. Pause and compare it with the goal you chose.", Tone: ToneCaution}
+	case input.Relationship == RelationshipConflicting:
+		return ModelDraft{Headline: "Pause on the trade-off", Message: "This reason may work against the goal you chose. Consider whether the payment is worth reducing the room left in your pact.", Tone: ToneCaution}
+	case input.Relationship == RelationshipAligned:
+		return ModelDraft{Headline: "Connected to your goal", Message: "This reason appears consistent with what you chose to protect, while the payment still counts toward your limit.", Tone: TonePositive}
+	case input.Relationship == RelationshipExceptional:
+		return ModelDraft{Headline: "An exception worth noticing", Message: "This looks different from your usual pattern. Consider it deliberately while keeping the rest of your pact in view.", Tone: ToneNeutral}
+	case !sufficientHistory:
+		return ModelDraft{Headline: "Not enough history yet", Message: "There is not enough recent activity to identify a reliable pattern. Consider whether this payment supports the reason you created the pact.", Tone: ToneNeutral}
+	default:
+		return ModelDraft{Headline: "Check this against your goal", Message: "The reason is not clear enough to connect confidently with your pact. Take a moment to compare the payment with what you chose to protect.", Tone: ToneNeutral}
+	}
 }
 
 func requesterReference(displayName string) string {

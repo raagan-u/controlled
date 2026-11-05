@@ -234,6 +234,7 @@ func run(ctx context.Context) error {
 	mux.Handle("POST /v1/pacts/{id}/stake", identity.RequireSession(sessions, http.HandlerFunc(pactHandler.ReserveStake)))
 	mux.Handle("POST /v1/pacts/{id}/cancel", identity.RequireSession(sessions, http.HandlerFunc(pactHandler.Cancel)))
 	mux.Handle("POST /v1/ai/pact-suggestions", identity.RequireSession(sessions, http.HandlerFunc(aiHandler.SuggestPact)))
+	mux.Handle("POST /v1/ai/transaction-assessments", identity.RequireSession(sessions, http.HandlerFunc(aiHandler.AssessTransaction)))
 	mux.Handle("GET /v1/ai/pacts/{id}/insight", identity.RequireSession(sessions, http.HandlerFunc(aiHandler.PactInsight)))
 	mux.Handle("GET /v1/ai/accountability/{id}/brief", identity.RequireSession(sessions, http.HandlerFunc(aiHandler.AccountabilityBrief)))
 	mux.Handle("POST /v1/shopping/price-checks", identity.RequireSession(sessions, http.HandlerFunc(shoppingHandler.CheckPrice)))
