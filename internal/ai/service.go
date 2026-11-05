@@ -18,7 +18,10 @@ import (
 	"github.com/raagan-u/controlled/internal/wallet"
 )
 
-const maxModelAttempts = 2
+const (
+	maxModelAttempts        = 2
+	transactionDraftTimeout = 4 * time.Second
+)
 
 var containsFinancialLiteral = regexp.MustCompile(`[0-9$]`)
 
@@ -217,7 +220,9 @@ func (s *Service) AssessTransaction(ctx context.Context, userID identity.UserID,
 	fallback := transactionFallback(input, pattern.HasSufficientHistory)
 	guidance := Guidance{Kind: input.Kind, Headline: fallback.Headline, Message: fallback.Message, Tone: fallback.Tone, Facts: facts, Source: SourceRules, GeneratedAt: s.now()}
 	if classifiedByModel {
-		guidance = s.generate(ctx, input, facts, fallback)
+		draftContext, cancelDraft := context.WithTimeout(ctx, transactionDraftTimeout)
+		guidance = s.generate(draftContext, input, facts, fallback)
+		cancelDraft()
 	}
 	assessment := TransactionAssessment{
 		Relationship: classification.Relationship, Confidence: classification.Confidence,
