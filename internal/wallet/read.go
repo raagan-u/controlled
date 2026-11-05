@@ -49,15 +49,16 @@ type TransactionEntry struct {
 }
 
 type Transaction struct {
-	ID          ledger.JournalID
-	Reference   ledger.Reference
-	Description string
-	OccurredAt  time.Time
-	PostedAt    time.Time
-	Reversed    bool
-	Entries     []TransactionEntry
-	Transfer    *TransferDetails
-	Approval    *ApprovalDetails
+	ID             ledger.JournalID
+	Reference      ledger.Reference
+	Description    string
+	OccurredAt     time.Time
+	PostedAt       time.Time
+	Reversed       bool
+	Entries        []TransactionEntry
+	Transfer       *TransferDetails
+	Approval       *ApprovalDetails
+	SpendingReason string
 }
 
 type ApprovalDetails struct {
@@ -75,8 +76,11 @@ type TransactionParty struct {
 }
 
 type TransferDetails struct {
-	Sender           TransactionParty
-	Recipient        TransactionParty
-	Remark           string
-	PaymentRequestID string
+	Sender               TransactionParty
+	Recipient            TransactionParty
+	Remark               string
+	PaymentRequestID     string
+	GuidanceRelationship string
+	GuidanceConfidence   string
+	IsPurchase           bool
 }

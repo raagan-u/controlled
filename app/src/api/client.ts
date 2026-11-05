@@ -1,6 +1,6 @@
 import { apiURL, clearSession, getSessionToken } from '@/auth/session';
 
-type RequestOptions = { body?: object; idempotent?: boolean; method?: 'DELETE' | 'GET' | 'PATCH' | 'POST' | 'PUT' };
+type RequestOptions = { body?: object; idempotent?: boolean; method?: 'DELETE' | 'GET' | 'PATCH' | 'POST' | 'PUT'; timeoutMs?: number };
 type ErrorPayload = { error?: { code?: string; message?: string } };
 
 export class APIError extends Error {
@@ -17,7 +17,18 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   const headers: Record<string, string> = { Accept: 'application/json', Authorization: `Bearer ${token}` };
   if (options.body) headers['Content-Type'] = 'application/json';
   if (options.idempotent) headers['Idempotency-Key'] = idempotencyKey();
-  const response = await fetch(`${apiURL}${path}`, { body: options.body ? JSON.stringify(options.body) : undefined, headers, method: options.method ?? 'GET' });
+  const controller = options.timeoutMs ? new AbortController() : undefined;
+  let timedOut = false;
+  const timeout = options.timeoutMs ? setTimeout(() => { timedOut = true; controller?.abort(); }, options.timeoutMs) : undefined;
+  let response: Response;
+  try {
+    response = await fetch(`${apiURL}${path}`, { body: options.body ? JSON.stringify(options.body) : undefined, headers, method: options.method ?? 'GET', signal: controller?.signal });
+  } catch (cause) {
+    if (timedOut) throw new APIError('request_timeout', 'Controlled took too long to respond.', 408);
+    throw cause;
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
   if (response.status === 401) await clearSession();
   if (!response.ok) {
     const payload = (await response.json().catch(() => ({}))) as ErrorPayload;

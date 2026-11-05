@@ -42,8 +42,9 @@ func TestWalletOperationHandlers(t *testing.T) {
 	}{
 		{name: "create funding", path: "/v1/wallet/funding-intents", body: `{"amountMinor":2500,"currency":"USD"}`, status: http.StatusCreated},
 		{name: "confirm funding", path: "/v1/demo/funding-intents/funding-1/confirm", body: `{}`, status: http.StatusOK},
-		{name: "internal transfer", path: "/v1/wallet/internal-transfers", body: `{"recipientEmail":"friend@example.com","amountMinor":2500,"currency":"USD"}`, status: http.StatusCreated},
-		{name: "withdrawal", path: "/v1/wallet/withdrawals", body: `{"destination":"paypal@example.com","amountMinor":2500,"currency":"USD"}`, status: http.StatusAccepted},
+		{name: "internal transfer", path: "/v1/wallet/internal-transfers", body: `{"recipientEmail":"friend@example.com","amountMinor":2500,"currency":"USD","reason":"dinner with friends"}`, status: http.StatusCreated},
+		{name: "internal transfer rejects gibberish", path: "/v1/wallet/internal-transfers", body: `{"recipientEmail":"friend@example.com","amountMinor":2500,"currency":"USD","reason":"asdfgh"}`, status: http.StatusUnprocessableEntity},
+		{name: "withdrawal", path: "/v1/wallet/withdrawals", body: `{"destination":"paypal@example.com","amountMinor":2500,"currency":"USD","reason":"monthly savings"}`, status: http.StatusAccepted},
 		{name: "settle withdrawal", path: "/v1/demo/withdrawals/withdrawal-1/settle", body: `{"succeeded":true}`, status: http.StatusOK},
 		{name: "reconcile withdrawal", path: "/v1/wallet/withdrawals/withdrawal-1/reconcile", body: `{}`, status: http.StatusOK},
 	}

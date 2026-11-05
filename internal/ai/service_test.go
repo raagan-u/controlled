@@ -36,12 +36,16 @@ func (s walletReaderStub) TransactionsByUser(context.Context, identity.UserID, i
 
 type pactReaderStub struct {
 	value    *pact.Pact
+	values   []*pact.Pact
 	progress pact.Progress
 	err      error
 }
 
 func (s pactReaderStub) Pact(context.Context, pact.UserID, pact.PactID) (*pact.Pact, error) {
 	return s.value, s.err
+}
+func (s pactReaderStub) Pacts(context.Context, pact.UserID) ([]*pact.Pact, error) {
+	return s.values, s.err
 }
 func (s pactReaderStub) PactProgress(context.Context, pact.UserID, pact.PactID) (pact.Progress, error) {
 	return s.progress, s.err
@@ -66,9 +70,22 @@ func (s accountabilityReaderStub) Request(context.Context, identity.UserID, stri
 }
 
 type modelStub struct {
-	drafts []ModelDraft
-	errors []error
-	inputs []ModelInput
+	drafts          []ModelDraft
+	errors          []error
+	inputs          []ModelInput
+	classifications []Classification
+	classifyErr     error
+}
+
+type idStub struct{ value string }
+
+func (s idStub) NewID() (string, error) { return s.value, nil }
+
+type assessmentStoreStub struct{ saved StoredAssessment }
+
+func (s *assessmentStoreStub) SaveAssessment(_ context.Context, value StoredAssessment) error {
+	s.saved = value
+	return nil
 }
 
 func (s *modelStub) Draft(_ context.Context, input ModelInput) (ModelDraft, error) {
@@ -82,6 +99,13 @@ func (s *modelStub) Draft(_ context.Context, input ModelInput) (ModelDraft, erro
 		return s.drafts[index], err
 	}
 	return ModelDraft{}, err
+}
+
+func (s *modelStub) ClassifyTransaction(_ context.Context, _ ClassificationInput) (Classification, error) {
+	if len(s.classifications) == 0 {
+		return Classification{}, s.classifyErr
+	}
+	return s.classifications[0], s.classifyErr
 }
 
 func TestSuggestPactUsesDeterministicFallbackWithoutProvider(t *testing.T) {
@@ -198,6 +222,105 @@ func TestSuggestPactRejectsIncompleteInput(t *testing.T) {
 	}
 }
 
+func TestAssessTransactionSkipsGuidanceWithoutActivePact(t *testing.T) {
+	t.Parallel()
+	service := NewService(fixedClock{testNow}, walletReaderStub{err: errors.New("transactions should not be read")}, pactReaderStub{}, nil, nil, &modelStub{})
+
+	assessment, err := service.AssessTransaction(context.Background(), "user-1", 1_000, "food", false, 0)
+	if !errors.Is(err, ErrNotApplicable) {
+		t.Fatalf("assessment = %#v, error = %v", assessment, err)
+	}
+}
+
+func TestAssessTransactionUsesHighestStakePactAndWarnsOnForecast(t *testing.T) {
+	t.Parallel()
+	primary := testActivePact(t, "primary", 20_000, 8_000, testNow.Add(-4*24*time.Hour), testNow.Add(6*24*time.Hour))
+	secondary := testActivePact(t, "secondary", 30_000, 5_000, testNow.Add(-10*24*time.Hour), testNow.Add(20*24*time.Hour))
+	model := &modelStub{
+		classifications: []Classification{{Relationship: RelationshipConflicting, Confidence: ConfidenceHigh, Reason: "The reason conflicts with the pact."}},
+		drafts:          []ModelDraft{{Headline: "Protect the room ahead", Message: "This payment may make the rest of the pact harder to sustain.", Tone: ToneCaution}},
+	}
+	service := NewService(fixedClock{testNow}, walletReaderStub{transactions: []wallet.Transaction{
+		testSpendingTransactionWithReason(t, 2_000, testNow.Add(-2*time.Hour), "food"),
+		testSpendingTransactionWithReason(t, 1_000, testNow.Add(-16*24*time.Hour), "coffee"),
+		testSpendingTransactionWithReason(t, 500, testNow.Add(-20*24*time.Hour), "coffee"),
+	}}, pactReaderStub{values: []*pact.Pact{secondary, primary}, progress: pact.Progress{UsedMinor: 9_000, RemainingMinor: 11_000}}, nil, nil, model)
+
+	assessment, err := service.AssessTransaction(context.Background(), "user-1", 2_000, "expensive dinner", true, -330)
+	if err != nil {
+		t.Fatalf("AssessTransaction() error = %v", err)
+	}
+	if assessment.PrimaryPactID != "primary" || !assessment.ForecastWarning || assessment.Relationship != RelationshipConflicting {
+		t.Fatalf("assessment = %#v", assessment)
+	}
+	if assessment.Pattern.RecentCount != 1 || assessment.Pattern.PreviousCount != 2 || assessment.Pattern.FrequentReasons[0].Reason != "food" || assessment.Pattern.PeakTime != "afternoon" {
+		t.Fatalf("pattern = %#v", assessment.Pattern)
+	}
+}
+
+func TestAssessTransactionKeepsLowConfidenceClassificationUnclear(t *testing.T) {
+	t.Parallel()
+	value := testActivePact(t, "pact", 20_000, 4_000, testNow.Add(-24*time.Hour), testNow.Add(10*24*time.Hour))
+	model := &modelStub{
+		classifications: []Classification{{Relationship: RelationshipAligned, Confidence: ConfidenceMedium, Reason: "The connection is possible."}},
+		drafts:          []ModelDraft{{Headline: "Not enough history yet", Message: "There is not enough recent activity to identify a reliable pattern.", Tone: ToneNeutral}},
+	}
+	service := NewService(fixedClock{testNow}, walletReaderStub{}, pactReaderStub{values: []*pact.Pact{value}}, nil, nil, model)
+	assessment, err := service.AssessTransaction(context.Background(), "user-1", 1_000, "food", false, 0)
+	if err != nil || assessment.Relationship != RelationshipUnclear || assessment.ForecastWarning {
+		t.Fatalf("assessment = %#v, error = %v", assessment, err)
+	}
+}
+
+func TestAssessTransactionSkipsSecondProviderCallWhenClassificationFails(t *testing.T) {
+	t.Parallel()
+	value := testActivePact(t, "pact", 20_000, 4_000, testNow.Add(-24*time.Hour), testNow.Add(10*24*time.Hour))
+	model := &modelStub{
+		classifyErr: ErrUnavailable,
+		drafts:      []ModelDraft{{Headline: "Should not be used", Message: "The provider draft should not be requested.", Tone: ToneNeutral}},
+	}
+	service := NewService(fixedClock{testNow}, walletReaderStub{}, pactReaderStub{values: []*pact.Pact{value}}, nil, nil, model)
+	assessment, err := service.AssessTransaction(context.Background(), "user-1", 1_000, "food", false, 0)
+	if err != nil {
+		t.Fatalf("AssessTransaction() error = %v", err)
+	}
+	if assessment.Relationship != RelationshipUnclear || assessment.Guidance.Source != SourceRules {
+		t.Fatalf("assessment = %#v", assessment)
+	}
+	if len(model.inputs) != 0 {
+		t.Fatalf("Draft() calls = %d, want 0", len(model.inputs))
+	}
+}
+
+func TestAssessTransactionPersistsReusableAssessment(t *testing.T) {
+	t.Parallel()
+	value := testActivePact(t, "pact", 20_000, 4_000, testNow.Add(-4*24*time.Hour), testNow.Add(10*24*time.Hour))
+	store := &assessmentStoreStub{}
+	service := NewService(fixedClock{testNow}, walletReaderStub{}, pactReaderStub{values: []*pact.Pact{value}}, nil, nil, nil).
+		EnableAssessmentPersistence(idStub{value: "assessment-1"}, store)
+	assessment, err := service.AssessTransaction(context.Background(), "user-1", 1_000, "food", true, 0)
+	if err != nil || assessment.ID != "assessment-1" {
+		t.Fatalf("assessment = %#v, error = %v", assessment, err)
+	}
+	if store.saved.ID != "assessment-1" || store.saved.OwnerID != "user-1" || !store.saved.IsPurchase || store.saved.ExpiresAt.Sub(store.saved.CreatedAt) != 15*time.Minute {
+		t.Fatalf("stored = %#v", store.saved)
+	}
+}
+
+func TestMeaningfulRemarkRejectsGibberish(t *testing.T) {
+	t.Parallel()
+	for _, value := range []string{"", "a", "asdfgh", "heyyyy", "1234"} {
+		if MeaningfulRemark(value) {
+			t.Errorf("MeaningfulRemark(%q) = true", value)
+		}
+	}
+	for _, value := range []string{"food", "gym", "dinner with friends"} {
+		if !MeaningfulRemark(value) {
+			t.Errorf("MeaningfulRemark(%q) = false", value)
+		}
+	}
+}
+
 func testWalletSnapshot(t *testing.T, availableMinor int64) wallet.Snapshot {
 	t.Helper()
 	value, err := wallet.NewWallet("wallet-1", "user-1", "USD", wallet.AccountSet{Available: "available-1", Pending: "pending-1", CommitmentReserve: "reserve-1"}, testNow.Add(-time.Hour))
@@ -220,4 +343,25 @@ func testSpendingTransaction(t *testing.T, amountMinor int64, at time.Time) wall
 		t.Fatal(err)
 	}
 	return wallet.Transaction{ID: "transaction", Reference: ledger.Reference{Type: "INTERNAL_TRANSFER", ID: "transfer"}, OccurredAt: at, Entries: []wallet.TransactionEntry{{AccountID: "available-1", AccountKind: ledger.AccountKindAvailable, Side: ledger.SideDebit, Amount: amount}}}
+}
+
+func testSpendingTransactionWithReason(t *testing.T, amountMinor int64, at time.Time, reason string) wallet.Transaction {
+	transaction := testSpendingTransaction(t, amountMinor, at)
+	transaction.Transfer = &wallet.TransferDetails{Remark: reason}
+	return transaction
+}
+
+func testActivePact(t *testing.T, id string, limitMinor, stakeMinor int64, startsAt, endsAt time.Time) *pact.Pact {
+	t.Helper()
+	limit, _ := pact.NewMoney(limitMinor, "USD")
+	stake, _ := pact.NewMoney(stakeMinor, "USD")
+	terms, err := pact.NewTerms("Avoid expensive dinners", "Protect travel savings", limit, stake, startsAt, endsAt, "circle-1", pact.BreakConsequenceCommitmentReserve)
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, err := pact.Restore(pact.PactID(id), "user-1", terms, pact.StatusActive, pact.OutcomeNone, "stake-1", 0, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return value
 }

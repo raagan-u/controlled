@@ -12,6 +12,7 @@ import (
 	"github.com/raagan-u/controlled/internal/ledger"
 	"github.com/raagan-u/controlled/internal/notification"
 	"github.com/raagan-u/controlled/internal/platform/httpapi"
+	"github.com/raagan-u/controlled/internal/platform/textcheck"
 )
 
 type Commander interface {
@@ -26,6 +27,10 @@ type Commander interface {
 type accountableCommander interface {
 	TransferWithReason(context.Context, string, identity.UserID, string, int64, string, string) (DebitAttempt, error)
 	CreateWithdrawalWithReason(context.Context, string, identity.UserID, string, int64, string, string) (DebitAttempt, error)
+}
+
+type guidedCommander interface {
+	TransferWithGuidance(context.Context, string, identity.UserID, string, int64, string, string, string, bool) (DebitAttempt, error)
 }
 
 type Handler struct {
@@ -96,15 +101,31 @@ func (h *Handler) CreateTransfer(response http.ResponseWriter, request *http.Req
 		AmountMinor    int64  `json:"amountMinor"`
 		Currency       string `json:"currency"`
 		Reason         string `json:"reason"`
+		AssessmentID   string `json:"assessmentId"`
+		IsPurchase     bool   `json:"isPurchase"`
 	}
 	if err := httpapi.ReadJSON(response, request, &input, httpapi.DefaultMaxBodyBytes); err != nil {
 		httpapi.WriteError(response, http.StatusBadRequest, "invalid_request", "Request body must contain a recipient and amount.")
 		return
 	}
+	if !textcheck.MeaningfulRemark(input.Reason) {
+		httpapi.WriteError(response, http.StatusUnprocessableEntity, "invalid_transaction_remark", "Add a meaningful remark so Controlled can guide this payment.")
+		return
+	}
 	var transfer Transfer
 	var review *ReviewRequest
 	var err error
-	if commands, ok := h.commands.(accountableCommander); ok {
+	if commands, ok := h.commands.(guidedCommander); ok {
+		attempt, attemptErr := commands.TransferWithGuidance(
+			request.Context(), request.Header.Get("Idempotency-Key"), user.ID(),
+			input.RecipientEmail, input.AmountMinor, input.Currency, input.Reason, input.AssessmentID, input.IsPurchase,
+		)
+		err = attemptErr
+		if attempt.Transfer != nil {
+			transfer = *attempt.Transfer
+		}
+		review = attempt.Request
+	} else if commands, ok := h.commands.(accountableCommander); ok {
 		attempt, attemptErr := commands.TransferWithReason(
 			request.Context(), request.Header.Get("Idempotency-Key"), user.ID(),
 			input.RecipientEmail, input.AmountMinor, input.Currency, input.Reason,
@@ -152,6 +173,10 @@ func (h *Handler) CreateWithdrawal(response http.ResponseWriter, request *http.R
 	}
 	if err := httpapi.ReadJSON(response, request, &input, httpapi.DefaultMaxBodyBytes); err != nil {
 		httpapi.WriteError(response, http.StatusBadRequest, "invalid_request", "Request body must contain a destination and amount.")
+		return
+	}
+	if !textcheck.MeaningfulRemark(input.Reason) {
+		httpapi.WriteError(response, http.StatusUnprocessableEntity, "invalid_transaction_remark", "Add a meaningful remark so Controlled can guide this withdrawal.")
 		return
 	}
 	var withdrawal Withdrawal

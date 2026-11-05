@@ -252,6 +252,13 @@ func (s *PostgresProvisioningStore) TransactionsByUser(
 			}
 			transactions[index].Transfer = &transfer
 		}
+		if transactions[index].Reference.Type == "WITHDRAWAL_RESERVATION" {
+			reason, err := s.withdrawalReason(ctx, transactions[index].Reference.ID)
+			if err != nil {
+				return nil, err
+			}
+			transactions[index].SpendingReason = reason
+		}
 		if transactions[index].Reference.Type == "INTERNAL_TRANSFER" || strings.HasPrefix(transactions[index].Reference.Type, "WITHDRAWAL_") {
 			approval, err := s.approvalDetails(ctx, transactions[index].Reference.ID)
 			if err != nil {
@@ -341,6 +348,13 @@ func (s *PostgresProvisioningStore) TransactionByUser(
 		}
 		result.Transfer = &transfer
 	}
+	if result.Reference.Type == "WITHDRAWAL_RESERVATION" {
+		reason, err := s.withdrawalReason(ctx, result.Reference.ID)
+		if err != nil {
+			return Transaction{}, err
+		}
+		result.SpendingReason = reason
+	}
 	if result.Reference.Type == "INTERNAL_TRANSFER" || strings.HasPrefix(result.Reference.Type, "WITHDRAWAL_") {
 		approval, err := s.approvalDetails(ctx, result.Reference.ID)
 		if err != nil {
@@ -382,18 +396,20 @@ func (s *PostgresProvisioningStore) transferDetails(ctx context.Context, transfe
 	err := s.pool.QueryRow(ctx, `
 		SELECT sender.id::text, sender.ctrld_id, sender.email, sender.display_name,
 		       recipient.id::text, recipient.ctrld_id, recipient.email, recipient.display_name,
-		       COALESCE(NULLIF(transfer.remark, ''), request.note, ''), COALESCE(request.id::text, '')
+		       COALESCE(NULLIF(transfer.remark, ''), request.note, ''), COALESCE(request.id::text, ''),
+		       COALESCE(assessment.relationship, ''), COALESCE(assessment.confidence, ''), transfer.is_purchase
 		  FROM internal_transfers AS transfer
 		  JOIN wallets AS sender_wallet ON sender_wallet.id = transfer.sender_wallet_id
 		  JOIN users AS sender ON sender.id = sender_wallet.owner_id
 		  JOIN wallets AS recipient_wallet ON recipient_wallet.id = transfer.recipient_wallet_id
 		  JOIN users AS recipient ON recipient.id = recipient_wallet.owner_id
 		  LEFT JOIN payment_requests AS request ON request.transfer_id = transfer.id
+		  LEFT JOIN ai_transaction_assessments AS assessment ON assessment.id = transfer.guidance_assessment_id
 		 WHERE transfer.id = $1::text::uuid
 	`, transferID).Scan(
 		&result.Sender.ID, &result.Sender.CtrldID, &result.Sender.Email, &result.Sender.DisplayName,
 		&result.Recipient.ID, &result.Recipient.CtrldID, &result.Recipient.Email, &result.Recipient.DisplayName,
-		&result.Remark, &result.PaymentRequestID,
+		&result.Remark, &result.PaymentRequestID, &result.GuidanceRelationship, &result.GuidanceConfidence, &result.IsPurchase,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return TransferDetails{}, ErrTransactionNotFound
@@ -402,6 +418,18 @@ func (s *PostgresProvisioningStore) transferDetails(ctx context.Context, transfe
 		return TransferDetails{}, fmt.Errorf("read transfer details: %w", err)
 	}
 	return result, nil
+}
+
+func (s *PostgresProvisioningStore) withdrawalReason(ctx context.Context, withdrawalID string) (string, error) {
+	var reason string
+	err := s.pool.QueryRow(ctx, `SELECT remark FROM withdrawals WHERE id = $1::text::uuid`, withdrawalID).Scan(&reason)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", ErrTransactionNotFound
+	}
+	if err != nil {
+		return "", fmt.Errorf("read withdrawal remark: %w", err)
+	}
+	return reason, nil
 }
 
 func NewPostgresProvisioningStore(pool *pgxpool.Pool) *PostgresProvisioningStore {

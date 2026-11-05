@@ -54,15 +54,20 @@ type FundingIntent struct {
 }
 
 type Transfer struct {
-	ID                  OperationID
-	SenderID            identity.UserID
-	RecipientID         identity.UserID
-	RecipientEmail      string
-	Amount              money.Money
-	Remark              string
-	LedgerTransactionID ledger.JournalID
-	CreatedAt           time.Time
-	Duplicate           bool
+	ID                   OperationID
+	SenderID             identity.UserID
+	RecipientID          identity.UserID
+	RecipientEmail       string
+	Amount               money.Money
+	Remark               string
+	GuidanceAssessmentID string
+	IsPurchase           bool
+	GuidanceRelationship string
+	GuidanceConfidence   string
+	GuidanceVersion      string
+	LedgerTransactionID  ledger.JournalID
+	CreatedAt            time.Time
+	Duplicate            bool
 }
 
 type WithdrawalStatus string
@@ -79,6 +84,7 @@ type Withdrawal struct {
 	OwnerID                  identity.UserID
 	WalletID                 string
 	Destination              string
+	Remark                   string
 	Amount                   money.Money
 	Status                   WithdrawalStatus
 	ProviderPayoutID         string

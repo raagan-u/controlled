@@ -36,6 +36,40 @@ func (h *Handler) SuggestPact(response http.ResponseWriter, request *http.Reques
 	writeGuidance(response, guidance)
 }
 
+func (h *Handler) AssessTransaction(response http.ResponseWriter, request *http.Request) {
+	user, ok := identity.CurrentUser(request.Context())
+	if !ok {
+		httpapi.WriteError(response, http.StatusUnauthorized, "authentication_required", "A valid Controlled session is required.")
+		return
+	}
+	var input struct {
+		AmountMinor           int64  `json:"amountMinor"`
+		Remark                string `json:"remark"`
+		IsPurchase            bool   `json:"isPurchase"`
+		TimezoneOffsetMinutes int    `json:"timezoneOffsetMinutes"`
+	}
+	if err := httpapi.ReadJSON(response, request, &input, httpapi.DefaultMaxBodyBytes); err != nil {
+		httpapi.WriteError(response, http.StatusBadRequest, "invalid_request", "Request body must contain an amount and transaction remark.")
+		return
+	}
+	assessment, err := h.service.AssessTransaction(request.Context(), user.ID(), input.AmountMinor, input.Remark, input.IsPurchase, input.TimezoneOffsetMinutes)
+	if err != nil {
+		if errors.Is(err, ErrNotApplicable) {
+			response.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if errors.Is(err, ErrInvalidInput) {
+			httpapi.WriteError(response, http.StatusUnprocessableEntity, "invalid_transaction_remark", "Add a meaningful remark so Controlled can guide this payment.")
+			return
+		}
+		writeError(response, err)
+		return
+	}
+	httpapi.WriteJSON(response, http.StatusOK, struct {
+		Assessment TransactionAssessment `json:"assessment"`
+	}{Assessment: assessment})
+}
+
 func (h *Handler) PactInsight(response http.ResponseWriter, request *http.Request) {
 	user, ok := identity.CurrentUser(request.Context())
 	if !ok {

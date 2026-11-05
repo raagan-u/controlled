@@ -291,6 +291,27 @@ func (r *PostgresRepository) CreateTransfer(
 		return Transfer{}, ErrCurrencyMismatch
 	}
 	candidate.RecipientEmail = recipientEmail
+	if candidate.GuidanceAssessmentID != "" {
+		err = tx.QueryRow(ctx, `
+			SELECT relationship, confidence, classifier_version
+			  FROM ai_transaction_assessments
+			 WHERE id = $1::text::uuid
+			   AND owner_id = $2::text::uuid
+			   AND amount_minor = $3
+			   AND remark = $4
+			   AND is_purchase = $5
+			   AND expires_at >= $6
+			 FOR UPDATE
+		`, candidate.GuidanceAssessmentID, string(candidate.SenderID), candidate.Amount.AmountMinor(), candidate.Remark, candidate.IsPurchase, candidate.CreatedAt).Scan(
+			&candidate.GuidanceRelationship, &candidate.GuidanceConfidence, &candidate.GuidanceVersion,
+		)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Transfer{}, ErrInvalidOperation
+		}
+		if err != nil {
+			return Transfer{}, fmt.Errorf("read transaction guidance assessment: %w", err)
+		}
+	}
 
 	senderAvailable, _, err := accountForWallet(ctx, tx, senderWallet, ledger.AccountKindAvailable)
 	if err != nil {
@@ -340,9 +361,10 @@ func (r *PostgresRepository) CreateTransfer(
 	_, err = tx.Exec(ctx, `
 		INSERT INTO internal_transfers (
 			id, sender_wallet_id, recipient_wallet_id, idempotency_key,
-			amount_minor, currency, ledger_transaction_id, created_at, remark
-		) VALUES ($1, $2::text::uuid, $3::text::uuid, $4, $5, $6, $7::text::uuid, $8, $9)
-	`, parsedID, senderWallet, recipientWallet, key, candidate.Amount.AmountMinor(), currency, string(posted.JournalID), candidate.CreatedAt, candidate.Remark)
+			amount_minor, currency, ledger_transaction_id, created_at, remark,
+			guidance_assessment_id, is_purchase
+		) VALUES ($1, $2::text::uuid, $3::text::uuid, $4, $5, $6, $7::text::uuid, $8, $9, $10::text::uuid, $11)
+	`, parsedID, senderWallet, recipientWallet, key, candidate.Amount.AmountMinor(), currency, string(posted.JournalID), candidate.CreatedAt, candidate.Remark, nullableText(candidate.GuidanceAssessmentID), candidate.IsPurchase)
 	if err != nil {
 		return Transfer{}, mapOperationError(err)
 	}
@@ -380,7 +402,7 @@ func (r *PostgresRepository) ReserveWithdrawal(
 
 	existing, err := loadWithdrawalByKey(ctx, tx, candidate.OwnerID, key, true)
 	if err == nil {
-		if existing.Destination != candidate.Destination || !existing.Amount.Equal(candidate.Amount) {
+		if existing.Destination != candidate.Destination || !existing.Amount.Equal(candidate.Amount) || existing.Remark != candidate.Remark {
 			return Withdrawal{}, ErrIdempotencyConflict
 		}
 		existing.Duplicate = true
@@ -450,9 +472,9 @@ func (r *PostgresRepository) ReserveWithdrawal(
 		INSERT INTO withdrawals (
 			id, owner_id, wallet_id, idempotency_key, destination,
 			amount_minor, currency, status, reservation_transaction_id,
-			created_at, updated_at
-		) VALUES ($1, $2, $3::text::uuid, $4, $5, $6, $7, 'RESERVED', $8::text::uuid, $9, $9)
-	`, parsedID, ownerID, walletID, key, candidate.Destination, candidate.Amount.AmountMinor(), currency, string(posted.JournalID), candidate.CreatedAt)
+			created_at, updated_at, remark
+		) VALUES ($1, $2, $3::text::uuid, $4, $5, $6, $7, 'RESERVED', $8::text::uuid, $9, $9, $10)
+	`, parsedID, ownerID, walletID, key, candidate.Destination, candidate.Amount.AmountMinor(), currency, string(posted.JournalID), candidate.CreatedAt, candidate.Remark)
 	if err != nil {
 		return Withdrawal{}, mapOperationError(err)
 	}
@@ -845,7 +867,9 @@ func loadTransferByKey(
 		       transfer.currency,
 		       transfer.ledger_transaction_id::text,
 		       transfer.created_at,
-		       transfer.remark
+		       transfer.remark,
+		       COALESCE(transfer.guidance_assessment_id::text, ''),
+		       transfer.is_purchase
 		  FROM internal_transfers AS transfer
 		  JOIN wallets AS sender ON sender.id = transfer.sender_wallet_id
 		  JOIN wallets AS recipient ON recipient.id = transfer.recipient_wallet_id
@@ -855,6 +879,7 @@ func loadTransferByKey(
 	`, string(senderID), key).Scan(
 		&id, &storedSenderID, &recipientID, &result.RecipientEmail,
 		&amountMinor, &currency, &result.LedgerTransactionID, &createdAt, &result.Remark,
+		&result.GuidanceAssessmentID, &result.IsPurchase,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Transfer{}, ErrOperationNotFound
@@ -872,6 +897,13 @@ func loadTransferByKey(
 	result.Amount = amount
 	result.CreatedAt = createdAt.Time.UTC()
 	return result, nil
+}
+
+func nullableText(value string) any {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	return value
 }
 
 func loadWithdrawalByKey(
@@ -907,7 +939,7 @@ const withdrawalSelect = `
 	       amount_minor, currency, status, COALESCE(provider_payout_id, ''),
 	       reservation_transaction_id::text,
 	       COALESCE(settlement_transaction_id::text, ''),
-	       created_at, updated_at, completed_at
+	       created_at, updated_at, completed_at, remark
 	  FROM withdrawals`
 
 func scanWithdrawal(row interface{ Scan(...any) error }) (Withdrawal, error) {
@@ -923,7 +955,7 @@ func scanWithdrawal(row interface{ Scan(...any) error }) (Withdrawal, error) {
 		&id, &ownerID, &result.WalletID, &result.Destination,
 		&amountMinor, &currency, &result.Status, &result.ProviderPayoutID,
 		&result.ReservationTransactionID, &result.SettlementTransactionID,
-		&createdAt, &updatedAt, &completedAt,
+		&createdAt, &updatedAt, &completedAt, &result.Remark,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Withdrawal{}, ErrOperationNotFound
