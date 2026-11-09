@@ -4,6 +4,15 @@
 
 Controlled is a polished Android hackathon MVP built for the PayPal AI Hackathon. It combines a USD wallet, enforceable spending pacts, human accountability, optional AI guidance, purchase price checks, and mobile notifications.
 
+## Live MVP
+
+- **Product:** [tryctrld.xyz](https://tryctrld.xyz)
+- **Android APK:** [download the latest release](https://github.com/raagan-u/controlled/releases/latest/download/ctrld.apk)
+- **API readiness:** [api.tryctrld.xyz/readyz](https://api.tryctrld.xyz/readyz)
+- **API container:** [`ghcr.io/raagan-u/controlled-api:stable`](https://github.com/raagan-u/controlled/pkgs/container/controlled-api)
+
+The hosted product and APK use PayPal Sandbox and are intended for demonstration and testing only.
+
 > [!NOTE]
 > **Top post-MVP priority — earned pact-skip passes:** a scarce, auditable fallback for an unresponsive accountability circle. One pass would authorize one exact, otherwise-valid transaction; successful pact streaks would earn replacements. This is not implemented in the submission build.
 
