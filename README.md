@@ -174,3 +174,9 @@ These are post-MVP ideas and would require appropriate security, provider, legal
 Controlled is a sandbox proof of concept, not a bank, production custodial wallet, money-transmission service, investment product, or source of yield. It is USD-only. Password reset and email verification are not implemented. Commitment Reserve stays user-owned, cannot be withdrawn directly, and is recovered only through later kept pacts lasting at least seven days. The fake provider is process-local; PayPal integration targets Sandbox only.
 
 > AI advises. Humans authorize. The policy engine enforces. The provider moves the money.
+
+## License
+
+Controlled's original source code is licensed under the
+[Apache License 2.0](./LICENSE). Third-party components remain subject to their
+respective license terms; see [third-party notices](./THIRD_PARTY_NOTICES.md).
